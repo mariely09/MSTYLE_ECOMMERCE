@@ -1,12 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'buyer_cart.dart';
 import 'buyer_wishlist.dart';
 import 'buyer_checkout.dart';
+import 'buyer_view_shop.dart';
 import 'buyer_service.dart';
 import 'product_image_carousel.dart';
-import 'supabase_client.dart';
+import 'supabase_client.dart' show supabase, supabaseAdminSelect;
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -38,7 +41,9 @@ class ProductDetail {
   final double rating;
   final int reviewCount;
   final int quantity;
-  final String sellerName;
+  final String sellerEmail;
+  final String sellerName;       // business_name or full name
+  final String? sellerPicture;   // profile_picture filename/url
   final List<ReviewItem> reviews;
 
   const ProductDetail({
@@ -53,7 +58,9 @@ class ProductDetail {
     required this.rating,
     required this.reviewCount,
     required this.quantity,
+    required this.sellerEmail,
     required this.sellerName,
+    this.sellerPicture,
     required this.reviews,
   });
 }
@@ -173,6 +180,36 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
         }
       } catch (_) { /* fall back to product.quantity */ }
 
+      // Fetch seller info via admin REST call (bypasses RLS)
+      final sellerEmail = data['seller_email'] as String? ?? '';
+      String sellerDisplayName = sellerEmail;
+      String? sellerPicture;
+      if (sellerEmail.isNotEmpty) {
+        try {
+          final rows = await supabaseAdminSelect(
+            table: 'users',
+            select: 'business_name,first_name,last_name,profile_picture',
+            filters: {'email': sellerEmail},
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final u = rows[0];
+            final biz   = (u['business_name'] as String? ?? '').trim();
+            final first = (u['first_name']    as String? ?? '').trim();
+            final last  = (u['last_name']     as String? ?? '').trim();
+            sellerDisplayName = biz.isNotEmpty
+                ? biz
+                : '$first $last'.trim().isNotEmpty
+                    ? '$first $last'.trim()
+                    : sellerEmail;
+            final pic = (u['profile_picture'] as String? ?? '').trim();
+            sellerPicture = pic.isNotEmpty ? pic : null;
+          }
+        } catch (e) {
+          debugPrint('seller info error: $e');
+        }
+      }
+
       setState(() {
         _product = ProductDetail(
           id: '${data['id']}',
@@ -184,7 +221,9 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
           rating: double.parse(avgRating.toStringAsFixed(1)),
           reviewCount: reviews.length,
           quantity: totalStock,
-          sellerName: data['seller_email'] ?? '',
+          sellerEmail: sellerEmail,
+          sellerName: sellerDisplayName,
+          sellerPicture: sellerPicture,
           reviews: reviews,
         );
         _rawImage = data['image'] as String?;
@@ -431,24 +470,6 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
           style: const TextStyle(color: _textLight, fontSize: 12)),
       ]),
       const SizedBox(height: 12),
-      // Stock status
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: _inStock ? Colors.green.shade50 : Colors.red.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _inStock ? Colors.green.shade200 : Colors.red.shade200),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(_inStock ? Icons.check_circle_outline : Icons.cancel_outlined,
-            size: 13, color: _inStock ? Colors.green : Colors.red),
-          const SizedBox(width: 5),
-          Text(_inStock ? 'In Stock' : 'Out of Stock',
-            style: TextStyle(color: _inStock ? Colors.green : Colors.red,
-              fontSize: 12, fontWeight: FontWeight.w600)),
-        ]),
-      ),
-      const SizedBox(height: 14),
       // Description
       Text(p!.description, style: const TextStyle(color: _textLight, fontSize: 13, height: 1.6)),
     ]),
@@ -757,23 +778,51 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
   // ─── Seller Section ───────────────────────────────────────────────────────
   Widget _sellerSection() => _card(
     child: Row(children: [
+      // Avatar: profile picture or initial fallback
       Container(
         width: 44, height: 44,
-        decoration: BoxDecoration(shape: BoxShape.circle, gradient: _goldGrad,
-          boxShadow: [BoxShadow(color: _gold.withOpacity(0.3), blurRadius: 8)]),
-        child: Center(child: Text(p!.sellerName.isNotEmpty ? p!.sellerName[0].toUpperCase() : 'S',
-          style: const TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 18))),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: p!.sellerPicture == null ? _goldGrad : null,
+          boxShadow: [BoxShadow(color: _gold.withOpacity(0.3), blurRadius: 8)],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: p!.sellerPicture != null && p!.sellerPicture!.isNotEmpty
+            ? Image.network(
+                _resolveSellerPicture(p!.sellerPicture!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _sellerInitial(),
+              )
+            : _sellerInitial(),
       ),
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(p!.sellerName, style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 14)),
+        Text(p!.sellerName, style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 14),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
         const Text('Official Store', style: TextStyle(color: _textLight, fontSize: 11)),
       ])),
-      _outlineBtn(Icons.chat_bubble_outline, 'Contact', () {}),
-      const SizedBox(width: 8),
-      _outlineBtn(Icons.store_outlined, 'Shop', () {}),
+      _outlineBtn(Icons.store_outlined, 'Shop', () {
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) => BuyerViewShopPage(
+            userEmail: widget.userEmail,
+            sellerEmail: p!.sellerEmail,
+          ),
+        ));
+      }),
     ]),
   );
+
+  Widget _sellerInitial() => Center(
+    child: Text(
+      p!.sellerName.isNotEmpty ? p!.sellerName[0].toUpperCase() : 'S',
+      style: const TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 18),
+    ),
+  );
+
+  String _resolveSellerPicture(String pic) {
+    if (pic.startsWith('http://') || pic.startsWith('https://')) return pic;
+    return '$kFlaskBaseUrl/static/uploads/$pic';
+  }
 
   Widget _outlineBtn(IconData icon, String label, VoidCallback onTap) => GestureDetector(
     onTap: onTap,
@@ -926,11 +975,13 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
                 productId:   int.tryParse(p!.id) ?? 0,
                 name:        p!.name,
                 price:       p!.salePrice ?? p!.price,
-                sellerEmail: p!.sellerName,
+                sellerEmail: p!.sellerEmail,
                 color:       _selectedColor,
                 size:        _selectedSize,
                 quantity:    _quantity,
-                image:       _rawImage?.split(',').first.trim(),
+                image:       _selectedColor != null
+                    ? (_colorImages[_selectedColor!.toLowerCase()] ?? _rawImage?.split(',').first.trim())
+                    : _rawImage?.split(',').first.trim(),
               );
               if (mounted) {
                 if (result.stockCapped && !result.added) {
@@ -981,6 +1032,10 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
                 quantity: _quantity,
                 color: _selectedColor,
                 size: _selectedSize,
+                productId: int.tryParse(p!.id),
+                image: _selectedColor != null
+                    ? (_colorImages[_selectedColor!.toLowerCase()] ?? _rawImage?.split(',').first.trim())
+                    : _rawImage?.split(',').first.trim(),
               )],
             )));
           },

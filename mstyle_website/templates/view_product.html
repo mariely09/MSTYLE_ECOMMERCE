@@ -756,9 +756,14 @@
 
         // Helper function to get color image path
         function getColorImagePath(colorName) {
-            // Try to get color-specific product image first
-            const productImages = "{{ product.image }}".split(',');
+            // 1. Check image_colors mapping first (exact color → URL from DB)
+            const imageColorsMap = {{ image_colors_dict | tojson }};
             const colorLower = colorName.toLowerCase().trim();
+            const rawUrl = imageColorsMap[colorLower] || imageColorsMap[colorName];
+            if (rawUrl) return resolveProductImageUrl(rawUrl);
+
+            // 2. Fallback: filename matching against product images
+            const productImages = "{{ product.image }}".split(',');
             const colorVariations = [
                 colorLower,
                 colorLower.replace(' ', '_'),
@@ -766,23 +771,52 @@
                 colorLower.replace(/\s+/g, '')
             ];
 
-            // Look for image that contains any variation of the color name
             for (let img of productImages) {
                 const imgName = img.trim().toLowerCase();
                 for (let variation of colorVariations) {
                     if (imgName.includes(variation)) {
-                        // Use product_image_url logic: full URL passes through, filename gets prefix
-                        const imgTrimmed = img.trim();
-                        if (imgTrimmed.startsWith('http://') || imgTrimmed.startsWith('https://')) {
-                            return imgTrimmed;
-                        }
-                        return '/static/images/uploads/' + imgTrimmed;
+                        return resolveProductImageUrl(img.trim());
                     }
                 }
             }
 
             // Try generic color images
             return '/static/images/colors/' + colorLower.replace(' ', '_') + '.jpg';
+        }
+
+        // Resolve a stored image value to a web-accessible URL (mirrors product_img filter)
+        function resolveProductImageUrl(value) {
+            if (!value) return '';
+            const s = value.trim();
+            if (s.startsWith('http://') || s.startsWith('https://')) return s;
+            return '/static/images/uploads/' + s;
+        }
+
+        function _updateDisplayImage(src, imageIndex) {
+            // Update carousel if multiple images
+            const slider = document.querySelector('.product-image-slider');
+            if (slider) {
+                const indicators = slider.querySelectorAll('.indicator');
+                // Try by index first
+                if (imageIndex !== undefined && indicators[imageIndex]) {
+                    showImage(indicators[imageIndex], imageIndex);
+                    return;
+                }
+                // Try matching by src filename
+                const imgs = slider.querySelectorAll('.product-img');
+                const filename = src.split('/').pop();
+                for (let i = 0; i < imgs.length; i++) {
+                    if (imgs[i].src === src || imgs[i].src.endsWith(filename)) {
+                        if (indicators[i]) showImage(indicators[i], i);
+                        return;
+                    }
+                }
+            }
+            // Single image display
+            const singleImage = document.getElementById('productImage');
+            if (singleImage) {
+                singleImage.src = src;
+            }
         }
 
         // Helper function to get color codes (fallback)
@@ -849,11 +883,22 @@
             const productImageInput = document.querySelector('input[name="product_image"]');
             if (!productImageInput) return;
 
-            const productImages = "{{ product.image }}".split(',');
             const colorLower = selectedColor.toLowerCase().trim();
 
-            // Look for image that matches the selected color
-            let bestImage = productImages[0].trim(); // Default to first image
+            // 1. Check image_colors mapping first (exact color → URL from DB)
+            const imageColorsMap = {{ image_colors_dict | tojson }};
+            const rawUrl = imageColorsMap[colorLower] || imageColorsMap[selectedColor];
+            if (rawUrl) {
+                const resolvedUrl = resolveProductImageUrl(rawUrl);
+                productImageInput.value = resolvedUrl;
+                console.log(`Found color image via image_colors map for "${selectedColor}": ${resolvedUrl}`);
+                _updateDisplayImage(resolvedUrl);
+                return;
+            }
+
+            // 2. Fallback: filename matching against product images
+            const productImages = "{{ product.image }}".split(',');
+            let bestImage = productImages[0].trim();
             let bestImageIndex = 0;
 
             const colorVariations = [
@@ -863,7 +908,6 @@
                 colorLower.replace(/\s+/g, '')
             ];
 
-            // Find the best matching image
             for (let i = 0; i < productImages.length; i++) {
                 const img = productImages[i];
                 const imgName = img.trim().toLowerCase();
@@ -871,34 +915,17 @@
                     if (variation && imgName.includes(variation)) {
                         bestImage = img.trim();
                         bestImageIndex = i;
-                        console.log(`Found matching image for color "${selectedColor}": ${bestImage}`);
+                        console.log(`Found matching image for color "${selectedColor}" via filename: ${bestImage}`);
                         break;
                     }
                 }
-                if (bestImage !== productImages[0].trim()) break; // Found a match, stop looking
+                if (bestImageIndex > 0) break;
             }
 
-            // Update the hidden field
-            productImageInput.value = bestImage;
-            console.log(`Updated product_image field to: ${bestImage} for color: ${selectedColor}`);
-
-            // Update the main product image display if it's a carousel
-            const slider = document.querySelector('.product-image-slider');
-            if (slider && productImages.length > 1) {
-                const indicators = slider.querySelectorAll('.indicator');
-                if (indicators[bestImageIndex]) {
-                    showImage(indicators[bestImageIndex], bestImageIndex);
-                }
-            } else {
-                // Single image display - update the src
-                const singleImage = document.getElementById('productImage');
-                if (singleImage) {
-                    const imgTrimmed = bestImage.trim();
-                    singleImage.src = (imgTrimmed.startsWith('http://') || imgTrimmed.startsWith('https://'))
-                        ? imgTrimmed
-                        : '/static/images/uploads/' + imgTrimmed;
-                }
-            }
+            const resolvedBest = resolveProductImageUrl(bestImage);
+            productImageInput.value = resolvedBest;
+            console.log(`Updated product_image field to: ${resolvedBest} for color: ${selectedColor}`);
+            _updateDisplayImage(resolvedBest, bestImageIndex);
         }
 
         // Function to show the "Item Added" modal

@@ -360,8 +360,32 @@
                                         {% endif %}
 
                                         <!-- View Details Button - Always visible -->
-                                        <button type="button" class="view-details-btn" 
-                                                onclick="openOrderModal({{ order.id }}, '{{ order.first_name }} {{ order.last_name }}', '{{ order.email }}', '{{ order.address|replace("'", "\\'") }}', '{{ order.name|replace("'", "\\'") }}', '{{ order.image_url if order.image_url else (order.image|product_img) }}', '{{ order.variations or '' }}', '{{ order.size or '' }}', {{ order.quantity }}, {{ order.original_price or order.total_price }}, '{{ order.promotion_type or '' }}', {{ order.discount_percentage or 0 }}, {{ order.discount_amount or 0 }}, {{ order.total_price }}, '{{ order.date }}', '{{ order.status }}', '{{ order.promotion_name or '' }}', '{{ order.phone or '' }}', '{{ order.seller_business_name or '' }}', '{{ order.seller_address or '' }}', '{{ order.seller_phone or '' }}', {{ order.product_id or 'null' }}, '{{ order.rider_email or '' }}', '{{ order.rider_name or '' }}')">
+                                        <button type="button" class="view-details-btn"
+                                                data-order-id="{{ order.id }}"
+                                                data-customer-name="{{ (order.first_name ~ ' ' ~ order.last_name)|e }}"
+                                                data-customer-email="{{ order.email|e }}"
+                                                data-customer-address="{{ (order.address or '')|e }}"
+                                                data-product-name="{{ order.name|e }}"
+                                                data-product-image="{{ order.image_url if order.image_url else (order.image|product_img) }}"
+                                                data-product-variation="{{ (order.variations or '')|e }}"
+                                                data-product-size="{{ (order.size or '')|e }}"
+                                                data-quantity="{{ order.quantity }}"
+                                                data-original-price="{{ order.original_price or order.total_price }}"
+                                                data-promotion-type="{{ (order.promotion_type or '')|e }}"
+                                                data-discount-percentage="{{ order.discount_percentage or 0 }}"
+                                                data-discount-amount="{{ order.discount_amount or 0 }}"
+                                                data-total-price="{{ order.total_price }}"
+                                                data-order-date="{{ (order.date or '')|e }}"
+                                                data-order-status="{{ (order.status or '')|e }}"
+                                                data-promotion-name="{{ (order.promotion_name or '')|e }}"
+                                                data-customer-phone="{{ (order.phone or '')|e }}"
+                                                data-seller-business-name="{{ (order.seller_business_name or '')|e }}"
+                                                data-seller-address="{{ (order.seller_address or '')|e }}"
+                                                data-seller-phone="{{ (order.seller_phone or '')|e }}"
+                                                data-product-id="{{ order.product_id or '' }}"
+                                                data-rider-email="{{ (order.rider_email or '')|e }}"
+                                                data-rider-name="{{ (order.rider_name or '')|e }}"
+                                                onclick="openOrderModalFromBtn(this)">
                                             <i class="bi bi-eye"></i>
                                             <span>View Details</span>
                                         </button>
@@ -549,6 +573,38 @@
 
     <!-- Include Report Issue Modal -->
     {% include 'report_issue_modal.html' %}
+
+    <script>
+    function openOrderModalFromBtn(btn) {
+        const d = btn.dataset;
+        openOrderModal(
+            d.orderId,
+            d.customerName,
+            d.customerEmail,
+            d.customerAddress,
+            d.productName,
+            d.productImage,
+            d.productVariation,
+            d.productSize,
+            parseInt(d.quantity),
+            parseFloat(d.originalPrice),
+            d.promotionType,
+            parseFloat(d.discountPercentage),
+            parseFloat(d.discountAmount),
+            parseFloat(d.totalPrice),
+            d.orderDate,
+            d.orderStatus,
+            d.promotionName,
+            d.customerPhone,
+            d.sellerBusinessName,
+            d.sellerAddress,
+            d.sellerPhone,
+            d.productId || null,
+            d.riderEmail,
+            d.riderName
+        );
+    }
+    </script>
 
 </body>
 

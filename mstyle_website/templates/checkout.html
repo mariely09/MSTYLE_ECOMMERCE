@@ -691,7 +691,15 @@
             })
                 .then(response => {
                     if (!response.ok) {
-                        return response.json().then(data => Promise.reject(data));
+                        return response.text().then(text => {
+                            // Try to parse as JSON first, fall back to showing status
+                            try {
+                                const data = JSON.parse(text);
+                                return Promise.reject(data);
+                            } catch (_) {
+                                return Promise.reject({ message: `Server error ${response.status}. Check server logs.` });
+                            }
+                        });
                     }
                     return response.json();
                 })

@@ -1843,18 +1843,11 @@ def login():
 
 @app.route('/logout')
 def logout():
-    # Clear all session data
     session.clear()
-    
-    # Create response with redirect
     response = redirect(url_for('home'))
-    
-    # Add cache control headers to prevent caching
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, post-check=0, pre-check=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
-    
-    flash('You have been logged out successfully.', 'info')
     return response
 
 #----------------------------------------------------------------------
@@ -3353,6 +3346,11 @@ def view_product(product_id):
             product['discount_percentage'] = 0
 
     if product:
+        # Parse image_colors into a dict { colorName.lower() → imageUrl } for JS
+        image_colors_dict = _parse_image_colors_dict(
+            product.get('image_colors', ''),
+            product.get('image', '')
+        )
         return render_template('view_product.html',
                                product=product,
                                seller_name=product.get('seller_name', ''),
@@ -3361,7 +3359,8 @@ def view_product(product_id):
                                user_email=session.get('email', 'User'),
                                reviews=reviews,
                                review_stats=review_stats,
-                               active_promotion=active_promotion)
+                               active_promotion=active_promotion,
+                               image_colors_dict=image_colors_dict)
     else:
         print(f"❌ view_product({product_id}): product not found in Supabase or MySQL")
         flash('Product not found or is no longer available.', 'error')
@@ -6334,515 +6333,222 @@ def edit_product(product_id):
     if 'email' not in session:
         return redirect(url_for('home'))
 
-    connection = None
-    cursor = None
-    
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        if not connection or not cursor:
-            flash('Database connection error', 'error')
-            return redirect(url_for('products'))
+    seller_email = session['email']
 
-        if request.method == 'POST':
-            try:
-                    # Validate required form fields
-                    required_fields = ['name', 'category', 'description', 'price', 'quantity']
-                    for field in required_fields:
-                        if field not in request.form or not request.form[field].strip():
-                            flash(f'Missing required field: {field}', 'error')
-                            return redirect(url_for('products'))
-                
-                    name = request.form['name']
-                    category = request.form['category']
-                    description = request.form['description']
-                    price = request.form['price']
-                    quantity = request.form['quantity']
-                    low_stock_threshold = request.form.get('low_stock_threshold', 5)  # Default to 5 if not provided
-                
-                    # Get variations and sizes with multiple fallbacks
-                    variations = request.form.get('updated_variations') or request.form.get('variations') or ''
-                    updated_sizes = request.form.get('updated_sizes') or request.form.get('sizes') or ''
-                
-                    # Get color option type
-                    color_option_type = request.form.get('edit_color_option_type', '')
-                
-                    print(f"🔍 Form data extraction:")
-                    print(f"  - updated_variations from form: '{request.form.get('updated_variations')}'")
-                    print(f"  - variations from form: '{request.form.get('variations')}'")
-                    print(f"  - final variations: '{variations}'")
-                    print(f"  - updated_sizes from form: '{request.form.get('updated_sizes')}'")
-                    print(f"  - sizes from form: '{request.form.get('sizes')}'")
-                    print(f"  - final updated_sizes: '{updated_sizes}'")
-                
-                    # Get current image color updates
-                    current_image_color_updates = request.form.get('current_image_color_updates', '')
-                
-                    print(f"🔍 Edit product form data:")
-                    print(f"  - name: {name}")
-                    print(f"  - category: {category}")
-                    print(f"  - variations: {variations}")
-                    print(f"  - updated_sizes: '{updated_sizes}' (type: {type(updated_sizes)})")
-                    print(f"  - current_image_color_updates: {current_image_color_updates}")
-            
-                    # Debug: Print all form data related to sizes and variations
-                    print(f"🔍 All form data keys: {list(request.form.keys())}")
-                    print(f"🔍 Size-related form data:")
-                    for key in request.form.keys():
-                        if 'size' in key.lower():
-                            print(f"  - {key}: '{request.form.get(key)}'")
-            
-                    print(f"🔍 Variation-related form data:")
-                    for key in request.form.keys():
-                        if 'variation' in key.lower():
-                            print(f"  - {key}: '{request.form.get(key)}'")
-            
-                    # Show critical form values
-                    print(f"🔍 CRITICAL FORM VALUES:")
-                    print(f"  - updated_sizes: '{request.form.get('updated_sizes')}'")
-                    print(f"  - updated_variations: '{request.form.get('updated_variations')}'")
-                    print(f"  - edit_color_option_type: '{request.form.get('edit_color_option_type')}'")
-                    print(f"  - current_image_color_updates: '{request.form.get('current_image_color_updates')}'")
-                    print(f"  - images_to_remove: '{request.form.get('images_to_remove')}'")
-                
-                    # Get current product data from database including sizes AND variations
-                    cursor.execute("SELECT image, image_colors, sizes, variations FROM products WHERE id = %s", (product_id,))
-                    current_product = cursor.fetchone()
-                    current_images_string = current_product['image'] if current_product else ''
-                    current_image_colors_string = current_product['image_colors'] if current_product else ''
-                    current_sizes_in_db = current_product['sizes'] if current_product else ''
-                    current_variations_in_db = current_product['variations'] if current_product else ''
-                    current_images = [img.strip() for img in current_images_string.split(',') if img.strip()] if current_images_string else []
-                
-                    print(f"🔍 Current sizes in database: '{current_sizes_in_db}' (type: {type(current_sizes_in_db)})")
-                    print(f"🔍 New sizes from form: '{updated_sizes}' (type: {type(updated_sizes)})")
-                    print(f"🔍 Current variations in database: '{current_variations_in_db}' (type: {type(current_variations_in_db)})")
-                    print(f"🔍 New variations from form: '{variations}' (type: {type(variations)})")
-                
-                    # CRITICAL FIX: Preserve existing values if new values are empty
-                    if not updated_sizes or updated_sizes.strip() == '':
-                        updated_sizes = current_sizes_in_db or 'One Size'
-                        print(f"🔒 PRESERVING existing sizes: '{updated_sizes}'")
-                    else:
-                        print(f"✅ Using new sizes from form: '{updated_sizes}'")
-                    
-                    if not variations or variations.strip() == '':
-                        variations = current_variations_in_db or 'Standard'
-                        print(f"🔒 PRESERVING existing variations: '{variations}'")
-                    else:
-                        print(f"✅ Using new variations from form: '{variations}'")
-                
-                    # Check if sizes column exists and its type
-                    cursor.execute("DESCRIBE products")
-                    table_structure = cursor.fetchall()
-                    sizes_column_info = None
-                    for column in table_structure:
-                        if column['Field'] == 'sizes':
-                            sizes_column_info = column
-                            break
-                    
-                    if sizes_column_info:
-                        print(f"🔍 Sizes column info: {sizes_column_info}")
-                    else:
-                        print(f"❌ ERROR - 'sizes' column not found in products table!")
-                        print(f"🔍 Available columns: {[col['Field'] for col in table_structure]}")
-                    
-                    # Get images to remove from form
-                    images_to_remove = request.form.get('images_to_remove', '')
-                    images_to_remove_list = [img.strip() for img in images_to_remove.split(',') if img.strip()] if images_to_remove else []
-                    
-                    # Start with base update query - we'll build this dynamically
-                    base_columns = ['name', 'category', 'description', 'variations', 'price', 'quantity', 'low_stock_threshold', 'sizes']
-                    base_values = [name, category, description, variations, price, quantity, low_stock_threshold, updated_sizes]
-                    
-                    print(f"🔍 Base update values:")
-                    for i, (col, val) in enumerate(zip(base_columns, base_values)):
-                        print(f"  {i}: {col} = '{val}'")
-
-                    # Handle image management
-                    final_images = []
-                    final_image_colors = []
-            
-                    # Parse current image color updates
-                    current_color_updates = {}
-                    if current_image_color_updates:
-                        for mapping in current_image_color_updates.split(','):
-                            if ':' in mapping:
-                                img_name, color_name = mapping.split(':', 1)
-                                current_color_updates[img_name.strip()] = color_name.strip()
-            
-                    # Keep existing images that are not marked for removal
-                    for img in current_images:
-                        if img not in images_to_remove_list:
-                            final_images.append(img)
-                            # Use updated color if available, otherwise try to preserve existing color
-                            if img in current_color_updates:
-                                final_image_colors.append(f"{img}:{current_color_updates[img]}")
-                            else:
-                                # Try to find existing color mapping
-                                existing_color = 'Unknown Color'
-                                if current_image_colors_string:
-                                    for color_mapping in current_image_colors_string.split(','):
-                                        if ':' in color_mapping:
-                                            existing_img, existing_color_name = color_mapping.split(':', 1)
-                                            if existing_img.strip() == img:
-                                                existing_color = existing_color_name.strip()
-                                                break
-                                final_image_colors.append(f"{img}:{existing_color}")
-            
-                    # Delete images marked for removal from filesystem
-                    for img_to_remove in images_to_remove_list:
-                        if img_to_remove in current_images:
-                            img_path = os.path.join(app.config['UPLOAD_FOLDER'], img_to_remove)
-                            if os.path.exists(img_path):
-                                try:
-                                    os.remove(img_path)
-                                    print(f"Deleted image: {img_path}")
-                                except Exception as e:
-                                    print(f"Error deleting image {img_path}: {str(e)}")
-
-                    # Handle new image uploads if provided
-                    if 'image' in request.files:
-                        files = request.files.getlist('image')
-                    # Filter out empty files
-                    files = [f for f in files if f.filename != '']
-                
-                    if files:
-                        # Get color names for new images
-                        new_image_colors = request.form.getlist('edit_image_colors[]')
-                    
-                        if len(files) != len(new_image_colors):
-                            flash('Each new image must have a color name specified', 'error')
-                            return redirect(url_for('edit_product', product_id=product_id))
-                    
-                        saved_filenames = []
-                    
-                        for i, file in enumerate(files):
-                            if file and allowed_file(file.filename):
-                                # Generate unique filename
-                                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                                random_string = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
-                                original_filename = secure_filename(file.filename)
-                                filename = f"{timestamp}_{random_string}_{original_filename}"
-                            
-                                # Save new image
-                                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                                try:
-                                    file.save(file_path)
-                                    saved_filenames.append(filename)
-                                
-                                    # Add color mapping for new image
-                                    color_name = new_image_colors[i].strip() if i < len(new_image_colors) else 'Default'
-                                    final_image_colors.append(f"{filename}:{color_name}")
-                                
-                                    print(f"Saved new image: {filename} with color: {color_name}")
-                                except Exception as e:
-                                    flash(f'Error saving file {file.filename}: {str(e)}', 'error')
-                                    # Clean up already saved files
-                                    for saved_file in saved_filenames:
-                                        try:
-                                            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], saved_file))
-                                        except:
-                                            pass
-                                    return redirect(url_for('edit_product', product_id=product_id))
-                            else:
-                                flash(f'Invalid file type for {file.filename}. Please upload image files only.', 'error')
-                                # Clean up already saved files
-                                for saved_file in saved_filenames:
-                                    try:
-                                        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], saved_file))
-                                    except:
-                                        pass
-                                return redirect(url_for('edit_product', product_id=product_id))
-                    
-                        # Add new images to final list
-                        final_images.extend(saved_filenames)
-
-                    # CRITICAL: Auto-sync variations with image_colors based on color option
-                    print(f"🔍 Color option type: '{color_option_type}'")
-            
-                    if color_option_type == 'no_colors':
-                        # No color variations - all should be "Standard"
-                        variations = 'Standard'
-                        print(f"🔄 AUTO-SYNC: No colors option - set variations to: '{variations}'")
-                    elif final_image_colors:
-                        # Has color variations - extract unique color names from image_colors
-                        auto_variations = []
-                        for color_mapping in final_image_colors:
-                            if ':' in color_mapping:
-                                _, color_name = color_mapping.split(':', 1)
-                                color_name = color_name.strip()
-                                if color_name and color_name not in auto_variations:
-                                    auto_variations.append(color_name)
-                
-                    # Update variations to match image colors
-                    if auto_variations:
-                        variations = ', '.join(auto_variations)
-                        print(f"🔄 AUTO-SYNC: Updated variations to match image colors: '{variations}'")
-                    else:
-                        # If no valid colors found, use Standard
-                        variations = 'Standard'
-                        print(f"🔄 AUTO-SYNC: No valid colors found, set variations to: '{variations}'")
-                    
-                    if not final_images:
-                        # If no images at all, set to Standard
-                        variations = 'Standard'
-                        print(f"🔄 AUTO-SYNC: No images, set variations to: '{variations}'")
-
-                    # Build the complete update query and parameters
-                    all_columns = base_columns.copy()
-                    all_values = base_values.copy()
-            
-                    # Update variations in the base values (index 3)
-                    all_values[3] = variations
-            
-                    # Add image columns if there are image changes
-                    if final_images or images_to_remove_list or current_image_color_updates:
-                        images_string = ','.join(final_images) if final_images else ''
-                        image_colors_string = ','.join(final_image_colors) if final_image_colors else ''
-                        all_columns.extend(['image', 'image_colors'])
-                        all_values.extend([images_string, image_colors_string])
-                        print(f"Final images string: {images_string}")
-                        print(f"Final image colors string: {image_colors_string}")
-                    print(f"🔄 SYNC: Variations automatically updated to: '{variations}'")
-            
-                    # Build the SET clause
-                    set_clause = ', '.join([f"{col}=%s" for col in all_columns])
-                    update_query = f"UPDATE products SET {set_clause}"
-                    params = all_values
-
-                    # Complete the update query
-                    update_query += " WHERE id = %s AND seller_email = %s"
-                    params.extend([product_id, session['email']])
-
-                    # CRITICAL SAFETY CHECK: Find correct indices for variations and sizes
-                    variations_index = all_columns.index('variations')
-                    sizes_index = all_columns.index('sizes')
-            
-                    print(f"🔍 Column indices: variations={variations_index}, sizes={sizes_index}")
-            
-                    # Ensure variations and sizes are never empty
-                    if not params[variations_index] or params[variations_index].strip() == '':
-                        print(f"🚨 CRITICAL: Variations parameter is empty! Using current DB value: '{current_variations_in_db}'")
-                        params[variations_index] = current_variations_in_db or 'Standard'
-            
-                    if not params[sizes_index] or params[sizes_index].strip() == '':
-                        print(f"🚨 CRITICAL: Sizes parameter is empty! Using current DB value: '{current_sizes_in_db}'")
-                        params[sizes_index] = current_sizes_in_db or 'One Size'
-
-                    # Debug: Print final query and parameters
-                    print(f"🔍 Final update query: {update_query}")
-                    print(f"🔍 All columns: {all_columns}")
-                    print(f"🔍 Parameters: {params}")
-                    print(f"🔍 Variations parameter (index {variations_index}): '{params[variations_index]}' (type: {type(params[variations_index])})")
-                    print(f"🔍 Sizes parameter (index {sizes_index}): '{params[sizes_index]}' (type: {type(params[sizes_index])})")
-            
-                    # Additional verification for sizes
-                    if params[sizes_index] != updated_sizes and updated_sizes:
-                        print(f"⚠️ WARNING: Sizes parameter was modified!")
-                        print(f"  Original updated_sizes: '{updated_sizes}'")
-                        print(f"  Final params[{sizes_index}]: '{params[sizes_index]}'")
-                    else:
-                        print(f"✅ Sizes parameter correct: '{params[sizes_index]}'")
-
-                    # CRITICAL DEBUG: Log the exact SQL being executed
-                    print(f"🔍 EXECUTING SQL UPDATE:")
-                    print(f"  Query: {update_query}")
-                    print(f"  Params: {params}")
-                    print(f"  Sizes value being saved: '{params[sizes_index]}'")
-                    print(f"  Variations value being saved: '{params[variations_index]}'")
-
-                    # Execute update
-                    cursor.execute(update_query, params)
-                    
-                    # Check if any rows were affected
-                    rows_affected = cursor.rowcount
-                    print(f"🔍 Rows affected by update: {rows_affected}")
-                    
-                    if rows_affected == 0:
-                        print(f"⚠️ WARNING: No rows were updated! Check WHERE clause conditions.")
-                        print(f"  Product ID: {product_id}")
-                        print(f"  Seller email: {session['email']}")
-                    
-                    connection.commit()
-            
-                    print(f"✅ Database update completed successfully for product {product_id}")
-                    
-                    # Check and notify for stock levels after product update
-                    try:
-                        new_quantity = int(quantity)
-                        threshold = int(low_stock_threshold) if low_stock_threshold else 5
-                        
-                        # Send notifications if stock is low or out
-                        check_and_notify_stock_levels(
-                            product_id=product_id,
-                            seller_email=session['email'],
-                            new_quantity=new_quantity,
-                            threshold=threshold,
-                            product_name=name,
-                            variant_info=None
-                        )
-                    except Exception as notify_error:
-                        print(f"⚠️ Error sending stock notifications: {notify_error}")
-                        # Don't fail the update if notification fails
-            
-                    # Verify the update by reading back sizes AND variations from database
-                    cursor.execute("SELECT sizes, variations FROM products WHERE id = %s", (product_id,))
-                    verification_result = cursor.fetchone()
-                    if verification_result:
-                        saved_sizes = verification_result['sizes']
-                        saved_variations = verification_result['variations']
-                
-                        print(f"🔍 VERIFICATION - Sizes saved to database: '{saved_sizes}' (type: {type(saved_sizes)})")
-                        print(f"🔍 VERIFICATION - Variations saved to database: '{saved_variations}' (type: {type(saved_variations)})")
-                
-                        # Check sizes using correct index
-                        expected_sizes = params[sizes_index]
-                        if saved_sizes != expected_sizes:
-                            print(f"⚠️ WARNING - Sizes mismatch!")
-                            print(f"  Expected: '{expected_sizes}'")
-                            print(f"  Actual: '{saved_sizes}'")
-                        else:
-                            print(f"✅ VERIFICATION - Sizes saved correctly!")
-                
-                        # Check variations using correct index
-                        expected_variations = params[variations_index]
-                        if saved_variations != expected_variations:
-                            print(f"⚠️ WARNING - Variations mismatch!")
-                            print(f"  Expected: '{expected_variations}'")
-                            print(f"  Actual: '{saved_variations}'")
-                        else:
-                            print(f"✅ VERIFICATION - Variations saved correctly!")
-                    else:
-                        print(f"❌ VERIFICATION - Could not retrieve product after update")
-
-                    # Additional check - let's see what all columns were updated
-                    cursor.execute("SELECT name, category, variations, sizes, price, quantity, image_colors FROM products WHERE id = %s", (product_id,))
-                    final_product = cursor.fetchone()
-                    if final_product:
-                        print(f"🔍 FINAL PRODUCT STATE:")
-                        for key, value in final_product.items():
-                            print(f"  - {key}: '{value}'")
-                
-                        # Show the sync between image_colors and variations
-                        if final_product['image_colors'] and final_product['variations']:
-                            print(f"🔄 SYNC CHECK:")
-                            print(f"  - image_colors: '{final_product['image_colors']}'")
-                            print(f"  - variations: '{final_product['variations']}'")
-                        
-                            # Extract colors from image_colors
-                            image_color_names = []
-                            if final_product['image_colors']:
-                                for mapping in final_product['image_colors'].split(','):
-                                    if ':' in mapping:
-                                        _, color_name = mapping.split(':', 1)
-                                        color_name = color_name.strip()
-                                        if color_name and color_name not in image_color_names:
-                                            image_color_names.append(color_name)
-                        
-                            variation_names = [v.strip() for v in final_product['variations'].split(',') if v.strip()]
-                        
-                            if set(image_color_names) == set(variation_names):
-                                print(f"  ✅ SYNC SUCCESS: image_colors and variations match!")
-                            else:
-                                print(f"  ⚠️ SYNC MISMATCH:")
-                                print(f"    Colors from images: {image_color_names}")
-                                print(f"    Variations: {variation_names}")
-
-                    # Update variant_inventory table to reflect stock quantity changes
-                    try:
-                        print(f"🔄 Updating variant_inventory for product {product_id}...")
-                        
-                        # Parse variations and sizes
-                        variations_list = [v.strip() for v in variations.split(',') if v.strip()]
-                        sizes_list = [s.strip() for s in updated_sizes.split(',') if s.strip()]
-                        
-                        # Calculate stock per variant (distribute evenly)
-                        total_variants = len(variations_list) * len(sizes_list)
-                        stock_per_variant = int(quantity) // total_variants if total_variants > 0 else int(quantity)
-                        
-                        print(f"  - Total variants: {total_variants}")
-                        print(f"  - Stock per variant: {stock_per_variant}")
-                        print(f"  - Variations: {variations_list}")
-                        print(f"  - Sizes: {sizes_list}")
-                        
-                        # Update or create variant inventory records
-                        for color in variations_list:
-                            for size in sizes_list:
-                                # Check if variant exists
-                                cursor.execute("""
-                                    SELECT id FROM variant_inventory
-                                    WHERE product_id = %s AND color = %s AND size = %s
-                                """, (product_id, color, size))
-                                
-                                existing = cursor.fetchone()
-                                
-                                if existing:
-                                    # Update existing variant
-                                    cursor.execute("""
-                                        UPDATE variant_inventory
-                                        SET stock_quantity = %s, updated_at = NOW()
-                                        WHERE product_id = %s AND color = %s AND size = %s
-                                    """, (stock_per_variant, product_id, color, size))
-                                    print(f"  ✅ Updated variant: {color} - {size} = {stock_per_variant}")
-                                else:
-                                    # Create new variant
-                                    cursor.execute("""
-                                        INSERT INTO variant_inventory 
-                                        (product_id, color, size, stock_quantity, low_stock_threshold)
-                                        VALUES (%s, %s, %s, %s, %s)
-                                    """, (product_id, color, size, stock_per_variant, low_stock_threshold))
-                                    print(f"  ✅ Created variant: {color} - {size} = {stock_per_variant}")
-                        
-                        connection.commit()
-                        print(f"✅ Variant inventory updated successfully for product {product_id}")
-                        
-                    except Exception as variant_error:
-                        print(f"⚠️ Error updating variant inventory: {variant_error}")
-                        # Don't fail the product update if variant update fails
-                        import traceback
-                        traceback.print_exc()
-
-                    flash('Product updated successfully!', 'success')
+    if request.method == 'POST':
+        try:
+            # ── Validate required fields ──────────────────────────────────
+            required_fields = ['name', 'category', 'description', 'price']
+            for field in required_fields:
+                if field not in request.form or not request.form[field].strip():
+                    flash(f'Missing required field: {field}', 'error')
                     return redirect(url_for('products'))
 
-            except Exception as e:
-                if connection:
-                    connection.rollback()
-                flash(f'Error updating product: {str(e)}', 'error')
-                print(f"Error in edit_product: {str(e)}")
+            name        = request.form['name'].strip()
+            category    = request.form['category'].strip()
+            description = request.form['description'].strip()
+            price       = float(request.form['price'])
+            quantity    = int(request.form.get('quantity', 0) or 0)
+            low_stock_threshold = int(request.form.get('low_stock_threshold', 5) or 5)
+
+            variations   = request.form.get('updated_variations') or request.form.get('variations') or ''
+            updated_sizes = request.form.get('updated_sizes') or request.form.get('sizes') or ''
+            color_option_type = request.form.get('edit_color_option_type', '')
+            current_image_color_updates = request.form.get('current_image_color_updates', '')
+            images_to_remove = request.form.get('images_to_remove', '')
+            images_to_remove_list = [i.strip() for i in images_to_remove.split(',') if i.strip()]
+
+            # ── Fetch current product from Supabase ───────────────────────
+            prod_res = sb_admin.table('products') \
+                .select('image, image_colors, sizes, variations') \
+                .eq('id', product_id) \
+                .eq('seller_email', seller_email) \
+                .limit(1).execute()
+
+            if not prod_res.data:
+                flash('Product not found or you do not have permission to edit it.', 'error')
                 return redirect(url_for('products'))
 
-    except Exception as e:
-        flash(f'Database connection error: {str(e)}', 'error')
-        return redirect(url_for('products'))
+            current_product = prod_res.data[0]
+            current_images_string      = current_product.get('image', '') or ''
+            current_image_colors_string = current_product.get('image_colors', '') or ''
+            current_sizes_in_db        = current_product.get('sizes', '') or ''
+            current_variations_in_db   = current_product.get('variations', '') or ''
+            current_images = [i.strip() for i in current_images_string.split(',') if i.strip()]
 
-    # GET request - redirect to products page (editing is done via modal)
-    try:
-        cursor.execute("""
-            SELECT * FROM products 
-            WHERE id = %s AND seller_email = %s
-        """, (product_id, session['email']))
-        product = cursor.fetchone()
+            # Preserve existing values if form sent empty
+            if not updated_sizes.strip():
+                updated_sizes = current_sizes_in_db or 'One Size'
+            if not variations.strip():
+                variations = current_variations_in_db or 'Standard'
 
-        if product:
-            # Redirect to products page where the edit modal can be opened
-            flash(f'Edit product "{product["name"]}" using the edit button on the products page.', 'info')
+            # ── Parse current color updates ───────────────────────────────
+            current_color_updates = {}
+            if current_image_color_updates:
+                for mapping in current_image_color_updates.split(','):
+                    if ':' in mapping:
+                        img_name, color_name = mapping.split(':', 1)
+                        current_color_updates[img_name.strip()] = color_name.strip()
+
+            # ── Build final image + color lists ───────────────────────────
+            final_images = []
+            final_image_colors = []
+
+            for img in current_images:
+                if img not in images_to_remove_list:
+                    final_images.append(img)
+                    if img in current_color_updates:
+                        final_image_colors.append(f"{img}:{current_color_updates[img]}")
+                    else:
+                        existing_color = 'Unknown Color'
+                        if current_image_colors_string:
+                            for cm in current_image_colors_string.split(','):
+                                if ':' in cm:
+                                    ei, ec = cm.split(':', 1)
+                                    if ei.strip() == img:
+                                        existing_color = ec.strip()
+                                        break
+                        final_image_colors.append(f"{img}:{existing_color}")
+
+            # Delete removed images from filesystem (non-fatal)
+            for img_to_remove in images_to_remove_list:
+                if img_to_remove in current_images:
+                    img_path = os.path.join(app.config['UPLOAD_FOLDER'], img_to_remove)
+                    try:
+                        if os.path.exists(img_path):
+                            os.remove(img_path)
+                    except Exception:
+                        pass
+
+            # ── Handle new image uploads ──────────────────────────────────
+            if 'image' in request.files:
+                files = [f for f in request.files.getlist('image') if f.filename]
+                if files:
+                    new_image_colors = request.form.getlist('edit_image_colors[]')
+                    saved_filenames = []
+                    for i, file in enumerate(files):
+                        if file and allowed_file(file.filename):
+                            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            rnd = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+                            filename = f"{ts}_{rnd}_{secure_filename(file.filename)}"
+                            try:
+                                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                                saved_filenames.append(filename)
+                                color_name = new_image_colors[i].strip() if i < len(new_image_colors) else 'Default'
+                                final_image_colors.append(f"{filename}:{color_name}")
+                            except Exception as fe:
+                                flash(f'Error saving file: {str(fe)}', 'error')
+                                return redirect(url_for('products'))
+                    final_images.extend(saved_filenames)
+
+            # ── Auto-sync variations with image colors ────────────────────
+            if color_option_type == 'no_colors':
+                variations = 'Standard'
+            elif final_image_colors:
+                auto_variations = []
+                for cm in final_image_colors:
+                    if ':' in cm:
+                        _, cn = cm.split(':', 1)
+                        cn = cn.strip()
+                        if cn and cn not in auto_variations:
+                            auto_variations.append(cn)
+                variations = ', '.join(auto_variations) if auto_variations else 'Standard'
+            else:
+                variations = 'Standard'
+
+            images_string       = ','.join(final_images)
+            image_colors_string = ','.join(final_image_colors)
+
+            # ── Update product in Supabase ────────────────────────────────
+            update_data = {
+                'name':                name,
+                'category':            category,
+                'description':         description,
+                'variations':          variations or current_variations_in_db or 'Standard',
+                'price':               price,
+                'quantity':            quantity,
+                'low_stock_threshold': low_stock_threshold,
+                'sizes':               updated_sizes or current_sizes_in_db or 'One Size',
+                'image':               images_string,
+                'image_colors':        image_colors_string,
+            }
+
+            sb_admin.table('products') \
+                .update(update_data) \
+                .eq('id', product_id) \
+                .eq('seller_email', seller_email) \
+                .execute()
+
+            print(f"✅ Product {product_id} updated in Supabase")
+
+            # ── Update variant_inventory in Supabase (non-fatal) ──────────
+            try:
+                variations_list = [v.strip() for v in variations.split(',') if v.strip()]
+                sizes_list      = [s.strip() for s in updated_sizes.split(',') if s.strip()]
+                total_variants  = len(variations_list) * len(sizes_list)
+                stock_per_variant = quantity // total_variants if total_variants > 0 else quantity
+
+                for color in variations_list:
+                    for size in sizes_list:
+                        existing = sb_admin.table('variant_inventory') \
+                            .select('id') \
+                            .eq('product_id', product_id) \
+                            .eq('color', color) \
+                            .eq('size', size) \
+                            .limit(1).execute()
+
+                        if existing.data:
+                            sb_admin.table('variant_inventory').update({
+                                'stock_quantity': stock_per_variant,
+                            }).eq('id', existing.data[0]['id']).execute()
+                        else:
+                            sb_admin.table('variant_inventory').insert({
+                                'product_id':          product_id,
+                                'color':               color,
+                                'size':                size,
+                                'stock_quantity':      stock_per_variant,
+                                'low_stock_threshold': low_stock_threshold,
+                            }).execute()
+
+                print(f"✅ Variant inventory updated for product {product_id}")
+            except Exception as vi_err:
+                print(f"⚠️ Variant inventory update failed (non-fatal): {vi_err}")
+
+            # ── Stock notifications (non-fatal) ───────────────────────────
+            try:
+                check_and_notify_stock_levels(
+                    product_id=product_id,
+                    seller_email=seller_email,
+                    new_quantity=quantity,
+                    threshold=low_stock_threshold,
+                    product_name=name,
+                )
+            except Exception:
+                pass
+
+            flash('Product updated successfully!', 'success')
             return redirect(url_for('products'))
+
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            flash(f'Error updating product: {str(e)}', 'error')
+            return redirect(url_for('products'))
+
+    # GET — redirect to products page (editing is done via modal)
+    try:
+        prod_res = sb_admin.table('products') \
+            .select('name') \
+            .eq('id', product_id) \
+            .eq('seller_email', seller_email) \
+            .limit(1).execute()
+        if prod_res.data:
+            flash(f'Edit product "{prod_res.data[0]["name"]}" using the edit button on the products page.', 'info')
         else:
             flash('Product not found or you do not have permission to edit it.', 'error')
-            return redirect(url_for('products'))
-
     except Exception as e:
         flash(f'Error loading product: {str(e)}', 'error')
-        return redirect(url_for('products'))
+    return redirect(url_for('products'))
 
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
 @app.route('/debug_form_data/<int:product_id>', methods=['POST'])
 def debug_form_data(product_id):
@@ -7139,6 +6845,31 @@ def get_product_variant_stock(product_id):
 
     except Exception as e:
         print(f"❌ Error fetching variant stock from Supabase: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/mobile/seller_info', methods=['GET'])
+def mobile_seller_info():
+    """Return seller business_name and profile_picture for a given seller email."""
+    seller_email = request.args.get('email', '').strip()
+    if not seller_email:
+        return jsonify({'success': False, 'error': 'email required'}), 400
+    try:
+        res = sb_admin.table('users') \
+            .select('business_name, first_name, last_name, profile_picture') \
+            .eq('email', seller_email) \
+            .limit(1) \
+            .execute()
+        if not res.data:
+            return jsonify({'success': False, 'error': 'not found'}), 404
+        u = res.data[0]
+        biz   = (u.get('business_name') or '').strip()
+        first = (u.get('first_name') or '').strip()
+        last  = (u.get('last_name') or '').strip()
+        name  = biz if biz else f"{first} {last}".strip() or seller_email
+        pic   = u.get('profile_picture') or ''
+        return jsonify({'success': True, 'name': name, 'profile_picture': pic})
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -13043,7 +12774,17 @@ def checkout_route():
 
         # ── PRIMARY: Supabase ──────────────────────────────────────────────
         try:
-            int_ids = [int(i) for i in selected_ids]
+            # IDs from the cart may be strings or ints — handle both
+            int_ids = []
+            for i in selected_ids:
+                try:
+                    int_ids.append(int(i))
+                except (ValueError, TypeError):
+                    print(f"⚠️ checkout_route: skipping non-integer id: {i!r}")
+
+            if not int_ids:
+                return jsonify(success=False, error="No valid item IDs provided"), 400
+
             cart_res = sb_admin.table('cart') \
                 .select('id, name, price, quantity, variations, size, image, seller_email, product_id') \
                 .in_('id', int_ids) \
@@ -13051,7 +12792,12 @@ def checkout_route():
                 .execute()
 
             cart_items = cart_res.data or []
+            print(f"DEBUG checkout_route: queried ids={int_ids}, found {len(cart_items)} items")
+
             if not cart_items:
+                # Try fetching all cart items to debug
+                all_cart = sb_admin.table('cart').select('id, email').eq('email', user_email).execute()
+                print(f"DEBUG checkout_route: all cart items for {user_email}: {[r['id'] for r in (all_cart.data or [])]}")
                 return jsonify(success=False, error="No items found in cart"), 404
 
             # Resolve color-specific images from product image_colors
@@ -13144,10 +12890,12 @@ def checkout_route():
 
         except Exception as sb_err:
             print(f"⚠️ checkout_route Supabase failed: {sb_err}")
-            return jsonify(success=False, error="Failed to process checkout. Please try again."), 500
+            import traceback; traceback.print_exc()
+            return jsonify(success=False, error=f"Failed to process checkout: {str(sb_err)}"), 500
 
     except Exception as e:
         print(f"checkout_route error: {e}")
+        import traceback; traceback.print_exc()
         return jsonify(success=False, error=f"Unexpected error: {str(e)}"), 500
 
 @app.route('/checkout')
@@ -13497,64 +13245,93 @@ def checkout():
 @app.route('/return_to_cart', methods=['POST'])
 def return_to_cart():
     selected_ids = request.json.get('ids')
-    user_email = session.get('email')  # Get the email from the session
+    user_email = session.get('email')
 
     if not selected_ids:
         return jsonify(success=False, error="No items selected to return to the cart"), 400
 
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-
     try:
-        # First, check if items exist in checkout
-        format_strings = ', '.join(['%s'] * len(selected_ids))
-        cursor.execute(
-            f"SELECT * FROM checkout WHERE id IN ({format_strings}) AND email = %s",
-            tuple(selected_ids + [user_email])
-        )
-        checkout_items = cursor.fetchall()
+        selected_id_set = {str(i) for i in selected_ids}
+
+        # ── Read checkout items from session (primary source) ─────────────
+        session_items = session.get('checkout_items') or []
+        checkout_items = [i for i in session_items if str(i.get('id')) in selected_id_set]
+
+        # ── Fallback: try Supabase checkout table ─────────────────────────
+        if not checkout_items:
+            try:
+                int_ids = [int(i) for i in selected_ids]
+                co_res = sb_admin.table('checkout') \
+                    .select('*') \
+                    .in_('id', int_ids) \
+                    .eq('email', user_email) \
+                    .execute()
+                checkout_items = co_res.data or []
+            except Exception as sb_err:
+                print(f"⚠️ return_to_cart Supabase fallback failed: {sb_err}")
 
         if not checkout_items:
             return jsonify(success=False, error="No items found to return to the cart"), 400
 
-        # For each item, check if it exists in cart and handle accordingly
+        # ── Move each item back to cart ───────────────────────────────────
         for item in checkout_items:
-            # Check if item already exists in cart
-            cursor.execute(
-                "SELECT id FROM cart WHERE id = %s AND email = %s",
-                (item['id'], user_email)
-            )
-            existing_item = cursor.fetchone()
+            product_id = item.get('product_id')
+            color      = item.get('variations') or ''
+            size       = item.get('size') or ''
+            qty        = int(item.get('quantity') or 1)
 
-            if not existing_item:
-                # If item doesn't exist in cart, insert it
-                cursor.execute(
-                    """
-                    INSERT INTO cart 
-                    (name, price, quantity, variations, image, size, email, seller_email, product_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (item['name'], item['price'], item['quantity'],
-                     item['variations'], item['image'], item['size'],
-                     user_email, item['seller_email'], item['product_id'])
-                )
+            # Check if same product+color+size already in cart
+            # (the original cart row may still exist — just restore its quantity)
+            existing_res = sb_admin.table('cart') \
+                .select('id, quantity') \
+                .eq('email', user_email) \
+                .eq('product_id', product_id) \
+                .eq('variations', color) \
+                .eq('size', size) \
+                .limit(1).execute()
 
-        # Remove items from checkout
-        cursor.execute(
-            f"DELETE FROM checkout WHERE id IN ({format_strings}) AND email = %s",
-            tuple(selected_ids + [user_email])
-        )
+            if existing_res.data:
+                # Item still in cart — restore to the checkout quantity (don't add)
+                sb_admin.table('cart') \
+                    .update({'quantity': qty}) \
+                    .eq('id', existing_res.data[0]['id']) \
+                    .execute()
+            else:
+                # Item was removed from cart — re-insert it
+                sb_admin.table('cart').insert({
+                    'email':        user_email,
+                    'product_id':   product_id,
+                    'name':         item.get('name', ''),
+                    'price':        item.get('price', 0),
+                    'quantity':     qty,
+                    'variations':   color,
+                    'size':         size,
+                    'image':        item.get('image', ''),
+                    'seller_email': item.get('seller_email', ''),
+                }).execute()
 
-        connection.commit()
+        # ── Clear checkout session ────────────────────────────────────────
+        session.pop('checkout_items', None)
+        session.pop('checkout_source', None)
+        session.modified = True
+
+        # ── Also clean up Supabase checkout table if it exists ────────────
+        try:
+            int_ids = [int(i) for i in selected_ids]
+            sb_admin.table('checkout') \
+                .delete() \
+                .in_('id', int_ids) \
+                .eq('email', user_email) \
+                .execute()
+        except Exception:
+            pass
+
         return jsonify(success=True)
 
-    except mysql.connector.Error as err:
-        connection.rollback()
-        print(f"Database error: {err}")  # For debugging
-        return jsonify(success=False, error=f"Error occurred while returning items: {err}"), 500
-    finally:
-        cursor.close()
-        connection.close()
+    except Exception as e:
+        print(f"return_to_cart error: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify(success=False, error=str(e)), 500
 
 @app.route('/checkout/delete/<int:item_id>', methods=['POST'])
 def delete_checkout_item(item_id):
@@ -13582,344 +13359,241 @@ def confirm_order():
         frontend_items = data.get('items', [])
         payment_method = data.get('payment_method')
         user_email = session.get('email')
-        
-        # Get shipping information from frontend
-        subtotal = data.get('subtotal', 0)
-        shipping_fee = data.get('shipping_fee', 0)
-        final_total = data.get('final_total', 0)
-        has_free_shipping = data.get('has_free_shipping', False)
+
+        subtotal    = float(data.get('subtotal', 0))
+        shipping_fee = float(data.get('shipping_fee', 0))
+        final_total  = float(data.get('final_total', 0))
 
         if not frontend_items or not payment_method or not user_email:
             return jsonify({"success": False, "error": "Missing required data"})
 
-        # Debug shipping information
-        print(f"DEBUG - Order confirmation with shipping:")
-        print(f"  Subtotal: ₱{subtotal:.2f}")
-        print(f"  Shipping Fee: ₱{shipping_fee:.2f}")
-        print(f"  Final Total: ₱{final_total:.2f}")
-        print(f"  Has Free Shipping: {has_free_shipping}")
-        print(f"  Payment Method: {payment_method}")
+        print(f"DEBUG confirm_order: subtotal={subtotal} shipping={shipping_fee} total={final_total} method={payment_method}")
 
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
+        # ── 1. Fetch checkout items from session (primary) or Supabase ──────
+        checkout_item_ids = [int(item['id']) for item in frontend_items]
+        id_set = {str(i) for i in checkout_item_ids}
 
-        try:
-            # Start transaction
-            connection.start_transaction()
+        # Read from session first (checkout_route stores items here)
+        session_items = session.get('checkout_items') or []
+        checkout_items = [i for i in session_items if str(i.get('id')) in id_set]
 
-            # Get the actual checkout items from database to ensure data integrity
-            checkout_item_ids = [item['id'] for item in frontend_items]
-            format_strings = ', '.join(['%s'] * len(checkout_item_ids))
-            cursor.execute(
-                f"SELECT * FROM checkout WHERE id IN ({format_strings}) AND email = %s",
-                tuple(checkout_item_ids + [user_email])
-            )
-            checkout_items = cursor.fetchall()
+        # Fallback: try Supabase checkout table
+        if not checkout_items:
+            try:
+                co_res = sb_admin.table('checkout') \
+                    .select('*') \
+                    .in_('id', checkout_item_ids) \
+                    .eq('email', user_email) \
+                    .execute()
+                checkout_items = co_res.data or []
+            except Exception as co_err:
+                print(f"⚠️ confirm_order: Supabase checkout fallback failed: {co_err}")
 
-            if len(checkout_items) != len(frontend_items):
-                raise Exception("Mismatch between frontend items and database checkout items")
+        if len(checkout_items) != len(frontend_items):
+            raise Exception(f"Checkout item mismatch: expected {len(frontend_items)}, got {len(checkout_items)}")
 
-            # Create a mapping of frontend items for additional data like itemTotal
-            frontend_item_map = {item['id']: item for item in frontend_items}
+        frontend_item_map = {str(item['id']): item for item in frontend_items}
 
-            for checkout_item in checkout_items:
-                frontend_item = frontend_item_map.get(str(checkout_item['id']))
-                if not frontend_item:
-                    raise Exception(f"Frontend item not found for checkout item {checkout_item['id']}")
+        # ── 2. Process each item ──────────────────────────────────────────
+        for checkout_item in checkout_items:
+            frontend_item = frontend_item_map.get(str(checkout_item['id']))
+            if not frontend_item:
+                raise Exception(f"Frontend item not found for checkout id {checkout_item['id']}")
 
-                # Debug: Print checkout item data (this is the source of truth)
-                print(f"DEBUG - Processing checkout item: {checkout_item}")
-                print(f"DEBUG - checkout product_id: '{checkout_item.get('product_id', '')}'")
-                print(f"DEBUG - checkout size: '{checkout_item.get('size', '')}'")
-                print(f"DEBUG - checkout variations: '{checkout_item.get('variations', '')}'")
-                
-                # Get current product quantity using id field
-                cursor.execute("SELECT quantity FROM products WHERE id = %s", (checkout_item.get('product_id', ''),))
-                product = cursor.fetchone()
-                
-                if not product:
-                    # Try to find product by name as fallback
-                    cursor.execute("SELECT id, quantity FROM products WHERE name = %s", (checkout_item['name'],))
-                    product = cursor.fetchone()
-                    if product:
-                        print(f"DEBUG - Found product by name: {product}")
-                        # Update the product_id for this item
-                        checkout_item['product_id'] = str(product['id'])
-                    else:
-                        raise Exception(f"Product not found: {checkout_item['name']} (product_id: {checkout_item.get('product_id', 'empty')})")
-                
-                current_quantity = int(product['quantity'])
-                new_quantity = current_quantity - int(checkout_item['quantity'])
-                
-                if new_quantity < 0:
-                    raise Exception(f"Insufficient quantity for product: {checkout_item['name']}")
-                
-                # Update product quantity and increment sold count using id field
-                product_id_to_use = checkout_item.get('product_id', '')
-                print(f"DEBUG - Updating product with ID: {product_id_to_use}")
-                cursor.execute("UPDATE products SET quantity = %s, sold = COALESCE(sold, 0) + %s WHERE id = %s", 
-                             (new_quantity, int(checkout_item['quantity']), product_id_to_use))
-                
-                # Get product threshold for notification check
-                cursor.execute("SELECT low_stock_threshold FROM products WHERE id = %s", (product_id_to_use,))
-                threshold_result = cursor.fetchone()
-                product_threshold = int(threshold_result['low_stock_threshold']) if threshold_result and threshold_result['low_stock_threshold'] else 5
-                
-                # Check and notify for main product stock levels
-                check_and_notify_stock_levels(
-                    product_id=product_id_to_use,
-                    seller_email=checkout_item['seller_email'],
-                    new_quantity=new_quantity,
-                    threshold=product_threshold,
-                    product_name=checkout_item['name'],
-                    variant_info=None
-                )
-                
-                # Update variant inventory if color and size are specified
-                order_color = checkout_item.get('variations', '').strip()
-                order_size = checkout_item.get('size', '').strip()
-                
-                if order_color and order_size:
-                    print(f"DEBUG - Updating variant inventory: Color={order_color}, Size={order_size}")
-                    
-                    # Check if variant exists
-                    cursor.execute("""
-                        SELECT stock_quantity, low_stock_threshold FROM variant_inventory
-                        WHERE product_id = %s AND color = %s AND size = %s
-                    """, (product_id_to_use, order_color, order_size))
-                    
-                    variant = cursor.fetchone()
-                    
-                    if variant:
-                        variant_stock = int(variant['stock_quantity'])
-                        new_variant_stock = variant_stock - int(checkout_item['quantity'])
-                        variant_threshold = int(variant['low_stock_threshold']) if variant.get('low_stock_threshold') else 5
-                        
-                        if new_variant_stock < 0:
-                            raise Exception(f"Insufficient stock for {checkout_item['name']} - {order_color}/{order_size}")
-                        
-                        # Update variant stock
-                        cursor.execute("""
-                            UPDATE variant_inventory
-                            SET stock_quantity = %s, updated_at = NOW()
-                            WHERE product_id = %s AND color = %s AND size = %s
-                        """, (new_variant_stock, product_id_to_use, order_color, order_size))
-                        
-                        print(f"DEBUG - Variant stock updated: {variant_stock} -> {new_variant_stock}")
-                        
-                        # Check and notify for variant stock levels
-                        check_and_notify_stock_levels(
-                            product_id=product_id_to_use,
-                            seller_email=checkout_item['seller_email'],
-                            new_quantity=new_variant_stock,
-                            threshold=variant_threshold,
-                            product_name=checkout_item['name'],
-                            variant_info={'color': order_color, 'size': order_size}
-                        )
-                    else:
-                        print(f"WARNING - Variant not found in inventory: {order_color}/{order_size}")
+            product_id_raw = checkout_item.get('product_id') or ''
+            try:
+                product_id_int = int(product_id_raw)
+            except (ValueError, TypeError):
+                product_id_int = None
+
+            # ── Fetch product from Supabase ───────────────────────────────
+            product = None
+            if product_id_int:
+                p_res = sb_admin.table('products') \
+                    .select('id, quantity, sold, low_stock_threshold, seller_email') \
+                    .eq('id', product_id_int) \
+                    .limit(1).execute()
+                if p_res.data:
+                    product = p_res.data[0]
+
+            if not product:
+                # Fallback: find by name
+                p_res2 = sb_admin.table('products') \
+                    .select('id, quantity, sold, low_stock_threshold, seller_email') \
+                    .eq('name', checkout_item['name']) \
+                    .limit(1).execute()
+                if p_res2.data:
+                    product = p_res2.data[0]
+                    product_id_int = product['id']
+                    checkout_item['product_id'] = str(product_id_int)
                 else:
-                    print(f"DEBUG - No variant info (Color: '{order_color}', Size: '{order_size}')")
+                    raise Exception(f"Product not found: {checkout_item['name']}")
 
-                # Calculate item's share of shipping fee (proportional to item total)
-                item_shipping_share = 0
-                if shipping_fee > 0 and subtotal > 0:
-                    item_shipping_share = (frontend_item['itemTotal'] / subtotal) * shipping_fee
-                
-                # Store only the product price (without shipping) in total_price
-                item_product_price = frontend_item['itemTotal']
-                
-                # Get shipping fee from checkout item (0 for free shipping, 50 for regular)
-                item_shipping_fee = float(checkout_item.get('shipping_fee', 50))
-                
-                # Insert into orders table using checkout data (source of truth)
-                cursor.execute("""
-                    INSERT INTO orders (
-                        name,
-                        quantity,
-                        total_price,
-                        payment_method,
-                        status,
-                        email,
-                        address,
-                        seller_email,
-                        image,
-                        variations,
-                        size,
-                        date,
-                        product_id,
-                        shipping_fee
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s)
-                """, (
-                    checkout_item['name'],
-                    checkout_item['quantity'],
-                    item_product_price,  # Store only product price (without shipping)
-                    payment_method,
-                    'Pending',
-                    user_email,
-                    session.get('address', ''),  # Add address from session
-                    checkout_item['seller_email'],
-                    checkout_item['image'],
-                    checkout_item.get('variations', ''),  # Use checkout data
-                    checkout_item.get('size', ''),        # Use checkout data
-                    checkout_item.get('product_id', ''),
-                    item_shipping_fee  # Add shipping fee from checkout
-                ))
-                
-                print(f"DEBUG - Order item: {checkout_item['name']}")
-                print(f"  Product Price (stored): ₱{item_product_price:.2f}")
-                print(f"  Shipping Fee (stored): ₱{item_shipping_fee:.2f}")
-                print(f"  Shipping Share: ₱{item_shipping_share:.2f}")
-                print(f"  Total with Shipping: ₱{item_product_price + item_shipping_share:.2f}")
+            current_qty = int(product.get('quantity') or 0)
+            order_qty   = int(checkout_item.get('quantity') or 1)
+            new_qty     = current_qty - order_qty
 
-                # Record promotion usage if applicable
-                # Check if this item has an active promotion
-                product_id = checkout_item.get('product_id', '')
-                seller_email = checkout_item.get('seller_email', '')
-                
-                if product_id and seller_email:
-                    try:
-                        # Get the product's original price from the products table
-                        cursor.execute("SELECT price FROM products WHERE id = %s", (product_id,))
-                        product_data = cursor.fetchone()
-                        product_original_price = float(product_data['price']) if product_data else 0.0
-                        
-                        # Get active promotion for this product
-                        active_promotion = get_active_promotions_for_product(product_id, seller_email, '')
-                        
-                        if active_promotion:
-                            # Calculate discount applied for this item
-                            # Use product's original price from database
-                            original_price = product_original_price
-                            # Current price is what's stored in checkout (after discount)
-                            current_price = float(checkout_item.get('price', 0))
-                            quantity = int(checkout_item['quantity'])
-                            
-                            # Calculate discount per item and total discount
-                            discount_per_item = max(0, original_price - current_price)
-                            total_discount_applied = discount_per_item * quantity
-                            
-                            print(f"DEBUG - Discount Calculation:")
-                            print(f"  Original Price: ₱{original_price:.2f}")
-                            print(f"  Current Price: ₱{current_price:.2f}")
-                            print(f"  Quantity: {quantity}")
-                            print(f"  Discount Per Item: ₱{discount_per_item:.2f}")
-                            print(f"  Total Discount: ₱{total_discount_applied:.2f}")
-                            
-                            # For free shipping and BOGO, record usage even if no monetary discount
-                            should_record_usage = False
-                            
-                            if active_promotion['type'] in ['free_shipping', 'buy_one_get_one']:
-                                # Always record usage for these promotion types
-                                should_record_usage = True
-                                # For free shipping, set a nominal discount value for tracking
-                                if active_promotion['type'] == 'free_shipping' and total_discount_applied == 0:
-                                    total_discount_applied = 50.0  # Nominal shipping fee saved
-                            elif total_discount_applied > 0:
-                                # For percentage and fixed discounts, only record if there's actual discount
-                                should_record_usage = True
-                            
-                            # Record usage if applicable
-                            if should_record_usage:
-                                # Record promotion usage
-                                cursor.execute("""
-                                    INSERT INTO promotion_usage (
-                                        promotion_id,
-                                        customer_email,
-                                        order_id,
-                                        product_id,
-                                        discount_applied,
-                                        used_at
-                                    ) VALUES (%s, %s, LAST_INSERT_ID(), %s, %s, NOW())
-                                """, (
-                                    active_promotion['id'],
-                                    user_email,
-                                    product_id,
-                                    total_discount_applied
-                                ))
-                                
-                                # Increment the current_usage_count in promotions table
-                                cursor.execute("""
-                                    UPDATE promotions 
-                                    SET current_usage_count = current_usage_count + 1 
-                                    WHERE id = %s
-                                """, (active_promotion['id'],))
-                                
-                                print(f"DEBUG - Recorded promotion usage:")
-                                print(f"  Promotion ID: {active_promotion['id']}")
-                                print(f"  Promotion Type: {active_promotion['type']}")
-                                print(f"  Customer: {user_email}")
-                                print(f"  Product ID: {product_id}")
-                                print(f"  Discount Applied: ₱{total_discount_applied:.2f}")
-                                print(f"  Updated current_usage_count in promotions table")
-                        
-                    except Exception as promo_error:
-                        print(f"Warning: Failed to record promotion usage: {promo_error}")
-                        # Don't fail the entire order if promotion tracking fails
+            if new_qty < 0:
+                raise Exception(f"Insufficient stock for: {checkout_item['name']}")
 
-                # Remove from checkout
-                cursor.execute("DELETE FROM checkout WHERE id = %s AND email = %s", 
-                             (checkout_item['id'], user_email))
+            # ── Update product quantity + sold ────────────────────────────
+            sb_admin.table('products').update({
+                'quantity': new_qty,
+                'sold': int(product.get('sold') or 0) + order_qty,
+            }).eq('id', product_id_int).execute()
 
-            # Commit transaction
-            connection.commit()
-            
-            # Send email notifications to sellers
-            # Group orders by seller email
-            seller_orders = {}
-            for checkout_item in checkout_items:
-                frontend_item = frontend_item_map.get(str(checkout_item['id']))
-                seller_email = checkout_item['seller_email']
-                
-                if seller_email not in seller_orders:
-                    seller_orders[seller_email] = []
-                
-                # Create order detail for email
-                order_detail = {
-                    'name': checkout_item['name'],
-                    'quantity': checkout_item['quantity'],
-                    'total_price': frontend_item['itemTotal'],
-                    'variations': checkout_item.get('variations', ''),
-                    'size': checkout_item.get('size', ''),
-                    'email': user_email,
-                    'address': session.get('address', ''),
-                    'payment_method': payment_method
-                }
-                seller_orders[seller_email].append(order_detail)
-            
-            # Send email and create notifications for each seller
-            for seller_email, orders in seller_orders.items():
+            product_threshold = int(product.get('low_stock_threshold') or 5)
+            check_and_notify_stock_levels(
+                product_id=str(product_id_int),
+                seller_email=checkout_item.get('seller_email', ''),
+                new_quantity=new_qty,
+                threshold=product_threshold,
+                product_name=checkout_item['name'],
+                variant_info=None,
+            )
+
+            # ── Update variant inventory ──────────────────────────────────
+            order_color = (checkout_item.get('variations') or '').strip()
+            order_size  = (checkout_item.get('size') or '').strip()
+
+            if order_color and order_size and product_id_int:
+                vi_res = sb_admin.table('variant_inventory') \
+                    .select('id, stock_quantity, low_stock_threshold') \
+                    .eq('product_id', product_id_int) \
+                    .eq('color', order_color) \
+                    .eq('size', order_size) \
+                    .limit(1).execute()
+
+                if vi_res.data:
+                    vi = vi_res.data[0]
+                    v_stock     = int(vi.get('stock_quantity') or 0)
+                    new_v_stock = v_stock - order_qty
+                    v_threshold = int(vi.get('low_stock_threshold') or 5)
+
+                    if new_v_stock < 0:
+                        raise Exception(f"Insufficient variant stock for {checkout_item['name']} ({order_color}/{order_size})")
+
+                    sb_admin.table('variant_inventory').update({
+                        'stock_quantity': new_v_stock,
+                    }).eq('id', vi['id']).execute()
+
+                    check_and_notify_stock_levels(
+                        product_id=str(product_id_int),
+                        seller_email=checkout_item.get('seller_email', ''),
+                        new_quantity=new_v_stock,
+                        threshold=v_threshold,
+                        product_name=checkout_item['name'],
+                        variant_info={'color': order_color, 'size': order_size},
+                    )
+
+            # ── Insert order into Supabase orders table ───────────────────
+            item_product_price = float(frontend_item.get('itemTotal', 0))
+            item_shipping_fee  = float(checkout_item.get('shipping_fee', 50))
+
+            # Resolve delivery address
+            delivery_address = session.get('address', '')
+            if not delivery_address:
                 try:
-                    # Send email notification
-                    send_order_notification_email(seller_email, orders)
-                    print(f"✅ Order notification email sent to seller: {seller_email}")
-                except Exception as email_error:
-                    print(f"❌ Failed to send email to seller {seller_email}: {str(email_error)}")
-                    # Don't fail the entire order if email fails
-                
-                try:
-                    # Create database notification
-                    create_order_notification(seller_email, orders)
-                    print(f"✅ Database notification created for seller: {seller_email}")
-                except Exception as db_error:
-                    print(f"❌ Failed to create database notification for seller {seller_email}: {str(db_error)}")
-                    # Don't fail the entire order if notification creation fails
-            
-            # Clear the checkout source session flag
-            session.pop('checkout_source', None)
-            
-            return jsonify({"success": True})
+                    addr_res = sb_admin.table('users') \
+                        .select('house_street, barangay, city, province, region, zip_code') \
+                        .eq('email', user_email).limit(1).execute()
+                    if addr_res.data:
+                        u = addr_res.data[0]
+                        parts = [u.get('house_street',''), u.get('barangay',''),
+                                 u.get('city',''), u.get('province',''),
+                                 u.get('region',''), u.get('zip_code','')]
+                        delivery_address = ', '.join(p for p in parts if p)
+                except Exception:
+                    pass
 
-        except Exception as e:
-            connection.rollback()
-            raise e
+            order_row = {
+                'name':           checkout_item['name'],
+                'quantity':       order_qty,
+                'total_price':    item_product_price,
+                'payment_method': payment_method,
+                'status':         'Pending',
+                'email':          user_email,
+                'address':        delivery_address,
+                'seller_email':   checkout_item.get('seller_email', ''),
+                'image':          checkout_item.get('image', ''),
+                'variations':     checkout_item.get('variations', ''),
+                'size':           checkout_item.get('size', ''),
+                'product_id':     product_id_int,
+                'shipping_fee':   item_shipping_fee,
+            }
+            order_res = sb_admin.table('orders').insert(order_row).execute()
+            new_order_id = (order_res.data or [{}])[0].get('id')
+
+            print(f"✅ Order inserted id={new_order_id} item={checkout_item['name']} price={item_product_price}")
+
+            # ── Record promotion usage (non-fatal) ────────────────────────
+            if product_id_int and checkout_item.get('seller_email'):
+                try:
+                    p_price_res = sb_admin.table('products').select('price').eq('id', product_id_int).limit(1).execute()
+                    orig_price = float((p_price_res.data or [{}])[0].get('price', 0))
+                    active_promo = get_active_promotions_for_product(
+                        str(product_id_int), checkout_item['seller_email'], '')
+                    if active_promo and new_order_id:
+                        curr_price = float(checkout_item.get('price', 0))
+                        disc_per_item = max(0.0, orig_price - curr_price)
+                        total_disc = disc_per_item * order_qty
+                        if active_promo['type'] == 'free_shipping' and total_disc == 0:
+                            total_disc = 50.0
+                        if total_disc > 0 or active_promo['type'] in ['free_shipping', 'buy_one_get_one']:
+                            sb_admin.table('promotion_usage').insert({
+                                'promotion_id':    active_promo['id'],
+                                'customer_email':  user_email,
+                                'order_id':        new_order_id,
+                                'product_id':      str(product_id_int),
+                                'discount_applied': total_disc,
+                            }).execute()
+                except Exception as promo_err:
+                    print(f"⚠️ Promotion usage record failed (non-fatal): {promo_err}")
+
+            # ── Remove from checkout ──────────────────────────────────────
+            sb_admin.table('checkout') \
+                .delete() \
+                .eq('id', checkout_item['id']) \
+                .eq('email', user_email) \
+                .execute()
+
+        # ── 3. Send seller notifications (non-fatal) ──────────────────────
+        seller_orders: dict = {}
+        for checkout_item in checkout_items:
+            fe = frontend_item_map.get(str(checkout_item['id']), {})
+            s_email = checkout_item.get('seller_email', '')
+            if s_email not in seller_orders:
+                seller_orders[s_email] = []
+            seller_orders[s_email].append({
+                'name':           checkout_item['name'],
+                'quantity':       checkout_item.get('quantity', 1),
+                'total_price':    fe.get('itemTotal', 0),
+                'variations':     checkout_item.get('variations', ''),
+                'size':           checkout_item.get('size', ''),
+                'email':          user_email,
+                'address':        session.get('address', ''),
+                'payment_method': payment_method,
+            })
+
+        for s_email, orders in seller_orders.items():
+            try:
+                send_order_notification_email(s_email, orders)
+            except Exception as e:
+                print(f"⚠️ Email to {s_email} failed (non-fatal): {e}")
+            try:
+                _create_order_notification_supabase(s_email, orders)
+            except Exception as e:
+                print(f"⚠️ Notification for {s_email} failed (non-fatal): {e}")
+
+        session.pop('checkout_source', None)
+        session.pop('checkout_items', None)
+        session.modified = True
+        return jsonify({"success": True})
 
     except Exception as e:
-        print(f"Error in confirm_order: {str(e)}")
+        print(f"❌ confirm_order error: {e}")
+        import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)})
-    finally:
-        cursor.close()
-        connection.close()
 
 @app.route('/orders')
 def orders():
@@ -15493,70 +15167,70 @@ def delete_product(product_id):
         if request.is_json or request.headers.get('Content-Type') == 'application/json':
             return jsonify({'success': False, 'error': 'Not logged in'}), 401
         return redirect(url_for('home'))
-    
+
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if user is admin
-        cursor.execute("SELECT user_type FROM users WHERE email = %s", (session['email'],))
-        user = cursor.fetchone()
-        is_admin = user and user['user_type'].lower() == 'admin'
-        
-        # Get the product details
+        seller_email = session['email']
+        is_admin = session.get('user_type', '').lower() == 'admin'
+
+        # Fetch product from Supabase
         if is_admin:
-            # Admin can delete any product
-            cursor.execute("SELECT image FROM products WHERE id = %s", (product_id,))
+            prod_res = sb_admin.table('products') \
+                .select('id, image, seller_email') \
+                .eq('id', product_id) \
+                .limit(1).execute()
         else:
-            # Seller can only delete their own products
-            cursor.execute("SELECT image FROM products WHERE id = %s AND seller_email = %s", 
-                          (product_id, session['email']))
-        
-        product = cursor.fetchone()
-        
-        if product:
-            # Delete the product from database
-            if is_admin:
-                cursor.execute("DELETE FROM products WHERE id = %s", (product_id,))
-            else:
-                cursor.execute("DELETE FROM products WHERE id = %s AND seller_email = %s", 
-                             (product_id, session['email']))
-            connection.commit()
-            
-            # Delete the image files if they exist (handle multiple images)
-            if product.get('image'):
-                # Split comma-separated image filenames
-                image_filenames = [img.strip() for img in product['image'].split(',') if img.strip()]
-                
-                for image_filename in image_filenames:
-                    image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-                    if os.path.exists(image_path):
-                        try:
-                            os.remove(image_path)
-                            print(f"Deleted image file: {image_filename}")
-                        except Exception as e:
-                            print(f"Error deleting image file {image_filename}: {e}")
-            
-            # Return JSON for AJAX requests
-            if request.is_json or request.headers.get('Content-Type') == 'application/json':
-                return jsonify({'success': True, 'message': 'Product deleted successfully'})
-            
-            flash('Product deleted successfully!', 'success')
-        else:
+            prod_res = sb_admin.table('products') \
+                .select('id, image, seller_email') \
+                .eq('id', product_id) \
+                .eq('seller_email', seller_email) \
+                .limit(1).execute()
+
+        if not prod_res.data:
             if request.is_json or request.headers.get('Content-Type') == 'application/json':
                 return jsonify({'success': False, 'error': 'Product not found or permission denied'}), 404
             flash('Product not found or you do not have permission to delete it.', 'error')
-            
+            return redirect(url_for('products'))
+
+        product = prod_res.data[0]
+
+        # Delete from Supabase
+        if is_admin:
+            sb_admin.table('products').delete().eq('id', product_id).execute()
+        else:
+            sb_admin.table('products').delete() \
+                .eq('id', product_id) \
+                .eq('seller_email', seller_email) \
+                .execute()
+
+        # Also delete variant inventory rows (non-fatal)
+        try:
+            sb_admin.table('variant_inventory').delete().eq('product_id', product_id).execute()
+        except Exception:
+            pass
+
+        # Delete local image files if they exist (non-fatal)
+        if product.get('image'):
+            for img in product['image'].split(','):
+                img = img.strip()
+                if img and not img.startswith('http'):
+                    img_path = os.path.join(app.config['UPLOAD_FOLDER'], img)
+                    try:
+                        if os.path.exists(img_path):
+                            os.remove(img_path)
+                    except Exception:
+                        pass
+
+        if request.is_json or request.headers.get('Content-Type') == 'application/json':
+            return jsonify({'success': True, 'message': 'Product deleted successfully'})
+
+        flash('Product deleted successfully!', 'success')
+
     except Exception as e:
-        print(f"Error deleting product: {str(e)}")
+        import traceback; traceback.print_exc()
         if request.is_json or request.headers.get('Content-Type') == 'application/json':
             return jsonify({'success': False, 'error': str(e)}), 500
         flash(f'Error deleting product: {str(e)}', 'error')
-    finally:
-        cursor.close()
-        connection.close()
-    
-    # Redirect for non-AJAX requests
+
     return redirect(url_for('products'))
 
 @app.route('/flag_product/<int:product_id>', methods=['POST'])
@@ -16959,6 +16633,30 @@ def delete_all_buyer_notifications():
             cursor.close()
         if connection:
             connection.close()
+
+def _create_order_notification_supabase(seller_email, order_details):
+    """Create a seller notification in Supabase when an order is placed."""
+    try:
+        total_items  = len(order_details)
+        total_amount = sum(float(item.get('total_price', 0)) for item in order_details)
+        customer     = order_details[0].get('email', 'Unknown') if order_details else 'Unknown'
+        if total_items == 1:
+            item = order_details[0]
+            msg = f"New order: {item['name']} (Qty: {item['quantity']}) - ₱{total_amount:.2f} from {customer}"
+        else:
+            msg = f"New order: {total_items} items - ₱{total_amount:.2f} from {customer}"
+        sb_admin.table('notifications').insert({
+            'seller_email': seller_email,
+            'message':      msg,
+            'type':         'order',
+            'is_read':      False,
+        }).execute()
+        print(f"✅ Supabase notification created for {seller_email}")
+        return True
+    except Exception as e:
+        print(f"❌ _create_order_notification_supabase error: {e}")
+        return False
+
 
 def create_order_notification(seller_email, order_details):
     """Create a notification in the database when an order is placed"""

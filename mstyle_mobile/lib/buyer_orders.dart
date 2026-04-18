@@ -9,6 +9,8 @@ import 'buyer_service.dart';
 import 'buyer_header.dart';
 import 'buyer_bottom_navbar.dart';
 import 'product_image_carousel.dart' show buildImageUrl;
+import 'supabase_client.dart' show supabase;
+import 'buyer_vieworder_details.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -83,6 +85,47 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
     setState(() => _loading = true);
     try {
       final data = await BuyerService.getOrders(widget.userEmail);
+
+      // Enrich each order with a color-specific image from the product's image_colors
+      for (final order in data) {
+        final pid = order['product_id'];
+        final selectedColor = (order['variations'] as String? ?? '').trim();
+        final storedImage = (order['image'] as String? ?? '').trim();
+
+        // If image is already a full URL, keep it
+        if (storedImage.startsWith('http://') || storedImage.startsWith('https://')) {
+          continue;
+        }
+
+        // Try to get color-specific image from product
+        if (pid != null && selectedColor.isNotEmpty) {
+          try {
+            final prodRes = await supabase
+                .from('products')
+                .select('image, image_colors')
+                .eq('id', pid)
+                .limit(1)
+                .maybeSingle();
+            if (prodRes != null) {
+              final colorMap = BuyerService.parseColorImages(
+                prodRes['image_colors'] as String?,
+                prodRes['image'] as String?,
+              );
+              final colorImg = colorMap[selectedColor.toLowerCase()];
+              if (colorImg != null && colorImg.isNotEmpty) {
+                order['image'] = colorImg;
+              } else if (storedImage.isEmpty) {
+                // Fallback to first product image
+                final allImages = (prodRes['image'] as String? ?? '');
+                final first = allImages.split(',').map((e) => e.trim()).firstWhere(
+                  (e) => e.isNotEmpty, orElse: () => '');
+                if (first.isNotEmpty) order['image'] = first;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
       if (mounted) setState(() { _orders = data; _loading = false; });
     } catch (e) {
       if (mounted) setState(() => _loading = false);
@@ -209,54 +252,80 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
 
   // ─── Order Card ───────────────────────────────────────────────────────────
   Widget _orderCard(Map<String, dynamic> order) {
-    final status     = order['status'] as String? ?? 'Pending';
+    final status      = order['status'] as String? ?? 'Pending';
     final statusColor = _statusColor(status);
-    final name       = order['name'] as String? ?? 'Order';
-    final totalPrice = double.tryParse(order['total_price']?.toString() ?? '0') ?? 0;
-    final date       = order['date'] as String? ?? '';
-    final color      = order['variations'] as String?;
-    final size       = order['size'] as String?;
-    final quantity   = order['quantity'] as int? ?? 1;
-    final orderId    = order['id'] as int? ?? 0;
-    final imageRaw   = order['image'] as String?;
-    final imageUrl   = buildImageUrl(imageRaw?.split(',').first.trim());
+    final name        = order['name'] as String? ?? 'Order';
+    final totalPrice  = double.tryParse(order['total_price']?.toString() ?? '0') ?? 0;
+    final date        = order['date'] as String? ?? '';
+    final color       = order['variations'] as String?;
+    final size        = order['size'] as String?;
+    final quantity    = order['quantity'] as int? ?? 1;
+    final orderId     = order['id'];
+    final imageRaw    = order['image'] as String?;
+    final imageUrl    = buildImageUrl(imageRaw?.split(',').first.trim());
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 3))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
-                  colors: [Color(0xFFECEFF1), Color(0xFFE9ECEF)]),
-              ),
-              child: imageUrl != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrl,
-                      width: 72, height: 72, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Center(
-                        child: Icon(Icons.image_outlined, color: Color(0xFFADB5BD), size: 30)),
+    return GestureDetector(
+      onTap: () => Navigator.push(context,
+        MaterialPageRoute(builder: (_) => BuyerViewOrderDetails(order: order))),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 14, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Top: image + info ──────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Product image with status indicator dot
+              Stack(children: [
+                Container(
+                  width: 76, height: 76,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: [Color(0xFFECEFF1), Color(0xFFE9ECEF)]),
+                  ),
+                  child: imageUrl != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.network(imageUrl, width: 76, height: 76, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.image_outlined, color: Color(0xFFADB5BD), size: 30))),
+                      )
+                    : const Center(child: Icon(Icons.image_outlined, color: Color(0xFFADB5BD), size: 30)),
+                ),
+                Positioned(
+                  bottom: 4, right: 4,
+                  child: Container(
+                    width: 12, height: 12,
+                    decoration: BoxDecoration(
+                      color: statusColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
                     ),
-                  )
-                : const Center(child: Icon(Icons.image_outlined, color: Color(0xFFADB5BD), size: 30)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(name, style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 14),
-                  maxLines: 2, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
+                  ),
+                ),
+              ]),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // Status badge top-right
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Expanded(
+                    child: Text(name,
+                      style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 14),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
+                  const SizedBox(width: 8),
+                  _statusBadge(status, statusColor),
+                ]),
+                const SizedBox(height: 6),
+                // Date
                 Row(children: [
                   const Icon(Icons.calendar_today_outlined, size: 11, color: _textLight),
                   const SizedBox(width: 4),
@@ -264,36 +333,61 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
                     style: const TextStyle(color: _textLight, fontSize: 11)),
                 ]),
                 const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 4, children: [
+                // Specs chips
+                Wrap(spacing: 5, runSpacing: 4, children: [
                   if (color != null && color.isNotEmpty) _chip(Icons.palette_outlined, color),
                   if (size != null && size.isNotEmpty)   _chip(Icons.straighten_outlined, size),
                   _chip(Icons.inventory_2_outlined, 'Qty: $quantity'),
                 ]),
-                const SizedBox(height: 8),
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('₱${totalPrice.toStringAsFixed(2)}',
-                    style: const TextStyle(color: _accent, fontWeight: FontWeight.w800, fontSize: 15)),
-                  _statusBadge(status, statusColor),
-                ]),
-              ]),
-            ),
-          ]),
-        ),
-        if (status != 'Cancelled')
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: _actionButtons(status, orderId, name),
-          ),
-        if (status == 'Cancelled')
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: const Row(children: [
-              Icon(Icons.info_outline, size: 13, color: _textLight),
-              SizedBox(width: 6),
-              Text('This order has been cancelled', style: TextStyle(color: _textLight, fontSize: 12)),
+              ])),
             ]),
           ),
-      ]),
+
+          // ── Bottom: price + cancel/arrow ──────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            decoration: BoxDecoration(
+              color: _bg,
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
+            ),
+            child: Row(children: [
+              // Price
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Total', style: TextStyle(color: _textLight, fontSize: 10)),
+                Text('₱${totalPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(color: _accent, fontWeight: FontWeight.w800, fontSize: 16)),
+              ]),
+              const Spacer(),
+              // Cancel button (Pending only) or arrow
+              if (status == 'Pending')
+                GestureDetector(
+                  onTap: () {
+                    // stop tap from triggering card navigation
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: GestureDetector(
+                    onTap: () => _showCancelDialog(orderId),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.cancel_outlined, size: 13, color: Colors.red),
+                        SizedBox(width: 5),
+                        Text('Cancel', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w700)),
+                      ]),
+                    ),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 

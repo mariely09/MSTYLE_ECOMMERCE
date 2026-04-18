@@ -1652,27 +1652,39 @@
       let colorMappings = [];
       if (imageColors && imageColors.trim() && imageColors !== 'undefined' && imageColors !== 'null') {
         try {
-          colorMappings = imageColors.split(',').map(mapping => {
-            const trimmedMapping = mapping.trim();
-            if (!trimmedMapping) return null;
-
-            const colonIndex = trimmedMapping.indexOf(':');
-            if (colonIndex === -1) {
-              // No colon found, treat entire string as color name for first image
+          // Try JSON dict format first: {"Black": "https://...", "Beige": "https://..."}
+          const parsed = JSON.parse(imageColors);
+          if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+            // JSON dict: key=colorName, value=imageUrl
+            // Build reverse map: imageUrl (or filename) → colorName
+            colorMappings = Object.entries(parsed).map(([colorName, imageUrl]) => ({
+              image: imageUrl,
+              color: colorName,
+              // Also store just the filename for fallback matching
+              filename: String(imageUrl).split('/').pop()
+            }));
+          }
+        } catch (_) {
+          // Fallback: old 'url:Color,...' format
+          try {
+            colorMappings = imageColors.split(',').map(mapping => {
+              const trimmedMapping = mapping.trim();
+              if (!trimmedMapping) return null;
+              const colonIndex = trimmedMapping.indexOf(':');
+              if (colonIndex === -1) {
+                return { image: imageNames[0] || '', color: trimmedMapping, filename: '' };
+              }
+              const imgPart = trimmedMapping.substring(0, colonIndex).trim();
               return {
-                image: imageNames[0] || '',
-                color: trimmedMapping
+                image: imgPart,
+                color: trimmedMapping.substring(colonIndex + 1).trim() || 'Unknown Color',
+                filename: imgPart.split('/').pop()
               };
-            }
-
-            return {
-              image: trimmedMapping.substring(0, colonIndex).trim(),
-              color: trimmedMapping.substring(colonIndex + 1).trim() || 'Unknown Color'
-            };
-          }).filter(mapping => mapping !== null);
-        } catch (error) {
-          console.error('Error parsing image colors:', error);
-          colorMappings = [];
+            }).filter(m => m !== null);
+          } catch (error) {
+            console.error('Error parsing image colors:', error);
+            colorMappings = [];
+          }
         }
       }
 
@@ -1721,18 +1733,16 @@
           ? imageName
           : IMAGES_BASE_URL + imageName;
 
-        // Find color for this image
-        // Try exact match first, then try matching just the filename
-        let colorMapping = colorMappings.find(mapping => mapping.image === imageName);
+        // Find color for this image — try exact URL match, then filename match
+        let colorMapping = colorMappings.find(m => m.image === imageName);
         if (!colorMapping) {
-          // Try matching without path (in case stored with path)
-          colorMapping = colorMappings.find(mapping => {
-            const storedImageName = mapping.image.split('/').pop(); // Get filename only
-            const currentImageName = imageName.split('/').pop(); // Get filename only
-            return storedImageName === currentImageName;
-          });
+          const imgFilename = imageName.split('/').pop();
+          colorMapping = colorMappings.find(m =>
+            m.filename === imgFilename ||
+            (m.image && m.image.split('/').pop() === imgFilename)
+          );
         }
-        const colorName = colorMapping ? colorMapping.color : 'Unknown Color';
+        const colorName = colorMapping ? colorMapping.color : '';
 
         console.log(`Image ${imageName} matched with color:`, colorName, 'from mapping:', colorMapping);
 
@@ -1803,7 +1813,7 @@
               </div>
             </div>
             <div style="text-align: center !important; margin-top: 8px !important;">
-              <div style="font-size: 12px !important; font-weight: 500 !important; color: #333 !important; margin-bottom: 4px !important;">${imageName}</div>
+              <div style="font-size: 12px !important; font-weight: 500 !important; color: #333 !important; margin-bottom: 4px !important;">${imageName.split('/').pop()}</div>
               <div style="font-size: 11px !important; color: #666 !important; background: #f8f9fa !important; padding: 2px 6px !important; border-radius: 10px !important; display: inline-block !important;">Current Image</div>
               <div style="
                 background: #6c757d !important;

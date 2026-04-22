@@ -1,239 +1,152 @@
-<!-- Product Grid -->
+<!-- Product Grid — style matches mobile ProductCard (product_card.dart) -->
 <section id="product-grid" class="product-grid">
-
 
     {% if products %}
     {% for product in products %}
-    <!-- Calculate promotion details first - at product card level -->
-    {% set promo_data = namespace(has_promotion=false, promotion_type='', promotion_discount=0, promotion_code='',
-    final_price=product.price|float) %}
 
-    <!-- Check if this product has a promotion -->
+    {# ── Promotion data ──────────────────────────────────────────────────── #}
+    {% set promo = namespace(has=false, type='', discount=0, code='', final_price=product.price|float) %}
     {% if promotional_products %}
-    {% for promo_product in promotional_products %}
-    {% if promo_product.id == product.id %}
-    {% set promo_data.has_promotion = true %}
-    {% set promo_data.promotion_type = promo_product.promotion_type %}
-    {% set promo_data.promotion_discount = promo_product.promotion_discount|float %}
-    {% set promo_data.promotion_code = promo_product.promotion_code %}
-
-    <!-- Calculate final price based on promotion type -->
-    {% if promo_data.promotion_type == 'percentage' and promo_data.promotion_discount > 0 %}
-    {% set original_price = product.price|float %}
-    {% set sale_price = original_price - (original_price * (promo_data.promotion_discount / 100)) %}
-    {% set promo_data.final_price = sale_price if sale_price > 0 else 0.01 %}
-    {% elif promo_data.promotion_type == 'fixed' and promo_data.promotion_discount > 0 %}
-    {% set original_price = product.price|float %}
-    {% set sale_price = original_price - promo_data.promotion_discount %}
-    {% set promo_data.final_price = sale_price if sale_price > 0 else 0.01 %}
+    {% for pp in promotional_products %}
+    {% if pp.id == product.id %}
+    {% set promo.has = true %}
+    {% set promo.type = pp.promotion_type %}
+    {% set promo.discount = pp.promotion_discount|float %}
+    {% set promo.code = pp.promotion_code %}
+    {% if promo.type == 'percentage' and promo.discount > 0 %}
+    {% set promo.final_price = [product.price|float * (1 - promo.discount / 100), 0.01]|max %}
+    {% elif promo.type == 'fixed' and promo.discount > 0 %}
+    {% set promo.final_price = [product.price|float - promo.discount, 0.01]|max %}
     {% endif %}
     {% endif %}
     {% endfor %}
     {% endif %}
 
-    {% set is_out_of_stock = (product.quantity|int) <= 0 and (product.sold or 0)|int > 0 %}
-    
-    <div class="product-card {% if is_out_of_stock %}out-of-stock{% endif %}" 
+    {% set out_of_stock = (product.quantity|int) <= 0 and (product.sold or 0)|int > 0 %}
+
+    <div class="pc-card {% if out_of_stock %}pc-out-of-stock{% endif %}"
          data-category="{{ product.category|upper if product.category else '' }}"
-         data-price="{{ promo_data.final_price }}"
+         data-price="{{ promo.final_price }}"
          data-name="{{ product.name|lower }}"
          data-id="{{ product.id }}">
 
-        <div class="product-image-container">
+        {# ── Image area ──────────────────────────────────────────────────── #}
+        <div class="pc-image-wrap">
             {% set images = product.image.split(',') if product.image else [] %}
             {% if images|length > 1 %}
-            <!-- Multiple images - show carousel -->
             <div class="product-image-slider" data-product-id="{{ product.id }}" data-image-count="{{ images|length }}">
                 {% for image in images %}
                 <img src="{{ image.strip()|product_img }}" alt="{{ product.name }}"
-                    class="product-image {% if loop.first %}active{% endif %}" data-image-index="{{ loop.index0 }}"
-                    loading="lazy">
+                     class="product-image {% if loop.first %}active{% endif %}"
+                     data-image-index="{{ loop.index0 }}" loading="lazy">
                 {% endfor %}
                 <div class="image-indicators">
                     {% for image in images %}
                     <span class="indicator {% if loop.first %}active{% endif %}"
-                        onclick="showImage(this, {{ loop.index0 }})" data-image-index="{{ loop.index0 }}"
-                        title="Image {{ loop.index }}"></span>
+                          onclick="showImage(this, {{ loop.index0 }})"
+                          data-image-index="{{ loop.index0 }}"></span>
                     {% endfor %}
                 </div>
-                <button class="nav-btn prev-btn" onclick="previousImage(this)" title="Previous Image">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <button class="nav-btn next-btn" onclick="nextImage(this)" title="Next Image">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-                <div class="image-counter">
-                    <span class="current-image">1</span> / <span class="total-images">{{ images|length }}</span>
-                </div>
             </div>
+            {# Nav buttons are direct children of pc-image-wrap for correct positioning #}
+            <button class="pc-nav pc-prev" onclick="event.stopPropagation(); previousImage(this);" type="button"><i class="fas fa-chevron-left"></i></button>
+            <button class="pc-nav pc-next" onclick="event.stopPropagation(); nextImage(this);" type="button"><i class="fas fa-chevron-right"></i></button>
+            {% elif images and images[0].strip() %}
+            <img src="{{ images[0].strip()|product_img }}" alt="{{ product.name }}" class="product-image active">
             {% else %}
-            <!-- Single image -->
-            {% if images and images[0].strip() %}
-            <img src="{{ images[0].strip()|product_img }}" alt="{{ product.name }}"
-                class="product-image">
-            {% else %}
-            <div class="product-image-placeholder">
-                <i class="fas fa-image"></i>
-                <span>No Image Available</span>
-            </div>
-            {% endif %}
+            <div class="pc-no-image"><i class="fas fa-image"></i></div>
             {% endif %}
 
-            <!-- Out of Stock Overlay Badge -->
-            {% if is_out_of_stock %}
-            <div class="out-of-stock-overlay">
-                <div class="out-of-stock-badge">
-                    <i class="fas fa-times-circle"></i>
-                    <span>OUT OF STOCK</span>
-                </div>
+            {# Out-of-stock overlay #}
+            {% if out_of_stock %}
+            <div class="pc-oos-overlay">
+                <span><i class="fas fa-times-circle"></i> OUT OF STOCK</span>
             </div>
             {% endif %}
 
-            <!-- Promotion Badge - Show if product has promotion -->
-            {% if promotional_products and not is_out_of_stock %}
-            {% for promo_product in promotional_products %}
-            {% if promo_product.id == product.id %}
-            <div class="promotion-badge-grid">
-                {% if promo_product.promotion_type == 'percentage' %}
-                {{ (promo_product.promotion_discount|float)|int }}% OFF
-                {% elif promo_product.promotion_type == 'fixed' %}
-                ₱{{ (promo_product.promotion_discount|float)|int }} OFF
-                {% elif promo_product.promotion_type == 'buy_one_get_one' %}
-                BUY ONE GET ONE
-                {% elif promo_product.promotion_type == 'free_shipping' %}
-                FREE SHIPPING
-                {% else %}
-                SPECIAL
-                {% endif %}
+            {# Promo badge #}
+            {% if promo.has and not out_of_stock %}
+            <div class="pc-promo-badge">
+                {% if promo.type == 'percentage' %}{{ promo.discount|int }}% OFF
+                {% elif promo.type == 'fixed' %}₱{{ promo.discount|int }} OFF
+                {% elif promo.type == 'buy_one_get_one' %}BOGO
+                {% elif promo.type == 'free_shipping' %}FREE SHIP
+                {% else %}SALE{% endif %}
             </div>
             {% endif %}
-            {% endfor %}
-            {% endif %}
 
-            <div class="product-overlay-buttons">
-                <a href="{{ url_for('view_product', product_id=product.id) }}" class="view-product-btn">
+            {# Overlay action buttons — bottom row like mobile #}
+            <div class="pc-overlay-btns">
+                {# View #}
+                <a href="{{ url_for('view_product', product_id=product.id) }}" class="pc-btn pc-btn-view" title="View">
                     <i class="fas fa-eye"></i>
                 </a>
-                {% if not is_out_of_stock %}
-                <button class="wishlist-btn"
-                    onclick="addToWishlist('{{ product.id }}', '{{ product.name }}', '{{ promo_data.final_price }}', this)">
+                {# Wishlist #}
+                {% if not out_of_stock %}
+                <button class="pc-btn pc-btn-wish {% if wishlist_product_ids is defined and product.id|string in wishlist_product_ids %}active{% endif %}"
+                        onclick="addToWishlist('{{ product.id }}', '{{ product.name }}', '{{ promo.final_price }}', this)"
+                        title="{% if wishlist_product_ids is defined and product.id|string in wishlist_product_ids %}Remove from Wishlist{% else %}Add to Wishlist{% endif %}">
                     <i class="fas fa-heart"></i>
                 </button>
-                <button class="cart-btn"
-                    onclick="openColorSizeModal('{{ product.id }}', '{{ product.name }}', '{{ promo_data.final_price }}', '{{ product.image if product.image else '' }}', '{{ product.variations or '' }}', '{{ product.sizes or '' }}')">
+                {# Cart #}
+                <button class="pc-btn pc-btn-cart"
+                        onclick="openColorSizeModal('{{ product.id }}', '{{ product.name }}', '{{ promo.final_price }}', '{{ product.image if product.image else '' }}', '{{ product.variations or '' }}', '{{ product.sizes or '' }}')"
+                        title="Add to Cart">
                     <i class="fas fa-shopping-cart"></i>
                 </button>
                 {% else %}
-                <button class="wishlist-btn" disabled title="Out of stock">
-                    <i class="fas fa-heart"></i>
-                </button>
-                <button class="cart-btn" disabled title="Out of stock">
-                    <i class="fas fa-shopping-cart"></i>
-                </button>
+                <button class="pc-btn pc-btn-wish" disabled><i class="fas fa-heart"></i></button>
+                <button class="pc-btn pc-btn-cart" disabled><i class="fas fa-shopping-cart"></i></button>
                 {% endif %}
             </div>
         </div>
-        <div class="product-info">
-            <h3 class="product-name">{{ product.name }}</h3>
 
-            <!-- Enhanced Price Display with Promotion Support (matching hero section format) -->
+        {# ── Info area ───────────────────────────────────────────────────── #}
+        <div class="pc-info">
+            <p class="pc-name">{{ product.name }}</p>
 
-            <div class="product-price-section">
-                {% if promo_data.has_promotion %}
-                {% set original_price = product.price|float if product.price else 0.0 %}
-                {% set discount_value = promo_data.promotion_discount|float if promo_data.promotion_discount else 0.0 %}
-
-                {% if promo_data.promotion_type == 'percentage' and discount_value > 0 %}
-                <!-- Percentage Discount Display (matching hero section) -->
-                <div class="price-display">
-                    <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                    {% set sale_price = original_price * (1 - discount_value/100) %}
-                    {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                    <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
+            {# Rating + sold row #}
+            <div class="pc-meta">
+                <div class="pc-stars">
+                    {% set r = product.rating or 0 %}
+                    {% for i in range(1, 6) %}
+                    {% if i <= r %}<i class="fas fa-star"></i>
+                    {% elif i - 0.5 <= r %}<i class="fas fa-star-half-alt"></i>
+                    {% else %}<i class="far fa-star"></i>{% endif %}
+                    {% endfor %}
+                    <span class="pc-rating-val">({{ "%.1f"|format(r) }})</span>
                 </div>
-
-                {% elif promo_data.promotion_type == 'fixed' and discount_value > 0 %}
-                <!-- Fixed Amount Discount Display (matching hero section) -->
-                <div class="price-display">
-                    <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                    {% set sale_price = original_price - discount_value %}
-                    {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                    <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                </div>
-
-                {% elif promo_data.promotion_type == 'buy_one_get_one' %}
-                <!-- BOGO - Show regular price (matching hero section) -->
-                <p class="product-price bogo-price">₱{{ "%.2f"|format(original_price) }}</p>
-
-                {% elif promo_data.promotion_type == 'free_shipping' %}
-                <!-- Free Shipping - Show regular price (matching hero section) -->
-                <p class="product-price free-shipping-price">₱{{ "%.2f"|format(original_price) }}</p>
-               
-                {% else %}
-                <!-- Fallback for other promotion types (matching hero section) -->
-                <p class="product-price">₱{{ "%.2f"|format(original_price) }}</p>
-                {% if promo_data.promotion_code %}
-                <div class="savings-info">
-                    <small class="promo-code-text">Use code: {{ promo_data.promotion_code }}</small>
-                </div>
-                {% endif %}
-                {% endif %}
-
-                {% else %}
-                <!-- No promotion - show regular price -->
-                <p class="product-price">₱{{ "%.2f"|format(product.price|float) }}</p>
-                {% endif %}
+                <span class="pc-sold">{{ product.sold or 0 }} sold</span>
             </div>
 
-            <div class="product-stats">
-                <div class="product-rating">
-                    <div class="stars">
-                        {% set rating = product.rating or 0 %}
-                        {% for i in range(1, 6) %}
-                        {% if i <= rating %} <i class="fas fa-star"></i>
-                            {% elif i - 0.5 <= rating %} <i class="fas fa-star-half-alt"></i>
-                                {% else %}
-                                <i class="far fa-star"></i>
-                                {% endif %}
-                                {% endfor %}
-                    </div>
-                    <span class="rating-text">({{ "%.1f"|format(rating) }})</span>
-                </div>
-                <p class="product-sold">
-                    <i class="fas fa-shopping-bag"></i>
-                    {{ product.sold }} sold
-                </p>
+            {# Price #}
+            <div class="pc-price-wrap">
+                {% if promo.has and promo.type in ('percentage', 'fixed') and promo.discount > 0 %}
+                <span class="pc-original">₱{{ "%.2f"|format(product.price|float) }}</span>
+                <span class="pc-sale">₱{{ "%.2f"|format(promo.final_price) }}</span>
+                {% else %}
+                <span class="pc-price">₱{{ "%.2f"|format(product.price|float) }}</span>
+                {% endif %}
             </div>
-            {% if not is_out_of_stock %}
-            <button class="buy-now-btn"
-                onclick="openBuyNowModal('{{ product.id }}', '{{ product.name }}', '{{ promo_data.final_price }}', '{{ product.image if product.image else '' }}', '{{ product.variations or '' }}', '{{ product.sizes or '' }}')">
-                <i class="fas fa-bolt"></i>
-                Buy Now
-            </button>
-            {% else %}
-            <button class="buy-now-btn" disabled style="background: #ccc; cursor: not-allowed;">
-                <i class="fas fa-times-circle"></i>
-                Out of Stock
-            </button>
-            {% endif %}
         </div>
     </div>
     {% endfor %}
+
     {% else %}
     <p class="no-result">No results found.</p>
     {% endif %}
 </section>
 
 <!-- Loading Spinner -->
-<div class="loading-spinner">
+<div class="loading-spinner" style="display:none;">
     <i class="fas fa-spinner fa-spin fa-2x"></i>
 </div>
 
-<!-- Color and Size Selection Modal -->
+<!-- Color and Size Selection Modal (shared) -->
 <div id="colorSizeModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h2>Select Color & Size</h2>
+            <h2>Select Color &amp; Size</h2>
             <span class="close" onclick="closeColorSizeModal()">&times;</span>
         </div>
         <div class="modal-body">
@@ -244,24 +157,17 @@
                     <p id="modalProductPrice"></p>
                 </div>
             </div>
-
             <div class="selection-section">
                 <div class="color-selection">
                     <label>Color:</label>
-                    <div class="color-options" id="colorOptions">
-                        <!-- Colors will be dynamically generated based on product variations -->
-                    </div>
+                    <div class="color-options" id="colorOptions"></div>
                     <span id="selectedColor" class="selected-value">Please select a color</span>
                 </div>
-
                 <div class="size-selection">
                     <label>Size:</label>
-                    <div class="size-options" id="sizeOptions">
-                        <!-- Sizes will be dynamically generated based on product sizes -->
-                    </div>
+                    <div class="size-options" id="sizeOptions"></div>
                     <span id="selectedSize" class="selected-value">Please select a size</span>
                 </div>
-
                 <div class="quantity-selection">
                     <label>Quantity:</label>
                     <div class="quantity-controls">
@@ -274,211 +180,394 @@
         </div>
         <div class="modal-footer">
             <button class="btn-cancel" onclick="closeColorSizeModal()">Cancel</button>
-            <button class="btn-buy-now" onclick="confirmBuyNow()" id="buyNowBtn" style="display: none;">Buy Now</button>
             <button class="btn-add-to-cart" onclick="confirmAddToCart()" id="addToCartBtn">Add to Cart</button>
         </div>
     </div>
 </div>
 
+<style>
+/* ── ProductCard — matches mobile product_card.dart ─────────────────────── */
+.product-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 16px !important;
+    padding: 24px 20px !important;
+    max-width: 1400px !important;
+    margin: 0 auto !important;
+    align-items: start !important;
+    background: transparent !important;
+}
+
+.pc-card {
+    background: #fff !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+    box-shadow: 0 5px 16px rgba(0,0,0,0.07) !important;
+    transition: transform .25s ease, box-shadow .25s ease !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative !important;
+    align-self: start !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border: none !important;
+}
+.pc-card:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.12) !important;
+}
+.pc-out-of-stock { opacity: .75; }
+
+/* Image wrap */
+.pc-image-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: linear-gradient(135deg, #eceff1, #e9ecef);
+    overflow: hidden;
+    border-radius: 18px 18px 0 0;
+}
+.pc-image-wrap .product-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+    z-index: 1;
+}
+.pc-image-wrap .product-image.active { display: block; }
+
+/* Slider fills the wrap completely */
+.pc-image-wrap .product-image-slider {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+/* Indicators */
+.image-indicators {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    z-index: 20;
+    pointer-events: auto;
+}
+.indicator {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.5);
+    cursor: pointer;
+    transition: background .2s;
+}
+.indicator.active { background: #fff; }
+
+/* Nav arrows */
+.pc-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,.9);
+    border: none;
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    z-index: 20;
+    font-size: 10px;
+    color: #2c3e50;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    opacity: 0;
+    transition: opacity .2s, background .15s;
+    pointer-events: auto;
+}
+.pc-nav:hover { background: #fff; }
+.pc-card:hover .pc-nav { opacity: 1; }
+.pc-prev { left: 6px; }
+.pc-next { right: 6px; }
+
+/* Out-of-stock overlay */
+.pc-oos-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 15;
+    border-radius: 18px 18px 0 0;
+    pointer-events: none;
+}
+.pc-oos-overlay span {
+    background: #dc3545;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Promo badge */
+.pc-promo-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: linear-gradient(135deg, #d4af37, #f4d03f);
+    color: #1a1a1a;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 9px;
+    border-radius: 12px;
+    z-index: 16;
+    box-shadow: 0 2px 8px rgba(212,175,55,.4);
+    pointer-events: none;
+}
+
+/* Overlay action buttons */
+.pc-overlay-btns {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    display: flex;
+    gap: 6px;
+    z-index: 18;
+    opacity: 0;
+    transition: opacity .2s;
+    pointer-events: auto;
+}
+.pc-card:hover .pc-overlay-btns { opacity: 1; }
+
+.pc-btn {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,.92);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.12);
+    transition: background .2s, color .2s, transform .15s;
+    text-decoration: none;
+    color: #2c3e50;
+}
+.pc-btn:hover { transform: scale(1.12); }
+.pc-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.pc-btn-view { background: linear-gradient(135deg, #1a1a1a, #2c3e50); color: #fff; }
+.pc-btn-view:hover { background: linear-gradient(135deg, #2c3e50, #1a1a1a); }
+
+.pc-btn-wish { color: #2c3e50; }
+.pc-btn-wish.active,
+.pc-btn-wish:hover { color: #e74c3c; }
+
+.pc-btn-cart { color: #2c3e50; }
+.pc-btn-cart:hover { color: #d4af37; }
+
+/* No image placeholder */
+.pc-no-image {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: #adb5bd;
+    font-size: 2.5rem;
+}
+
+/* Info area */
+.pc-info {
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: #fff;
+}
+
+.pc-name {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: #2c3e50;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Rating + sold */
+.pc-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+.pc-stars {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    font-size: 10px;
+    color: #d4af37;
+}
+.pc-stars .far { color: #dee2e6; }
+.pc-rating-val {
+    font-size: 10px;
+    color: #6c757d;
+    margin-left: 3px;
+}
+.pc-sold {
+    font-size: 10px;
+    color: #6c757d;
+}
+
+/* Price */
+.pc-price-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.pc-price {
+    font-size: 15px;
+    font-weight: 800;
+    color: #2c3e50;
+}
+.pc-original {
+    font-size: 11px;
+    color: #6c757d;
+    text-decoration: line-through;
+}
+.pc-sale {
+    font-size: 15px;
+    font-weight: 800;
+    color: #e74c3c;
+}
+
+/* No results */
+.no-result {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #6c757d;
+    padding: 40px;
+    font-size: 15px;
+}
+</style>
 
 <script>
-    // Product image slider functionality (matching homepage and products page)
-    function showImage(indicatorElement, imageIndex) {
-        const container = indicatorElement.closest('.product-image-container');
-        const slider = container.querySelector('.product-image-slider');
-        const images = container.querySelectorAll('.product-image');
-        const indicators = container.querySelectorAll('.indicator');
-        const counter = container.querySelector('.image-counter');
+/* ── Image carousel for pc-card ──────────────────────────────────────────── */
+(function() {
+    function getWrap(el) {
+        return el.closest('.pc-image-wrap');
+    }
 
-        // Validate imageIndex
-        if (imageIndex < 0 || imageIndex >= images.length) {
-            console.warn('Invalid image index:', imageIndex);
-            return;
-        }
+    function goToSlide(wrap, idx) {
+        const imgs = wrap.querySelectorAll('.product-image');
+        const inds = wrap.querySelectorAll('.indicator');
+        if (!imgs[idx]) return;
+        imgs.forEach(i => i.classList.remove('active'));
+        inds.forEach(i => i.classList.remove('active'));
+        imgs[idx].classList.add('active');
+        if (inds[idx]) inds[idx].classList.add('active');
+    }
 
-        // Hide all images and remove active class
-        images.forEach(img => img.classList.remove('active'));
-        indicators.forEach(ind => ind.classList.remove('active'));
+    function currentIdx(wrap) {
+        const imgs = [...wrap.querySelectorAll('.product-image')];
+        const i = imgs.findIndex(img => img.classList.contains('active'));
+        return i >= 0 ? i : 0;
+    }
 
-        // Show selected image and activate indicator
-        if (images[imageIndex]) {
-            images[imageIndex].classList.add('active');
-        }
-        if (indicatorElement) {
-            indicatorElement.classList.add('active');
-        }
+    // Expose globally for onclick handlers
+    window.showImage = function(indicatorEl, idx) {
+        const wrap = getWrap(indicatorEl);
+        if (wrap) goToSlide(wrap, idx);
+    };
 
-        // Update counter
-        if (counter) {
-            const currentSpan = counter.querySelector('.current-image');
-            if (currentSpan) {
-                currentSpan.textContent = imageIndex + 1;
+    window.nextImage = function(btn) {
+        const wrap = getWrap(btn);
+        if (!wrap) return;
+        const imgs = wrap.querySelectorAll('.product-image');
+        goToSlide(wrap, (currentIdx(wrap) + 1) % imgs.length);
+    };
+
+    window.previousImage = function(btn) {
+        const wrap = getWrap(btn);
+        if (!wrap) return;
+        const imgs = wrap.querySelectorAll('.product-image');
+        const len = imgs.length;
+        goToSlide(wrap, (currentIdx(wrap) - 1 + len) % len);
+    };
+
+    function initCarousels() {
+        document.querySelectorAll('.pc-image-wrap').forEach(wrap => {
+            const imgs = wrap.querySelectorAll('.product-image');
+            if (imgs.length < 2) return;
+
+            // Ensure clean initial state
+            imgs.forEach((img, i) => img.classList.toggle('active', i === 0));
+            wrap.querySelectorAll('.indicator').forEach((ind, i) => ind.classList.toggle('active', i === 0));
+
+            const card = wrap.closest('.pc-card');
+            if (!card) return;
+
+            let timer = setInterval(() => {
+                goToSlide(wrap, (currentIdx(wrap) + 1) % imgs.length);
+            }, 4000);
+
+            card.addEventListener('mouseenter', () => clearInterval(timer));
+            card.addEventListener('mouseleave', () => {
+                clearInterval(timer);
+                timer = setInterval(() => {
+                    goToSlide(wrap, (currentIdx(wrap) + 1) % imgs.length);
+                }, 4000);
+            });
+        });
+
+        // Update wishlist button tooltips based on active state
+        document.querySelectorAll('.pc-btn-wish').forEach(function(btn) {
+            btn.title = btn.classList.contains('active') ? 'Remove from Wishlist' : 'Add to Wishlist';
+        });
+    }
+
+    // Run on DOMContentLoaded or immediately if DOM is already ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initCarousels);
+    } else {
+        initCarousels();
+    }
+})();
+
+/* ── Wishlist ─────────────────────────────────────────────────────────────── */
+function addToWishlist(productId, productName, productPrice, btn) {
+    // Determine intent BEFORE the fetch based on current button state
+    const isCurrentlyWishlisted = btn && btn.classList.contains('active');
+
+    fetch('/add-to-wishlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId, product_name: productName, product_price: productPrice })
+    })
+    .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return null; }
+        return r.json();
+    })
+    .then(data => {
+        if (!data) return;
+        if (data.success) {
+            // Toggle heart state
+            if (btn) btn.classList.toggle('active', !isCurrentlyWishlisted);
+            // Show correct message based on what we just did
+            if (typeof showSuccessWishlistModal === 'function') {
+                showSuccessWishlistModal(data.message, isCurrentlyWishlisted);
             }
+        } else {
+            alert(data.error || 'Failed to update wishlist');
         }
-    }
-
-    function nextImage(buttonElement) {
-        const container = buttonElement.closest('.product-image-container');
-        const images = container.querySelectorAll('.product-image');
-        const indicators = container.querySelectorAll('.indicator');
-
-        if (images.length === 0) return;
-
-        const currentIndex = Array.from(images).findIndex(img => img.classList.contains('active'));
-        const nextIndex = (currentIndex + 1) % images.length;
-
-        if (indicators[nextIndex]) {
-            showImage(indicators[nextIndex], nextIndex);
-        }
-    }
-
-    function previousImage(buttonElement) {
-        const container = buttonElement.closest('.product-image-container');
-        const images = container.querySelectorAll('.product-image');
-        const indicators = container.querySelectorAll('.indicator');
-
-        if (images.length === 0) return;
-
-        const currentIndex = Array.from(images).findIndex(img => img.classList.contains('active'));
-        const prevIndex = currentIndex === 0 ? images.length - 1 : currentIndex - 1;
-
-        if (indicators[prevIndex]) {
-            showImage(indicators[prevIndex], prevIndex);
-        }
-    }
-
-    // Initialize sliders and auto-slide functionality
-    document.addEventListener('DOMContentLoaded', function () {
-        // Small delay to ensure DOM is fully loaded
-        setTimeout(() => {
-            const sliders = document.querySelectorAll('.product-image-slider');
-            console.log(`Found ${sliders.length} image sliders in product grid`);
-
-            sliders.forEach((slider, sliderIndex) => {
-                const images = slider.querySelectorAll('.product-image');
-                const indicators = slider.querySelectorAll('.indicator');
-
-                console.log(`Slider ${sliderIndex + 1}: ${images.length} images, ${indicators.length} indicators`);
-
-                // Ensure first image is active
-                if (images.length > 0) {
-                    images[0].classList.add('active');
-                    if (indicators.length > 0) {
-                        indicators[0].classList.add('active');
-                    }
-                }
-
-                // Auto-slide only if multiple images
-                if (images.length > 1) {
-                    console.log(`Starting auto-slide for slider ${sliderIndex + 1}`);
-
-                    let autoSlideInterval = setInterval(() => {
-                        const productCard = slider.closest('.product-card');
-                        const isHovered = productCard && productCard.matches(':hover');
-
-                        if (!isHovered) {
-                            const nextBtn = slider.querySelector('.next-btn');
-                            if (nextBtn) {
-                                console.log(`Auto-sliding slider ${sliderIndex + 1}`);
-                                nextImage(nextBtn);
-                            }
-                        }
-                    }, 4000); // 4 seconds like products page
-
-                    // Pause auto-slide on hover
-                    const productCard = slider.closest('.product-card');
-                    if (productCard) {
-                        productCard.addEventListener('mouseenter', () => {
-                            console.log(`Pausing auto-slide for slider ${sliderIndex + 1}`);
-                            clearInterval(autoSlideInterval);
-                        });
-
-                        productCard.addEventListener('mouseleave', () => {
-                            console.log(`Resuming auto-slide for slider ${sliderIndex + 1}`);
-                            autoSlideInterval = setInterval(() => {
-                                const nextBtn = slider.querySelector('.next-btn');
-                                if (nextBtn) {
-                                    nextImage(nextBtn);
-                                }
-                            }, 4000);
-                        });
-                    }
-                }
-            });
-        }, 500);
-    });
-
-    // Wishlist functionality
-    function addToWishlist(productId, productName, productPrice, buttonElement) {
-        // Check if user is logged in
-        const userName = document.getElementById('user-name');
-        const isLoggedIn = userName && userName.textContent.trim() !== 'User';
-
-        if (!isLoggedIn) {
-            alert('Please login first');
-            window.location.href = '/login';
-            return;
-        }
-
-        // Get the button element if not passed
-        if (!buttonElement) {
-            buttonElement = event.target.closest('.wishlist-btn');
-        }
-
-        // Send request to add item to wishlist
-        fetch('/add-to-wishlist', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                product_id: productId,
-                product_name: productName,
-                product_price: productPrice
-            })
-        })
-            .then(response => {
-                console.log('Response status:', response.status);
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        alert('Please login first');
-                        window.location.href = '/login';
-                        return Promise.reject('Unauthorized');
-                    }
-                    return response.text().then(text => {
-                        console.log('Error response:', text);
-                        throw new Error(`Server error: ${response.status}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Response data:', data);
-                if (data.error) {
-                    alert(data.error);
-                    return;
-                }
-                if (data.success) {
-                    // Toggle button state
-                    if (buttonElement) {
-                        buttonElement.classList.toggle('active');
-                    }
-                    // Show success modal instead of alert
-                    console.log('About to call showSuccessWishlistModal');
-                    console.log('Function exists?', typeof showSuccessWishlistModal);
-                    if (typeof showSuccessWishlistModal === 'function') {
-                        showSuccessWishlistModal();
-                    } else {
-                        console.error('showSuccessWishlistModal is not defined!');
-                        alert('Item added to wishlist successfully!');
-                    }
-                } else {
-                    alert('Unexpected response from server');
-                }
-            })
-            .catch(error => {
-                console.error('Error details:', error);
-                alert('Failed to add item to wishlist. Please try again.');
-            });
-    }
+    })
+    .catch(() => alert('Failed to update wishlist. Please try again.'));
+}
 </script>

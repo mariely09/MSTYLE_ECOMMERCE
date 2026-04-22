@@ -79,11 +79,10 @@
                 <div class="product-image-container">
                     {% set images = product.image.split(',') if product.image else [] %}
                     {% if images|length > 1 %}
-                    <!-- Multiple images - show carousel -->
                     <div class="product-image-slider" data-product-id="{{ product.id }}"
                         data-image-count="{{ images|length }}">
                         {% for image in images %}
-                        <img src="{{ url_for('static', filename='images/uploads/' + image.strip()) }}"
+                        <img src="{{ image.strip()|product_img }}"
                             alt="{{ product.name }}" class="product-image {% if loop.first %}active{% endif %}"
                             data-image-index="{{ loop.index0 }}" loading="lazy">
                         {% endfor %}
@@ -105,9 +104,8 @@
                         </div>
                     </div>
                     {% else %}
-                    <!-- Single image -->
                     {% if images and images[0].strip() %}
-                    <img src="{{ url_for('static', filename='images/uploads/' + images[0].strip()) }}"
+                    <img src="{{ images[0].strip()|product_img }}"
                         alt="{{ product.name }}" class="product-image">
                     {% else %}
                     <div class="product-image-placeholder">

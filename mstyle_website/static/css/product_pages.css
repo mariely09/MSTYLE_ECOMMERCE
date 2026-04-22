@@ -283,27 +283,21 @@
 /* Product Grid */
 .product-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 35px;
-    padding: 60px 20px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    padding: 24px 20px;
     max-width: 1400px;
     margin: 0 auto;
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    align-items: start;
+    background: transparent;
     position: relative;
 }
 
 .product-grid::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(212, 175, 55, 0.03) 0%, transparent 50%),
-        radial-gradient(circle at 80% 20%, rgba(44, 62, 80, 0.02) 0%, transparent 50%);
-    pointer-events: none;
+    display: none;
 }
 
+/* Legacy product-card styles (kept for non-pc-card pages) */
 .product-card {
     background: white;
     border-radius: 16px;
@@ -312,6 +306,7 @@
     transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     position: relative;
     border: 1px solid rgba(212, 175, 55, 0.1);
+    align-self: start;
 }
 
 .product-card::before {
@@ -601,9 +596,9 @@
     }
 
     .product-grid {
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 25px;
-        padding: 40px 15px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        padding: 16px 15px;
     }
 
     .product-image {
@@ -633,9 +628,9 @@
 
 @media (max-width: 480px) {
     .product-grid {
-        grid-template-columns: 1fr;
-        gap: 20px;
-        padding: 30px 10px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        padding: 12px 10px;
     }
 
     .product-card {

@@ -9,10 +9,10 @@
     <meta http-equiv="Expires" content="0">
     <title>Suit & Blazers</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/homepg_header.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/homepage.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/homepage.css') }}?v=5">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/suits.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/filter_section.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/product_pages.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/product_pages.css') }}?v=2">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/color_size_modal.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/success_message_cartmodal.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/success_message_wishlistmodal.css') }}">
@@ -288,80 +288,6 @@
                 window.location.href = `/search?query=${encodeURIComponent(query)}`;
             }
         }
-
-        // addToCart function is now handled by color_size_modal.js
-
-        function addToWishlist(productId, productName, productPrice, buttonElement) {
-            // Check if user is logged in
-            const userName = document.getElementById('user-name');
-            const isLoggedIn = userName && userName.textContent.trim() !== 'User';
-
-            if (!isLoggedIn) {
-                alert('Please login first');
-                window.location.href = '/login';
-                return;
-            }
-
-            // Get the button element if not passed
-            if (!buttonElement) {
-                buttonElement = event.target.closest('.wishlist-btn');
-            }
-
-            // Send request to add item to wishlist
-            fetch('/add-to-wishlist', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    product_id: productId,
-                    product_name: productName,
-                    product_price: productPrice
-                })
-            })
-                .then(response => {
-                    console.log('Response status:', response.status);
-                    if (!response.ok) {
-                        if (response.status === 401) {
-                            alert('Please login first');
-                            window.location.href = '/login';
-                            return Promise.reject('Unauthorized');
-                        }
-                        return response.text().then(text => {
-                            console.log('Error response:', text);
-                            throw new Error(`Server error: ${response.status}`);
-                        });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Response data:', data);
-                    if (data.error) {
-                        alert(data.error);
-                        return;
-                    }
-                    if (data.success) {
-                        // Toggle button state
-                        if (buttonElement) {
-                            buttonElement.classList.toggle('active');
-                        }
-                        // Show success modal instead of alert
-                        if (typeof window.showSuccessWishlistModal === 'function') {
-                            window.showSuccessWishlistModal();
-                        } else {
-                            console.error('showSuccessWishlistModal not found, using alert');
-                            alert('Item added to wishlist successfully!');
-                        }
-                    } else {
-                        alert('Unexpected response from server');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error details:', error);
-                    alert('Failed to add item to wishlist. Please try again.');
-                });
-        }
-
         // Buy Now and Add to Cart functionality is handled by color_size_modal.js
         // No need for duplicate functions here
     </script>
@@ -370,3 +296,4 @@
 </body>
 
 </html>
+

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'supabase_client.dart' show supabase, supabaseAdminSelect;
 import 'product_image_carousel.dart' show buildImageUrl, kFlaskBaseUrl;
+import 'product_card.dart';
 import 'buyer_viewproduct.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
@@ -64,7 +65,7 @@ class _BuyerViewShopPageState extends State<BuyerViewShopPage> {
       // ── 1. Seller info (admin REST call bypasses RLS) ──────────────
       final sellerRows = await supabaseAdminSelect(
         table: 'users',
-        select: 'business_name,first_name,last_name,profile_picture,phone',
+        select: 'business_name,first_name,last_name,phone',
         filters: {'email': widget.sellerEmail},
         limit: 1,
       );
@@ -78,9 +79,7 @@ class _BuyerViewShopPageState extends State<BuyerViewShopPage> {
       final first = (s['first_name']    as String? ?? '').trim();
       final last  = (s['last_name']     as String? ?? '').trim();
       _sellerName    = biz.isNotEmpty ? biz : '$first $last'.trim().isNotEmpty ? '$first $last'.trim() : widget.sellerEmail;
-      _sellerPicture = (s['profile_picture'] as String? ?? '').trim().isNotEmpty
-          ? (s['profile_picture'] as String).trim()
-          : null;
+      _sellerPicture = null; // profile_picture not in Supabase users table
       _sellerPhone   = (s['phone'] as String? ?? '').trim();
 
       // ── 2. Products (admin call to get all seller products) ─────────
@@ -280,76 +279,12 @@ class _BuyerViewShopPageState extends State<BuyerViewShopPage> {
           childAspectRatio: 0.72,
         ),
         delegate: SliverChildBuilderDelegate(
-          (_, i) => _productCard(_products[i]),
+          (_, i) => ProductCard(
+            product: _products[i],
+            userEmail: widget.userEmail,
+          ),
           childCount: _products.length,
         ),
-      ),
-    );
-  }
-
-  Widget _productCard(Map<String, dynamic> product) {
-    final id       = product['id'];
-    final name     = product['name'] as String? ?? '';
-    final price    = (product['price'] as num?)?.toDouble() ?? 0;
-    final rating   = (product['rating'] as num?)?.toDouble() ?? 0;
-    final sold     = (product['sold'] as num?)?.toInt() ?? 0;
-    final imageRaw = product['image'] as String?;
-    final imageUrl = buildImageUrl(imageRaw?.split(',').first.trim());
-    final inStock  = ((product['quantity'] as num?)?.toInt() ?? 0) > 0;
-
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => BuyerViewProductPage(
-          userEmail: widget.userEmail,
-          productId: id is int ? id : int.tryParse('$id'),
-        ),
-      )),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 3))],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Image
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-            child: Stack(children: [
-              imageUrl != null
-                  ? Image.network(imageUrl,
-                      height: 140, width: double.infinity, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imagePlaceholder())
-                  : _imagePlaceholder(),
-              if (!inStock)
-                Positioned.fill(child: Container(
-                  color: Colors.black.withOpacity(0.45),
-                  child: const Center(child: Text('OUT OF STOCK',
-                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1))),
-                )),
-            ]),
-          ),
-          // Info
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name,
-                style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 12),
-                maxLines: 2, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 5),
-              Text('₱${price.toStringAsFixed(2)}',
-                style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 14)),
-              const SizedBox(height: 4),
-              Row(children: [
-                Icon(Icons.star, color: _gold, size: 11),
-                const SizedBox(width: 3),
-                Text(rating > 0 ? rating.toStringAsFixed(1) : '—',
-                  style: const TextStyle(color: _textLight, fontSize: 10)),
-                const SizedBox(width: 6),
-                Text('$sold sold', style: const TextStyle(color: _textLight, fontSize: 10)),
-              ]),
-            ]),
-          ),
-        ]),
       ),
     );
   }

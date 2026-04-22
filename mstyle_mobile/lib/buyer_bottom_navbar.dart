@@ -10,7 +10,7 @@ const Color _primary = Color(0xFF1a1a1a);
 const Color _gold    = Color(0xFFd4af37);
 
 // ─── BuyerPage enum ───────────────────────────────────────────────────────────
-enum BuyerPage { home, orders, search, wishlist, messages }
+enum BuyerPage { home, orders, search, wishlist, messages, none }
 
 // ─── BuyerBottomNavBar ────────────────────────────────────────────────────────
 /// Shared bottom navigation bar for all main buyer pages.
@@ -148,12 +148,13 @@ class BuyerBottomNavBar extends StatelessWidget {
         );
         break;
       case BuyerPage.search:
-        // Search navigates via onSearch callback or directly to search results
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => BuyerSearchResultsPage(userEmail: userEmail)),
         );
+        break;
+      case BuyerPage.none:
         break;
     }
   }

@@ -6,6 +6,7 @@ import 'buyer_viewproduct.dart';
 import 'buyer_checkout.dart';
 import 'buyer_service.dart';
 import 'product_image_carousel.dart';
+import 'product_card.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -75,30 +76,15 @@ class _OuterwearPageState extends State<OuterwearPage> {
 
   @override
   Widget build(BuildContext context) {
-    final email = widget.userEmail;
-    if (email != null) {
-      return BuyerCategoryScaffold(
-        title: 'Outerwear & Jackets',
-        userEmail: email,
-        slivers: [
-          SliverToBoxAdapter(child: _heroSection()),
-          SliverToBoxAdapter(child: _filterSection()),
-          SliverToBoxAdapter(child: _productGrid()),
-          const SliverToBoxAdapter(child: AppFooter()),
-        ],
-      );
-    }
-    return Scaffold(
-      backgroundColor: _bg,
-      body: CustomScrollView(
-        slivers: [
-          _appBar(),
-          SliverToBoxAdapter(child: _heroSection()),
-          SliverToBoxAdapter(child: _filterSection()),
-          SliverToBoxAdapter(child: _productGrid()),
-          const SliverToBoxAdapter(child: AppFooter()),
-        ],
-      ),
+    return BuyerCategoryScaffold(
+      title: 'Outerwear & Jackets',
+      userEmail: widget.userEmail,
+      slivers: [
+        SliverToBoxAdapter(child: _heroSection()),
+        SliverToBoxAdapter(child: _filterSection()),
+        SliverToBoxAdapter(child: _productGrid()),
+        const SliverToBoxAdapter(child: AppFooter()),
+      ],
     );
   }
 
@@ -309,7 +295,10 @@ class _OuterwearPageState extends State<OuterwearPage> {
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2, crossAxisSpacing: 14, mainAxisSpacing: 14, childAspectRatio: 0.68),
           itemCount: _filteredProducts.length,
-          itemBuilder: (_, i) => _productCard(_filteredProducts[i]),
+          itemBuilder: (_, i) => ProductCard(
+            product: _filteredProducts[i],
+            userEmail: widget.userEmail ?? '',
+          ),
         ),
     ]),
   );

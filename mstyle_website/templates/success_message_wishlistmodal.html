@@ -1,18 +1,18 @@
 <!-- Success Message Wishlist Modal -->
-<div id="successWishlistModal" class="success-wishlist-modal">
+<div id="successWishlistModal" class="success-wishlist-modal" aria-hidden="true" role="dialog">
     <div class="success-wishlist-modal-content">
-        <div class="success-wishlist-icon">
-            <i class="fas fa-heart success-wishlist-checkmark"></i>
+        <div class="success-wishlist-icon" id="wishlistModalIcon">
+            <i class="fas fa-heart success-wishlist-checkmark" id="wishlistModalIcon_i"></i>
         </div>
-        <h2>❤️ Added to Wishlist! ❤️</h2>
-        <p class="thank-you-wishlist-message">Item successfully added to your favorites</p>
-        <p class="wishlist-message">You can view all your favorite items in your wishlist page.</p>
+        <h2 id="successWishlistTitle">Added to Wishlist!</h2>
+        <p class="thank-you-wishlist-message" id="successWishlistSubtitle">Success!</p>
+        <p class="wishlist-message" id="successWishlistMessage">Item has been added to your wishlist.</p>
         <div class="success-wishlist-modal-buttons">
-            <button class="view-wishlist-btn" onclick="goToWishlist()">
+            <button type="button" class="view-wishlist-btn" onclick="goToWishlist()">
                 <i class="fas fa-heart"></i>
                 View Wishlist
             </button>
-            <button class="continue-shopping-btn" onclick="closeSuccessWishlistModal()">
+            <button type="button" class="continue-shopping-btn" onclick="closeSuccessWishlistModal()">
                 <i class="fas fa-shopping-bag"></i>
                 Continue Shopping
             </button>
@@ -21,48 +21,47 @@
 </div>
 
 <script>
-    // Wishlist modal functions - explicitly attach to window object
-    window.showSuccessWishlistModal = function() {
-        console.log('=== WISHLIST MODAL FUNCTION CALLED ===');
-        const modal = document.getElementById('successWishlistModal');
-        console.log('Wishlist modal element:', modal);
-        console.log('Modal classes:', modal ? modal.className : 'N/A');
-        
-        // Also check if cart modal exists
-        const cartModal = document.getElementById('successCartModal');
-        console.log('Cart modal element:', cartModal);
-        console.log('Cart modal classes:', cartModal ? cartModal.className : 'N/A');
-        
-        if (modal) {
-            modal.classList.add('show');
-            console.log('Wishlist modal SHOW class added');
-            console.log('Updated modal classes:', modal.className);
-            // Auto close after 5 seconds
-            setTimeout(() => {
-                closeSuccessWishlistModal();
-            }, 5000);
-        } else {
-            console.error('ERROR: Wishlist modal element not found in DOM!');
-            alert('DEBUG: Wishlist modal not found!');
-        }
+function showSuccessWishlistModal(message, isRemove) {
+    const modal    = document.getElementById('successWishlistModal');
+    const icon     = document.getElementById('wishlistModalIcon');
+    const iconEl   = document.getElementById('wishlistModalIcon_i');
+    const title    = document.getElementById('successWishlistTitle');
+    const subtitle = document.getElementById('successWishlistSubtitle');
+    const msg      = document.getElementById('successWishlistMessage');
+
+    if (isRemove) {
+        title.textContent    = 'Removed from Wishlist';
+        subtitle.textContent = 'Item removed!';
+        msg.textContent      = message || 'Item has been removed from your wishlist.';
+        icon.style.background = 'linear-gradient(135deg, #6c757d, #495057)';
+        title.style.color     = '#6c757d';
+    } else {
+        title.textContent    = 'Added to Wishlist!';
+        subtitle.textContent = 'Success!';
+        msg.textContent      = message || 'Item has been added to your wishlist.';
+        icon.style.background = 'linear-gradient(135deg, #e74c3c, #c0392b)';
+        title.style.color     = '#e74c3c';
     }
 
-    window.closeSuccessWishlistModal = function() {
-        const modal = document.getElementById('successWishlistModal');
-        if (modal) {
-            modal.classList.remove('show');
-        }
-    }
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    setTimeout(closeSuccessWishlistModal, 3000);
+}
 
-    window.goToWishlist = function() {
-        window.location.href = '/wishlist';
+function closeSuccessWishlistModal() {
+    const modal = document.getElementById('successWishlistModal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
     }
+}
 
-    // Close modal when clicking outside
-    document.addEventListener('click', function(event) {
-        const modal = document.getElementById('successWishlistModal');
-        if (modal && event.target === modal) {
-            closeSuccessWishlistModal();
-        }
-    });
+function goToWishlist() {
+    window.location.href = "{{ url_for('wishlist') }}";
+}
+
+window.addEventListener('click', function(e) {
+    const modal = document.getElementById('successWishlistModal');
+    if (e.target === modal) closeSuccessWishlistModal();
+});
 </script>

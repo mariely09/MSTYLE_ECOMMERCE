@@ -9,6 +9,7 @@ import 'profile.dart';
 import 'buyer_notifications.dart';
 import 'buyer_header.dart';
 import 'buyer_bottom_navbar.dart';
+import 'buyer_search_results.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -83,7 +84,20 @@ class _BuyerCategoryScaffoldState extends State<BuyerCategoryScaffold> {
           CustomScrollView(
             controller: _scrollCtrl,
             slivers: [
-              BuyerAppBar(userEmail: widget.userEmail ?? ''),
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: _primary,
+                elevation: 6,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: ShaderMask(
+                  shaderCallback: (b) => _goldGrad.createShader(b),
+                  child: Text(widget.title,
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                ),
+              ),
               ...widget.slivers,
               const SliverToBoxAdapter(child: SizedBox(height: 80)),
             ],
@@ -96,7 +110,7 @@ class _BuyerCategoryScaffoldState extends State<BuyerCategoryScaffold> {
               offset: _navVisible ? Offset.zero : const Offset(0, 1),
               child: BuyerBottomNavBar(
                 userEmail: widget.userEmail ?? '',
-                currentPage: BuyerPage.home,
+                currentPage: BuyerPage.none,
                 onSearch: _showSearch,
               ),
             ),
@@ -106,42 +120,9 @@ class _BuyerCategoryScaffoldState extends State<BuyerCategoryScaffold> {
     );
   }
 
-  // ─── Search bottom sheet ──────────────────────────────────────────────────
   void _showSearch() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            TextField(
-              autofocus: true,
-              style: const TextStyle(color: _accent, fontSize: 15),
-              decoration: InputDecoration(
-                hintText: 'Search for premium menswear...',
-                hintStyle: const TextStyle(color: _textLight),
-                prefixIcon: const Icon(Icons.search, color: _gold),
-                filled: true, fillColor: _bg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide(color: _gold.withOpacity(0.3), width: 1.5)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(30),
-                  borderSide: const BorderSide(color: _gold, width: 2)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => BuyerSearchResultsPage(userEmail: widget.userEmail ?? ''),
+    ));
   }
 }

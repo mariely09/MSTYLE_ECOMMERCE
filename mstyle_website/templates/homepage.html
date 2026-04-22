@@ -300,232 +300,13 @@
             <h2>Featured Products</h2>
         </div>
 
-        <div class="product-grid">
-            {% if all_products %}
-            {% for product in all_products %}
-            {% set is_out_of_stock = (product.quantity|int) <= 0 and (product.sold or 0)|int > 0 %} <div
-                class="product-card {% if is_out_of_stock %}out-of-stock{% endif %}">
-                <!-- Calculate promotion details first - at product card level -->
-                {% set promo_data = namespace(has_promotion=false, promotion_type='', promotion_discount=0,
-                promotion_code='', final_price=product.price|float) %}
-
-                <!-- Check if this product has a promotion -->
-                {% if promotional_products %}
-                {% for promo_product in promotional_products %}
-                {% if promo_product.id == product.id %}
-                {% set promo_data.has_promotion = true %}
-                {% set promo_data.promotion_type = promo_product.promotion_type %}
-                {% set promo_data.promotion_discount = promo_product.promotion_discount|float %}
-                {% set promo_data.promotion_code = promo_product.promotion_code %}
-
-                <!-- Calculate final price based on promotion type -->
-                {% if promo_data.promotion_type == 'percentage' and promo_data.promotion_discount > 0 %}
-                {% set original_price = product.price|float %}
-                {% set sale_price = original_price - (original_price * (promo_data.promotion_discount / 100)) %}
-                {% set promo_data.final_price = sale_price if sale_price > 0 else 0.01 %}
-                {% elif promo_data.promotion_type == 'fixed' and promo_data.promotion_discount > 0 %}
-                {% set original_price = product.price|float %}
-                {% set sale_price = original_price - promo_data.promotion_discount %}
-                {% set promo_data.final_price = sale_price if sale_price > 0 else 0.01 %}
-                {% endif %}
-                {% endif %}
-                {% endfor %}
-                {% endif %}
-
-                <div class="product-image-container">
-                    {% set images = product.image.split(',') if product.image else [] %}
-                    {% if images|length > 1 %}
-                    <!-- Multiple images - show carousel -->
-                    <div class="product-image-slider" data-product-id="{{ product.id }}"
-                        data-image-count="{{ images|length }}">
-                        {% for image in images %}
-                        <img src="{{ image.strip()|product_img }}"
-                            alt="{{ product.name }}" class="product-image {% if loop.first %}active{% endif %}"
-                            data-image-index="{{ loop.index0 }}" loading="lazy">
-                        {% endfor %}
-                        <div class="image-indicators">
-                            {% for image in images %}
-                            <span class="indicator {% if loop.first %}active{% endif %}"
-                                onclick="showImage(this, {{ loop.index0 }})" data-image-index="{{ loop.index0 }}"
-                                title="Image {{ loop.index }}"></span>
-                            {% endfor %}
-                        </div>
-                        <button class="nav-btn prev-btn" onclick="previousImage(this)" title="Previous Image">
-                            <i class="fas fa-chevron-left"></i>
-                        </button>
-                        <button class="nav-btn next-btn" onclick="nextImage(this)" title="Next Image">
-                            <i class="fas fa-chevron-right"></i>
-                        </button>
-                        <div class="image-counter">
-                            <span class="current-image">1</span> / <span class="total-images">{{ images|length }}</span>
-                        </div>
-                    </div>
-                    {% else %}
-                    <!-- Single image -->
-                    {% if images and images[0].strip() %}
-                    <img src="{{ images[0].strip()|product_img }}"
-                        alt="{{ product.name }}" class="product-image">
-                    {% else %}
-                    <div class="product-image-placeholder">
-                        <i class="fas fa-image"></i>
-                        <span>No Image Available</span>
-                    </div>
-                    {% endif %}
-                    {% endif %}
-
-                    <!-- Out of Stock Overlay Badge -->
-                    {% if is_out_of_stock %}
-                    <div class="out-of-stock-overlay">
-                        <div class="out-of-stock-badge">
-                            <i class="fas fa-times-circle"></i>
-                            <span>OUT OF STOCK</span>
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    <!-- Promotion Badge - Show if product has promotion -->
-                    {% if promotional_products and not is_out_of_stock %}
-                    {% for promo_product in promotional_products %}
-                    {% if promo_product.id == product.id %}
-                    <div class="promotion-badge-grid">
-                        {% if promo_product.promotion_type == 'percentage' %}
-                        {{ (promo_product.promotion_discount|float)|int }}% OFF
-                        {% elif promo_product.promotion_type == 'fixed' %}
-                        ₱{{ (promo_product.promotion_discount|float)|int }} OFF
-                        {% elif promo_product.promotion_type == 'buy_one_get_one' %}
-                        BUY ONE GET ONE
-                        {% elif promo_product.promotion_type == 'free_shipping' %}
-                        FREE SHIPPING
-                        {% else %}
-                        SPECIAL
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                    {% endfor %}
-                    {% endif %}
-
-                    <div class="product-overlay-buttons">
-                        <a href="{{ url_for('view_product', product_id=product.id) }}" class="view-product-btn">
-                            <i class="fas fa-eye"></i>
-                        </a>
-                        {% if not is_out_of_stock %}
-                        <button class="wishlist-btn"
-                            onclick="addToWishlist('{{ product.id }}', '{{ product.name }}', '{{ promo_data.final_price }}', this)">
-                            <i class="fas fa-heart"></i>
-                        </button>
-                        <button class="cart-btn"
-                            onclick="openColorSizeModal('{{ product.id }}', '{{ product.name }}', '{{ promo_data.final_price }}', '{{ product.image }}', '{{ product.variations }}', '{{ product.sizes or '' }}')">
-                            <i class="fas fa-shopping-cart"></i>
-                        </button>
-                        {% else %}
-                        <button class="wishlist-btn" disabled title="Out of stock">
-                            <i class="fas fa-heart"></i>
-                        </button>
-                        <button class="cart-btn" disabled title="Out of stock">
-                            <i class="fas fa-shopping-cart"></i>
-                        </button>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="product-info">
-                    <h3 class="product-name">{{ product.name }}</h3>
-
-                    <!-- Enhanced Price Display with Promotion Support (matching product grid format) -->
-                    <div class="product-price-section">
-                        {% if promo_data.has_promotion %}
-                        {% set original_price = product.price|float if product.price else 0.0 %}
-                        {% set discount_value = promo_data.promotion_discount|float if promo_data.promotion_discount
-                        else 0.0 %}
-
-                        {% if promo_data.promotion_type == 'percentage' and discount_value > 0 %}
-                        <!-- Percentage Discount Display (matching product grid) -->
-                        <div class="price-display">
-                            <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                            {% set sale_price = original_price * (1 - discount_value/100) %}
-                            {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                            <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                        </div>
-
-                        {% elif promo_data.promotion_type == 'fixed' and discount_value > 0 %}
-                        <!-- Fixed Amount Discount Display (matching product grid) -->
-                        <div class="price-display">
-                            <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                            {% set sale_price = original_price - discount_value %}
-                            {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                            <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                        </div>
-
-                        {% elif promo_data.promotion_type == 'buy_one_get_one' %}
-                        <!-- BOGO - Show regular price (matching product grid) -->
-                        <p class="product-price bogo-price">₱{{ "%.2f"|format(original_price) }}</p>
-
-                        {% elif promo_data.promotion_type == 'free_shipping' %}
-                        <!-- Free Shipping - Show regular price (matching product grid) -->
-                        <p class="product-price free-shipping-price">₱{{ "%.2f"|format(original_price) }}</p>
-                        <div class="savings-info">
-                            <small class="shipping-text">+ Free Shipping</small>
-                        </div>
-
-                        {% else %}
-                        <!-- Fallback for other promotion types (matching product grid) -->
-                        <p class="product-price">₱{{ "%.2f"|format(original_price) }}</p>
-                        {% if promo_data.promotion_code %}
-                        <div class="savings-info">
-                            <small class="promo-code-text">Use code: {{ promo_data.promotion_code }}</small>
-                        </div>
-                        {% endif %}
-                        {% endif %}
-
-                        {% else %}
-                        <!-- No promotion - show regular price -->
-                        <p class="product-price">₱{{ "%.2f"|format(product.price|float) }}</p>
-                        {% endif %}
-                    </div>
-
-                    <div class="product-stats">
-                        <div class="product-rating">
-                            <div class="stars">
-                                {% set rating = product.rating or 0 %}
-                                {% for i in range(1, 6) %}
-                                {% if i <= rating %} <i class="fas fa-star"></i>
-                                    {% elif i - 0.5 <= rating %} <i class="fas fa-star-half-alt"></i>
-                                        {% else %}
-                                        <i class="far fa-star"></i>
-                                        {% endif %}
-                                        {% endfor %}
-                            </div>
-                            <span class="rating-text">({{ "%.1f"|format(rating) }})</span>
-                        </div>
-                        <p class="product-sold">
-                            <i class="fas fa-shopping-bag"></i>
-                            {{ product.sold or 0 }} sold
-                        </p>
-                    </div>
-                    {% if not is_out_of_stock %}
-                    <button class="buy-now-btn"
-                        onclick="openBuyNowModal('{{ product.id }}', '{{ product.name }}', '{{ promo_data.final_price }}', '{{ product.image }}', '{{ product.variations }}', '{{ product.sizes or '' }}')">
-                        <i class="fas fa-bolt"></i>
-                        Buy Now
-                    </button>
-                    {% else %}
-                    <button class="buy-now-btn" disabled style="background: #ccc; cursor: not-allowed;">
-                        <i class="fas fa-times-circle"></i>
-                        Out of Stock
-                    </button>
-                    {% endif %}
-                </div>
-        </div>
-        {% endfor %}
-        {% else %}
-        {% include 'no_products_available.html' %}
-        {% endif %}
-        </div>
+        {% set products = all_products %}
+        {% include 'product_grid.html' %}
 
         <!-- Pagination -->
         {% if all_products and total_pages > 1 %}
         <div class="pagination-container">
             <div class="pagination">
-                <!-- Previous Button -->
                 {% if current_page > 1 %}
                 <a href="?page={{ current_page - 1 }}" class="pagination-btn prev-btn">
                     <i class="fas fa-chevron-left"></i>
@@ -533,26 +314,24 @@
                 </a>
                 {% endif %}
 
-                <!-- Page Numbers -->
                 <div class="page-numbers">
                     {% for page_num in range(1, total_pages + 1) %}
                     {% if page_num == current_page %}
                     <span class="page-number active">{{ page_num }}</span>
-                    {% elif page_num == 1 or page_num == total_pages or (page_num >= current_page - 2 and page_num <=
-                        current_page + 2) %} <a href="?page={{ page_num }}" class="page-number">{{ page_num }}</a>
-                        {% elif page_num == current_page - 3 or page_num == current_page + 3 %}
-                        <span class="page-ellipsis">...</span>
-                        {% endif %}
-                        {% endfor %}
+                    {% elif page_num == 1 or page_num == total_pages or (page_num >= current_page - 2 and page_num <= current_page + 2) %}
+                    <a href="?page={{ page_num }}" class="page-number">{{ page_num }}</a>
+                    {% elif page_num == current_page - 3 or page_num == current_page + 3 %}
+                    <span class="page-ellipsis">...</span>
+                    {% endif %}
+                    {% endfor %}
                 </div>
 
-                <!-- Next Button -->
-                {% if current_page < total_pages %} <a href="?page={{ current_page + 1 }}"
-                    class="pagination-btn next-btn">
+                {% if current_page < total_pages %}
+                <a href="?page={{ current_page + 1 }}" class="pagination-btn next-btn">
                     Next
                     <i class="fas fa-chevron-right"></i>
-                    </a>
-                    {% endif %}
+                </a>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -1190,125 +969,71 @@
             }, 100);
         }
 
-        // Product image slider functionality (matching products page)
+        // Product image slider functionality
         function showImage(indicatorElement, imageIndex) {
-            const container = indicatorElement.closest('.product-image-container');
-            const slider = container.querySelector('.product-image-slider');
+            const container = indicatorElement.closest('.pc-image-wrap') || indicatorElement.closest('.product-image-container');
+            if (!container) return;
             const images = container.querySelectorAll('.product-image');
             const indicators = container.querySelectorAll('.indicator');
-            const counter = container.querySelector('.image-counter');
 
-            // Validate imageIndex
-            if (imageIndex < 0 || imageIndex >= images.length) {
-                console.warn('Invalid image index:', imageIndex);
-                return;
-            }
+            if (imageIndex < 0 || imageIndex >= images.length) return;
 
-            // Hide all images and remove active class
             images.forEach(img => img.classList.remove('active'));
             indicators.forEach(ind => ind.classList.remove('active'));
 
-            // Show selected image and activate indicator
-            if (images[imageIndex]) {
-                images[imageIndex].classList.add('active');
-            }
-            if (indicatorElement) {
-                indicatorElement.classList.add('active');
-            }
+            if (images[imageIndex]) images[imageIndex].classList.add('active');
+            indicatorElement.classList.add('active');
 
-            // Update counter
+            const counter = container.querySelector('.image-counter');
             if (counter) {
                 const currentSpan = counter.querySelector('.current-image');
-                if (currentSpan) {
-                    currentSpan.textContent = imageIndex + 1;
-                }
+                if (currentSpan) currentSpan.textContent = imageIndex + 1;
             }
         }
 
         function nextImage(buttonElement) {
-            const container = buttonElement.closest('.product-image-container');
+            const container = buttonElement.closest('.pc-image-wrap') || buttonElement.closest('.product-image-container');
+            if (!container) return;
             const images = container.querySelectorAll('.product-image');
             const indicators = container.querySelectorAll('.indicator');
-
-            if (images.length === 0) return;
-
-            const currentIndex = Array.from(images).findIndex(img => img.classList.contains('active'));
-            const nextIndex = (currentIndex + 1) % images.length;
-
-            if (indicators[nextIndex]) {
-                showImage(indicators[nextIndex], nextIndex);
-            }
+            if (!images.length) return;
+            const cur = Array.from(images).findIndex(img => img.classList.contains('active'));
+            const next = (cur + 1) % images.length;
+            if (indicators[next]) showImage(indicators[next], next);
         }
 
         function previousImage(buttonElement) {
-            const container = buttonElement.closest('.product-image-container');
+            const container = buttonElement.closest('.pc-image-wrap') || buttonElement.closest('.product-image-container');
+            if (!container) return;
             const images = container.querySelectorAll('.product-image');
             const indicators = container.querySelectorAll('.indicator');
-
-            if (images.length === 0) return;
-
-            const currentIndex = Array.from(images).findIndex(img => img.classList.contains('active'));
-            const prevIndex = currentIndex === 0 ? images.length - 1 : currentIndex - 1;
-
-            if (indicators[prevIndex]) {
-                showImage(indicators[prevIndex], prevIndex);
-            }
+            if (!images.length) return;
+            const cur = Array.from(images).findIndex(img => img.classList.contains('active'));
+            const prev = cur === 0 ? images.length - 1 : cur - 1;
+            if (indicators[prev]) showImage(indicators[prev], prev);
         }
 
-        // Initialize sliders and auto-slide functionality (matching products page)
+        // Initialize sliders and auto-slide functionality
         document.addEventListener('DOMContentLoaded', function () {
-            // Small delay to ensure DOM is fully loaded
             setTimeout(() => {
-                const sliders = document.querySelectorAll('.product-image-slider');
-                console.log(`Found ${sliders.length} image sliders`);
-
-                sliders.forEach((slider, sliderIndex) => {
+                document.querySelectorAll('.product-image-slider').forEach(slider => {
                     const images = slider.querySelectorAll('.product-image');
                     const indicators = slider.querySelectorAll('.indicator');
 
-                    console.log(`Slider ${sliderIndex + 1}: ${images.length} images, ${indicators.length} indicators`);
-
-                    // Ensure first image is active
                     if (images.length > 0) {
                         images[0].classList.add('active');
-                        if (indicators.length > 0) {
-                            indicators[0].classList.add('active');
-                        }
+                        if (indicators.length > 0) indicators[0].classList.add('active');
                     }
 
-                    // Auto-slide only if multiple images
                     if (images.length > 1) {
-                        console.log(`Starting auto-slide for slider ${sliderIndex + 1}`);
-
-                        let autoSlideInterval = setInterval(() => {
-                            const productCard = slider.closest('.product-card');
-                            const isHovered = productCard && productCard.matches(':hover');
-
-                            if (!isHovered) {
-                                const nextBtn = slider.querySelector('.next-btn');
-                                if (nextBtn) {
-                                    console.log(`Auto-sliding slider ${sliderIndex + 1}`);
-                                    nextImage(nextBtn);
-                                }
-                            }
-                        }, 4000); // 4 seconds like products page
-
-                        // Pause auto-slide on hover
-                        const productCard = slider.closest('.product-card');
-                        if (productCard) {
-                            productCard.addEventListener('mouseenter', () => {
-                                console.log(`Pausing auto-slide for slider ${sliderIndex + 1}`);
-                                clearInterval(autoSlideInterval);
-                            });
-
-                            productCard.addEventListener('mouseleave', () => {
-                                console.log(`Resuming auto-slide for slider ${sliderIndex + 1}`);
-                                autoSlideInterval = setInterval(() => {
-                                    const nextBtn = slider.querySelector('.next-btn');
-                                    if (nextBtn) {
-                                        nextImage(nextBtn);
-                                    }
-                                }, 4000);
+                        // pc-card uses .pc-next; legacy cards use .next-btn
+                        const getNextBtn = () => slider.querySelector('.pc-next') || slider.querySelector('.next-btn');
+                        let timer = setInterval(() => nextImage(getNextBtn()), 4000);
+                        const card = slider.closest('.pc-card') || slider.closest('.product-card');
+                        if (card) {
+                            card.addEventListener('mouseenter', () => clearInterval(timer));
+                            card.addEventListener('mouseleave', () => {
+                                timer = setInterval(() => nextImage(getNextBtn()), 4000);
                             });
                         }
                     }
@@ -1316,125 +1041,9 @@
             }, 500);
         });
 
-        // Wishlist functionality
-        function addToWishlist(productId, productName, productPrice, buttonElement) {
-            // Check if user is logged in
-            const userName = document.getElementById('user-name');
-            const isLoggedIn = userName && userName.textContent.trim() !== 'User';
-
-            if (!isLoggedIn) {
-                alert('Please login first');
-                window.location.href = '/login';
-                return;
-            }
-
-            // Get the button element if not passed
-            if (!buttonElement) {
-                buttonElement = event.target.closest('.wishlist-btn');
-            }
-
-            // Send request to add item to wishlist
-            fetch('/add-to-wishlist', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    product_id: productId,
-                    product_name: productName,
-                    product_price: productPrice
-                })
-            })
-                .then(response => {
-                    console.log('Response status:', response.status);
-                    if (!response.ok) {
-                        if (response.status === 401) {
-                            alert('Please login first');
-                            window.location.href = '/login';
-                            return Promise.reject('Unauthorized');
-                        }
-                        return response.text().then(text => {
-                            console.log('Error response:', text);
-                            throw new Error(`Server error: ${response.status}`);
-                        });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Response data:', data);
-                    if (data.error) {
-                        alert(data.error);
-                        return;
-                    }
-                    if (data.success) {
-                        // Toggle button state
-                        if (buttonElement) {
-                            buttonElement.classList.toggle('active');
-                        }
-                        // Show success modal instead of alert
-                        showSuccessWishlistModal();
-                    } else {
-                        alert('Unexpected response from server');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error details:', error);
-                    alert('Failed to add item to wishlist. Please try again.');
-                });
-        }
+        // Wishlist handled by product_grid.html
     </script>
 
-    <!-- Color and Size Selection Modal -->
-    <div id="colorSizeModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Select Color & Size</h2>
-                <span class="close" onclick="closeColorSizeModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="product-preview">
-                    <img id="modalProductImage" src="" alt="Product Image" class="modal-product-image">
-                    <div class="product-details">
-                        <h3 id="modalProductName"></h3>
-                        <p id="modalProductPrice"></p>
-                    </div>
-                </div>
-
-                <div class="selection-section">
-                    <div class="color-selection">
-                        <label>Color:</label>
-                        <div class="color-options" id="colorOptions">
-                            <!-- Colors will be dynamically generated based on product variations -->
-                        </div>
-                        <span id="selectedColor" class="selected-value">Please select a color</span>
-                    </div>
-
-                    <div class="size-selection">
-                        <label>Size:</label>
-                        <div class="size-options" id="sizeOptions">
-                            <!-- Sizes will be dynamically generated based on product sizes -->
-                        </div>
-                        <span id="selectedSize" class="selected-value">Please select a size</span>
-                    </div>
-
-                    <div class="quantity-selection">
-                        <label>Quantity:</label>
-                        <div class="quantity-controls">
-                            <button type="button" onclick="decreaseQuantity()">-</button>
-                            <input type="number" id="quantity" value="1" min="1" max="10">
-                            <button type="button" onclick="increaseQuantity()">+</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeColorSizeModal()">Cancel</button>
-                <button class="btn-buy-now" onclick="confirmBuyNow()" id="buyNowBtn" style="display: none;">Buy
-                    Now</button>
-                <button class="btn-add-to-cart" onclick="confirmAddToCart()" id="addToCartBtn">Add to Cart</button>
-            </div>
-        </div>
-    </div>
     <script src="{{ url_for('static', filename='js/color_size_modal.js') }}"></script>
 
 </body>

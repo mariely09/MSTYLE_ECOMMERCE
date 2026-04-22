@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'supabase_client.dart';
+import 'supabase_client.dart' show supabase, supabaseUrl, supabaseServiceRole, supabaseAdminSelect, supabaseAdminUpsert, supabaseAdminDelete;
 import 'product_image_carousel.dart' show kFlaskBaseUrl;
 
 // Shared HTTP client instance
@@ -157,10 +158,11 @@ class BuyerService {
   }
 
   /// Update cart item color or size specification
-  static Future<void> updateCartSpec(int cartItemId, {String? color, String? size}) async {
+  static Future<void> updateCartSpec(int cartItemId, {String? color, String? size, String? image}) async {
     final update = <String, dynamic>{};
     if (color != null) update['variations'] = color;
     if (size != null) update['size'] = size;
+    if (image != null) update['image'] = image;
     if (update.isEmpty) return;
     await supabase.from('cart').update(update).eq('id', cartItemId);
   }
@@ -389,64 +391,220 @@ class BuyerService {
   }
 
   // ── Wishlist ──────────────────────────────────────────────────────────────
-  // Note: wishlist uses buyer email as identifier since user_id is MySQL-specific
+  // All operations go directly to Supabase using the service-role key.
+  // user_id in the wishlist table = MD5 hash of email (stable int32).
 
-  /// Fetch wishlist items with product details
+  static int? _cachedMysqlUserId;
+  static String? _cachedMysqlUserEmail;
+
+  /// Derive a stable int32 user_id from email via Flask (Supabase lookup + MD5 fallback).
+  static Future<int?> _getMysqlUserId(String email) async {
+    if (_cachedMysqlUserId != null && _cachedMysqlUserEmail == email) {
+      return _cachedMysqlUserId;
+    }
+    // Ask Flask — it queries Supabase users table, falls back to MD5 hash
+    try {
+      final uri = Uri.parse('$kFlaskBaseUrl/api/mobile/get_mysql_user_id')
+          .replace(queryParameters: {'email': email});
+      final resp = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        if (json['success'] == true) {
+          final id = (json['user_id'] as num?)?.toInt();
+          if (id != null) {
+            _cachedMysqlUserId = id;
+            _cachedMysqlUserEmail = email;
+            debugPrint('_getUserId: $email → $id (${json['source']})');
+            return id;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_getUserId Flask error: $e');
+    }
+    // Dart-side fallback: same MD5 algorithm as Flask
+    try {
+      final rows = await supabaseAdminSelect(
+        table: 'users', select: 'id', filters: {'email': email}, limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final rawId = rows[0]['id'];
+        final intId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+        if (intId != null) {
+          _cachedMysqlUserId = intId;
+          _cachedMysqlUserEmail = email;
+          return intId;
+        }
+      }
+    } catch (_) {}
+    // Pure polynomial hash — same algorithm as Flask _resolve_wishlist_user_id:
+    // hash_id = (hash_id * 31 + byte) & 0x7FFFFFFF  (over lowercased UTF-8 bytes)
+    int hashId = 0;
+    for (final byte in utf8.encode(email.toLowerCase())) {
+      hashId = (hashId * 31 + byte) & 0x7FFFFFFF;
+    }
+    _cachedMysqlUserId = hashId;
+    _cachedMysqlUserEmail = email;
+    debugPrint('_getUserId: $email → $hashId (polynomial hash)');
+    return hashId;
+  }
+
+  /// Fetch wishlist items with product + promotion details (pure Supabase)
   static Future<List<Map<String, dynamic>>> getWishlist(String email) async {
     try {
-      final res = await supabase
-          .from('wishlist')
-          .select('id, product_id, products(id, name, price, image, seller_email)')
-          .eq('email', email)
-          .order('id', ascending: false);
-      return List<Map<String, dynamic>>.from(res as List);
-    } catch (_) {
+      final userId = await _getMysqlUserId(email);
+      if (userId == null) return [];
+
+      final wlRows = await supabaseAdminSelect(
+        table: 'wishlist', select: 'id,product_id', filters: {'user_id': '$userId'},
+      );
+      if (wlRows.isEmpty) return [];
+
+      final productIds = wlRows.map((r) => r['product_id']).toList();
+
+      // Fetch products
+      final prodUri = Uri.parse('$supabaseUrl/rest/v1/products').replace(queryParameters: {
+        'select': 'id,name,price,image,seller_email,variations,sizes',
+        'id': 'in.(${productIds.join(',')})',
+      });
+      final prodResp = await http.get(prodUri, headers: {
+        'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+      });
+      final prodList = prodResp.statusCode == 200
+          ? List<Map<String, dynamic>>.from(jsonDecode(prodResp.body) as List)
+          : <Map<String, dynamic>>[];
+      final prodMap = {for (final p in prodList) p['id'] as int: p};
+
+      // Fetch active promotions
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final promoUri = Uri.parse('$supabaseUrl/rest/v1/promotions').replace(queryParameters: {
+        'select': 'id,type,discount_value,code,product_scope',
+        'is_active': 'eq.true', 'start_date': 'lte.$today', 'end_date': 'gte.$today',
+      });
+      final promoResp = await http.get(promoUri, headers: {
+        'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+      });
+      final promos = promoResp.statusCode == 200
+          ? List<Map<String, dynamic>>.from(jsonDecode(promoResp.body) as List)
+          : <Map<String, dynamic>>[];
+
+      final promoMap = <int, Map<String, dynamic>>{};
+      for (final promo in promos) {
+        if ((promo['product_scope'] as String? ?? 'all') == 'all') {
+          for (final pid in productIds) {
+            final id = pid as int;
+            if (!promoMap.containsKey(id)) promoMap[id] = promo;
+          }
+        }
+      }
+
+      final items = <Map<String, dynamic>>[];
+      for (final row in wlRows) {
+        final pid = row['product_id'] as int;
+        final prod = prodMap[pid];
+        if (prod == null) continue;
+        final basePrice = double.tryParse(prod['price']?.toString() ?? '0') ?? 0;
+        final promo = promoMap[pid];
+        double? salePrice;
+        String promoType = '', promoCode = '';
+        double promoDiscount = 0;
+        if (promo != null) {
+          promoType = promo['type'] as String? ?? '';
+          promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
+          promoCode = promo['code'] as String? ?? '';
+          if (promoType == 'percentage' && promoDiscount > 0) {
+            salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
+          } else if (promoType == 'fixed' && promoDiscount > 0) {
+            salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+          }
+        }
+        items.add({
+          'id': row['id'], 'product_id': pid,
+          'products': {
+            'id': pid, 'name': prod['name'] ?? '', 'price': basePrice,
+            'sale_price': salePrice, 'image': prod['image'] ?? '',
+            'seller_email': prod['seller_email'] ?? '',
+            'variations': prod['variations'] ?? '', 'sizes': prod['sizes'] ?? '',
+            'promotion_type': promoType, 'promotion_discount': promoDiscount,
+            'promotion_code': promoCode,
+          },
+        });
+      }
+      debugPrint('getWishlist: ${items.length} items for $email');
+      return items;
+    } catch (e) {
+      debugPrint('getWishlist error: $e');
       return [];
     }
   }
 
-  /// Add to wishlist
+  /// Add to wishlist (direct Supabase insert)
   static Future<void> addToWishlist(String email, int productId) async {
-    try {
-      await supabase.from('wishlist').upsert({
-        'email':      email,
-        'product_id': productId,
-      }, onConflict: 'email,product_id');
-    } catch (e) {
-      debugPrint('addToWishlist error: $e');
+    debugPrint('addToWishlist: $email product=$productId');
+    final userId = await _getMysqlUserId(email);
+    if (userId == null) throw Exception('Could not resolve user ID for $email');
+
+    // Check existing
+    final existing = await supabaseAdminSelect(
+      table: 'wishlist', select: 'id',
+      filters: {'user_id': '$userId', 'product_id': '$productId'},
+    );
+    if (existing.isNotEmpty) { debugPrint('addToWishlist: already exists'); return; }
+
+    // Insert
+    final uri = Uri.parse('$supabaseUrl/rest/v1/wishlist');
+    final resp = await http.post(uri,
+      headers: {
+        'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+        'Content-Type': 'application/json', 'Prefer': 'return=representation',
+      },
+      body: jsonEncode({'user_id': userId, 'product_id': productId}),
+    );
+    debugPrint('addToWishlist: ${resp.statusCode} ${resp.body}');
+    if (resp.statusCode != 200 && resp.statusCode != 201 && resp.statusCode != 204) {
+      throw Exception('Supabase insert failed (${resp.statusCode}): ${resp.body}');
     }
+    debugPrint('addToWishlist: SUCCESS user_id=$userId product_id=$productId');
   }
 
-  /// Remove from wishlist
+  /// Remove from wishlist (direct Supabase delete)
   static Future<void> removeFromWishlist(String email, int productId) async {
-    try {
-      await supabase
-          .from('wishlist')
-          .delete()
-          .eq('email', email)
-          .eq('product_id', productId);
-    } catch (e) {
-      debugPrint('removeFromWishlist error: $e');
+    debugPrint('removeFromWishlist: $email product=$productId');
+    final userId = await _getMysqlUserId(email);
+    if (userId == null) throw Exception('Could not resolve user ID for $email');
+
+    final uri = Uri.parse('$supabaseUrl/rest/v1/wishlist').replace(queryParameters: {
+      'user_id': 'eq.$userId', 'product_id': 'eq.$productId',
+    });
+    final resp = await http.delete(uri, headers: {
+      'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+      'Prefer': 'return=minimal',
+    });
+    debugPrint('removeFromWishlist: ${resp.statusCode}');
+    if (resp.statusCode != 200 && resp.statusCode != 204) {
+      throw Exception('Supabase delete failed (${resp.statusCode}): ${resp.body}');
     }
   }
 
-  /// Check if product is in wishlist
+  /// Check if product is in wishlist (direct Supabase query)
   static Future<bool> isInWishlist(String email, int productId) async {
     try {
-      final res = await supabase
-          .from('wishlist')
-          .select('id')
-          .eq('email', email)
-          .eq('product_id', productId)
-          .maybeSingle();
-      return res != null;
-    } catch (_) {
+      final userId = await _getMysqlUserId(email);
+      if (userId == null) return false;
+      final rows = await supabaseAdminSelect(
+        table: 'wishlist', select: 'id',
+        filters: {'user_id': '$userId', 'product_id': '$productId'},
+      );
+      return rows.isNotEmpty;
+    } catch (e) {
+      debugPrint('isInWishlist error: $e');
       return false;
     }
   }
 
-  // ── Notifications ─────────────────────────────────────────────────────────
 
+
+  // ── Notifications ─────────────────────────────────────────────────────────
   /// Fetch buyer notifications
   static Future<List<Map<String, dynamic>>> getNotifications(String email) async {
     final res = await supabase

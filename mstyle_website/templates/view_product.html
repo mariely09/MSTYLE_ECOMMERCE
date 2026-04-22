@@ -24,10 +24,7 @@
             border-color: #2c3e50 !important;
             background: #f8f9fa !important;
         }
-    </style>
-
-
-</head>
+    </style></head>
 
 <body>
     {% include 'homepg_header.html' %}
@@ -38,6 +35,17 @@
         </a>
         <div class="product-detail">
             <div class="product-image">
+                <!-- Wishlist heart button — top right like mobile app -->
+                {% set in_wl = wishlist_product_ids is defined and product.id|string in wishlist_product_ids %}
+                <button type="button" id="vpWishlistBtn"
+                        class="vp-wish-btn {% if in_wl %}active{% endif %}"
+                        onclick="vpToggleWishlist(this)"
+                        title="{% if in_wl %}Remove from Wishlist{% else %}Add to Wishlist{% endif %}"
+                        data-product-id="{{ product.id }}"
+                        data-product-name="{{ product.name }}"
+                        data-product-price="{{ product.promotional_price if product.has_promotion else product.price }}">
+                    <i class="fas fa-heart"></i>
+                </button>
                 {% set images = product.image.split(',') if product.image else [] %}
                 {% if images|length > 1 %}
                 <!-- Multiple images - show carousel -->
@@ -136,18 +144,15 @@
                         <label for="quantity">Quantity:
                             <span id="stockStatusLabel" style="font-weight: 600; font-size: 13px;"></span>
                         </label>
-                        <div class="quantity-controls" style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <div class="quantity-controls">
                             <button type="button" id="qtyMinus" class="quantity-btn minus"
-                                onclick="changeQuantity(-1)"
-                                style="width:36px;height:36px;border-radius:10px;border:1.5px solid #E9ECEF;background:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;">−</button>
+                                onclick="changeQuantity(-1)">−</button>
                             <input type="number" id="quantity" name="quantity" value="1" min="1"
                                 max="{{ product.quantity }}"
                                 oninput="onQuantityInput(this)"
-                                onblur="onQuantityBlur(this)"
-                                style="width:60px;height:36px;text-align:center;font-size:16px;font-weight:800;border:1.5px solid #E9ECEF;border-radius:10px;padding:0 6px;outline:none;transition:border-color 0.15s;">
+                                onblur="onQuantityBlur(this)">
                             <button type="button" id="qtyPlus" class="quantity-btn plus"
-                                onclick="changeQuantity(1)"
-                                style="width:36px;height:36px;border-radius:10px;border:1.5px solid #E9ECEF;background:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;">+</button>
+                                onclick="changeQuantity(1)">+</button>
                         </div>
                         <div id="maxReachedBadge" style="display:none;margin-top:6px;">
                             <span style="background:rgba(212,175,55,0.12);border:1px solid rgba(212,175,55,0.4);color:#d4af37;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;">Max reached</span>
@@ -166,23 +171,25 @@
 
                     <div class="buttons">
                         {% if (product.quantity|int) > 0 %}
-                        <button type="button" class="checkout" onclick="checkoutProduct()">
-                            <i class="fas fa-bolt"></i> Buy Now
-                        </button>
                         <div class="icon-buttons">
                             <button type="button" class="add-to-cart" onclick="addToCart(event)">
                                 <i class="fas fa-shopping-cart"></i>
+                                Add to Cart
                             </button>
                         </div>
+                        <button type="button" class="checkout" onclick="checkoutProduct()">
+                            <i class="fas fa-bolt"></i> Buy Now
+                        </button>
                         {% else %}
-                        <button type="button" class="checkout" disabled style="background: #ccc; cursor: not-allowed; opacity: 0.6;">
+                        <div class="icon-buttons">
+                            <button type="button" class="add-to-cart" disabled>
+                                <i class="fas fa-shopping-cart"></i>
+                                Add to Cart
+                            </button>
+                        </div>
+                        <button type="button" class="checkout" disabled>
                             <i class="fas fa-times-circle"></i> Out of Stock
                         </button>
-                        <div class="icon-buttons">
-                            <button type="button" class="add-to-cart" disabled style="background: #ccc; cursor: not-allowed; opacity: 0.6;">
-                                <i class="fas fa-shopping-cart"></i>
-                            </button>
-                        </div>
                         {% endif %}
                     </div>
                 </form>
@@ -195,21 +202,16 @@
                                      alt="{{ business_name }}" 
                                      style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
                             {% else %}
-                                <span style="font-size: 24px; font-weight: 600;">{{ business_name[0].upper() }}</span>
+                                <span>{{ business_name[0].upper() }}</span>
                             {% endif %}
                         </div>
                         <div class="seller-details">
                             <div class="seller-name">
                                 <a href="{{ url_for('view_shop', seller_email=product.seller_email) }}"
-                                    class="seller-link">{{ business_name }}</a>
+                                    class="seller-link">{{ business_name or product.seller_name or product.seller_email }}</a>
                             </div>
+                            <span style="font-size:11px;color:#6c757d;">Official Store</span>
                         </div>
-                    </div>
-                    <div class="seller-actions">
-                        <button class="btn-chat" onclick="chatWithSeller('{{ product.seller_email }}')">
-                            <i class="fas fa-comment"></i>
-                            <span>Contact Seller</span>
-                        </button>
                         <button class="btn-view-shop"
                             onclick="window.location.href='{{ url_for('view_shop', seller_email=product.seller_email) }}'">
                             <i class="fas fa-store"></i>
@@ -1165,32 +1167,42 @@
         function increaseQuantity() { changeQuantity(1); }
         function decreaseQuantity() { changeQuantity(-1); }
 
-        // Function to add item to wishlist
-        function addToWishlist(event) {
-            const button = event.target.closest('.wishlist-btn');
-            const icon = button.querySelector('i');
+        // Wishlist toggle for view_product page
+        function vpToggleWishlist(btn) {
+            const productId    = btn.dataset.productId;
+            const productName  = btn.dataset.productName;
+            const productPrice = btn.dataset.productPrice;
+            const isCurrentlyWishlisted = btn.classList.contains('active');
 
-            // Toggle heart icon between filled and outline
-            if (icon.classList.contains('fas')) {
-                icon.classList.remove('fas');
-                icon.classList.add('far');
-                button.style.background = 'linear-gradient(135deg, rgba(220, 53, 69, 0.2) 0%, rgba(248, 215, 218, 0.2) 100%)';
-                button.style.color = '#dc3545';
-                console.log('Removed from wishlist');
-            } else {
-                icon.classList.remove('far');
-                icon.classList.add('fas');
-                button.style.background = 'linear-gradient(135deg, #dc3545 0%, #e74c3c 50%, #dc3545 100%)';
-                button.style.color = 'white';
-                console.log('Added to wishlist');
-            }
-
-            // Add a small animation
-            button.style.transform = 'scale(0.9)';
-            setTimeout(() => {
-                button.style.transform = '';
-            }, 150);
+            fetch('/add-to-wishlist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ product_id: productId, product_name: productName, product_price: productPrice })
+            })
+            .then(r => {
+                if (r.status === 401) { window.location.href = '/login'; return null; }
+                return r.json();
+            })
+            .then(data => {
+                if (!data) return;
+                if (data.success) {
+                    btn.classList.toggle('active', !isCurrentlyWishlisted);
+                    btn.title = !isCurrentlyWishlisted ? 'Remove from Wishlist' : 'Add to Wishlist';
+                    // Animate
+                    btn.style.transform = 'scale(1.3)';
+                    setTimeout(() => btn.style.transform = '', 200);
+                    if (typeof showSuccessWishlistModal === 'function') {
+                        showSuccessWishlistModal(data.message, isCurrentlyWishlisted);
+                    }
+                } else {
+                    alert(data.error || 'Failed to update wishlist');
+                }
+            })
+            .catch(() => alert('Failed to update wishlist. Please try again.'));
         }
+
+        // Legacy function kept for compatibility (not used on this page)
+        function addToWishlist(event) {}
 
         // Function to chat with seller
         function chatWithSeller(sellerEmail) {

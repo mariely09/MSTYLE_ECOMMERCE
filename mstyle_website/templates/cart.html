@@ -889,30 +889,34 @@
 
             fetch('/cart/update_specification', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updateData)
             })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Update the UI
                         const itemElement = document.querySelector(`[data-id="${currentEditingItem}"]`).closest('.cart-item');
                         if (currentEditingType === 'color') {
                             const colorSpan = itemElement.querySelector('.item-color');
                             colorSpan.innerHTML = `<i class="bi bi-palette"></i> Color: ${selectedNewValue} <i class="bi bi-pencil-square edit-icon"></i>`;
                             colorSpan.setAttribute('onclick', `changeColor('${currentEditingItem}', '${selectedNewValue}')`);
 
-                            // Update the product image based on selected color
-                            updateProductImage(currentEditingItem, selectedNewValue);
+                            // Use image returned from server, or fall back to client-side lookup
+                            if (data.new_image) {
+                                const imgEl = document.getElementById(`item-image-${currentEditingItem}`);
+                                if (imgEl && imgEl.tagName === 'IMG') {
+                                    imgEl.src = resolveImageUrl(data.new_image);
+                                    imgEl.setAttribute('data-selected-color', selectedNewValue);
+                                }
+                            } else {
+                                updateProductImage(currentEditingItem, selectedNewValue);
+                            }
                         } else if (currentEditingType === 'size') {
                             const sizeSpan = itemElement.querySelector('.item-size');
                             sizeSpan.innerHTML = `<i class="bi bi-rulers"></i> Size: ${selectedNewValue} <i class="bi bi-pencil-square edit-icon"></i>`;
                             sizeSpan.setAttribute('onclick', `changeSize('${currentEditingItem}', '${selectedNewValue}')`);
                         }
                         closeSpecModal();
-                        alert('Specification updated successfully!');
                     } else {
                         alert(data.error || 'Failed to update specification');
                     }

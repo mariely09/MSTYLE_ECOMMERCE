@@ -1122,47 +1122,33 @@ function confirmBuyNow() {
     proceedToBuyNow(selectedImage);
 }
 
-// Placeholder functions for wishlist and buy now functionality
-function addToWishlist(productId, productName, productPrice) {
-    // Send request to add item to wishlist
+// Wishlist functionality
+function addToWishlist(productId, productName, productPrice, btn) {
+    const isCurrentlyWishlisted = btn && btn.classList.contains('active');
     fetch('/add-to-wishlist', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            product_id: productId,
-            product_name: productName,
-            product_price: productPrice
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId, product_name: productName, product_price: productPrice })
     })
-        .then(response => {
-            if (!response.ok) {
-                if (response.status === 401) {
-                    alert('Please login first');
-                    window.location.href = '/login';
-                    return;
-                }
-                throw new Error('Network response was not ok');
+    .then(r => {
+        if (r.status === 401) { window.location.href = '/login'; return null; }
+        return r.json();
+    })
+    .then(data => {
+        if (!data) return;
+        if (data.success) {
+            if (btn) {
+                btn.classList.toggle('active', !isCurrentlyWishlisted);
+                btn.title = !isCurrentlyWishlisted ? 'Remove from Wishlist' : 'Add to Wishlist';
             }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                // Show wishlist success modal instead of generic message
-                if (typeof window.showSuccessWishlistModal === 'function') {
-                    window.showSuccessWishlistModal();
-                } else {
-                    alert('Added to wishlist successfully!');
-                }
-            } else {
-                alert(data.error || 'Failed to add to wishlist');
+            if (typeof showSuccessWishlistModal === 'function') {
+                showSuccessWishlistModal(data.message, isCurrentlyWishlisted);
             }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Failed to add to wishlist. Please try again.');
-        });
+        } else {
+            alert(data.error || 'Failed to update wishlist');
+        }
+    })
+    .catch(() => alert('Failed to update wishlist. Please try again.'));
 }
 
 function buyNow(productId, productName, productPrice, variations) {

@@ -19,7 +19,7 @@ import signal
 import sys
 import atexit
 
-# ── Supabase (shared with mobile app) ────────────────────────────────────────
+# -- Supabase (shared with mobile app) ----------------------------------------
 from supabase_config import supabase as sb
 from supabase_config import supabase_admin as sb_admin  # service-role client (bypasses RLS)
 from supabase_config import SUPABASE_URL
@@ -32,7 +32,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 # Add min and max functions to Jinja2 environment
 app.jinja_env.globals.update(min=min, max=max)
 
-# ── Jinja2 filter: resolve product image to a web-accessible URL ─────────────
+# -- Jinja2 filter: resolve product image to a web-accessible URL -------------
 def product_image_url(image_value):
     """
     Convert a stored image value to a web-accessible URL.
@@ -50,7 +50,7 @@ def product_image_url(image_value):
 app.jinja_env.filters['product_img'] = product_image_url
 app.jinja_env.globals['product_image_url'] = product_image_url
 
-# ── Context processor: inject seller profile into all templates ───────────────
+# -- Context processor: inject seller profile into all templates ---------------
 @app.context_processor
 def inject_seller_profile():
     """Make seller_business_name and seller_profile_picture available in every template."""
@@ -94,7 +94,7 @@ def add_header(response):
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, post-check=0, pre-check=0, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
-    # ── CORS — allow Flutter web / mobile to call the API ─────────────────
+    # -- CORS: allow Flutter web / mobile to call the API -----------------
     response.headers['Access-Control-Allow-Origin']  = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
@@ -182,7 +182,7 @@ def get_db_connection():
     except mysql.connector.Error as err:
         raise  # let callers handle it
 
-# ── Cart image helper ─────────────────────────────────────────────────────────
+# -- Cart image helper ---------------------------------------------------------
 def _find_color_image(selected_color, image_colors_str, all_images_str):
     """
     Given a selected color name, find the matching image URL from image_colors mapping.
@@ -221,11 +221,11 @@ def _find_color_image(selected_color, image_colors_str, all_images_str):
     return None
 
 
-# ── image_colors dict parser ──────────────────────────────────────────────────
+# -- image_colors dict parser --------------------------------------------------
 def _parse_image_colors_dict(image_colors_raw, all_images_str=None):
     """
     Parse image_colors (JSON dict or 'url:Color,...' string) into
-    { colorName.lower() → imageUrl } dict.
+    { colorName.lower() ? imageUrl } dict.
     """
     import json as _json
     result = {}
@@ -256,7 +256,7 @@ def _parse_image_colors_dict(image_colors_raw, all_images_str=None):
     return result
 
 
-# ── Supabase user-name helper ─────────────────────────────────────────────────
+# -- Supabase user-name helper -------------------------------------------------
 def get_user_name_from_session(default='User'):
     """Return 'First Last' for the logged-in buyer/rider by querying Supabase users
     table via email.  Falls back to session['first_name'] or *default* on error."""
@@ -276,7 +276,7 @@ def get_user_name_from_session(default='User'):
             name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
             return name or default
     except Exception as e:
-        print(f"⚠️ get_user_name_from_session error: {e}")
+        print(f"?? get_user_name_from_session error: {e}")
     return default
 
 # Add proper cleanup on app shutdown
@@ -331,7 +331,7 @@ def add_cancellation_columns():
                 ALTER TABLE orders 
                 ADD COLUMN cancellation_reason TEXT NULL AFTER status
             """)
-            print("✅ Added cancellation_reason column to orders table")
+            print("? Added cancellation_reason column to orders table")
         
         # Check if cancelled_at column exists
         cursor.execute("""
@@ -349,12 +349,12 @@ def add_cancellation_columns():
                 ALTER TABLE orders 
                 ADD COLUMN cancelled_at TIMESTAMP NULL AFTER cancellation_reason
             """)
-            print("✅ Added cancelled_at column to orders table")
+            print("? Added cancelled_at column to orders table")
         
         connection.commit()
         
     except Exception as e:
-        print(f"❌ Error adding cancellation columns: {str(e)}")
+        print(f"? Error adding cancellation columns: {str(e)}")
         import traceback
         traceback.print_exc()
     finally:
@@ -419,7 +419,7 @@ def initialize_database_tables():
                     ADD COLUMN type VARCHAR(50) DEFAULT 'order' AFTER message,
                     ADD INDEX idx_type (type)
                 """)
-                print("✅ Added type column to notifications table")
+                print("? Added type column to notifications table")
         except Exception as e:
             print(f"Note: Could not add type column to notifications: {e}")
         
@@ -456,7 +456,7 @@ def initialize_database_tables():
                     ADD COLUMN type VARCHAR(50) DEFAULT 'status_update' AFTER message,
                     ADD INDEX idx_type (type)
                 """)
-                print("✅ Added type column to buyer_notifications table")
+                print("? Added type column to buyer_notifications table")
         except Exception as e:
             print(f"Note: Could not add type column: {e}")
         
@@ -475,7 +475,7 @@ def initialize_database_tables():
                     ADD COLUMN order_id INT DEFAULT NULL AFTER is_read,
                     ADD INDEX idx_order_id (order_id)
                 """)
-                print("✅ Added order_id column to buyer_notifications table")
+                print("? Added order_id column to buyer_notifications table")
         except Exception as e:
             print(f"Note: Could not add order_id column: {e}")
         
@@ -495,10 +495,10 @@ def initialize_database_tables():
         """)
         
         connection.commit()
-        print("✅ Database tables initialized successfully")
+        print("? Database tables initialized successfully")
         
     except Exception as e:
-        print(f"❌ Error initializing database tables: {str(e)}")
+        print(f"? Error initializing database tables: {str(e)}")
         import traceback
         traceback.print_exc()
     finally:
@@ -600,7 +600,7 @@ def ensure_promotion_tables_exist():
                 ADD COLUMN product_id VARCHAR(50) AFTER customer_email,
                 ADD INDEX idx_product_id (product_id)
             """)
-            print("✅ Added product_id column to promotion_usage table")
+            print("? Added product_id column to promotion_usage table")
         except Exception as alter_error:
             # Column might already exist, which is fine
             if "Duplicate column name" not in str(alter_error):
@@ -617,18 +617,18 @@ def ensure_promotion_tables_exist():
                 )
                 WHERE current_usage_count = 0 OR current_usage_count IS NULL
             """)
-            print("✅ Synced current_usage_count with actual usage data")
+            print("? Synced current_usage_count with actual usage data")
         except Exception as sync_error:
             print(f"Note: Could not sync usage counts: {sync_error}")
         
         connection.commit()
-        print("✅ Promotion tables ensured to exist")
+        print("? Promotion tables ensured to exist")
         
         # Backfill promotion usage for existing orders
         backfill_promotion_usage(cursor)
         
     except Exception as e:
-        print(f"❌ Error ensuring promotion tables exist: {str(e)}")
+        print(f"? Error ensuring promotion tables exist: {str(e)}")
         import traceback
         traceback.print_exc()
     finally:
@@ -640,7 +640,7 @@ def ensure_promotion_tables_exist():
 def backfill_promotion_usage(cursor):
     """Backfill promotion usage data for existing orders that used promotions"""
     try:
-        print("🔄 Starting promotion usage backfill...")
+        print("?? Starting promotion usage backfill...")
         
         # Get all orders that might have used promotions (where original price > total price)
         cursor.execute("""
@@ -722,16 +722,16 @@ def backfill_promotion_usage(cursor):
                         ))
                         
                         backfilled_count += 1
-                        print(f"✅ Backfilled promotion usage for order {order['id']}: ₱{total_discount_applied:.2f} discount")
+                        print(f"? Backfilled promotion usage for order {order['id']}: ?{total_discount_applied:.2f} discount")
                 
             except Exception as order_error:
-                print(f"⚠️ Error processing order {order['id']}: {order_error}")
+                print(f"?? Error processing order {order['id']}: {order_error}")
                 continue
         
-        print(f"✅ Backfilled {backfilled_count} promotion usage records")
+        print(f"? Backfilled {backfilled_count} promotion usage records")
         
     except Exception as e:
-        print(f"❌ Error in promotion usage backfill: {str(e)}")
+        print(f"? Error in promotion usage backfill: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -783,7 +783,7 @@ def convert_promotion_for_json(promotion):
         }
 
 def get_featured_products(limit=6):
-    """Get featured products from Supabase — one per category group, falls back to top products."""
+    """Get featured products from Supabase � one per category group, falls back to top products."""
     try:
         res = sb_admin.table('products') \
             .select('id, name, category, description, price, image, quantity, sold, rating, seller_email, variations, sizes') \
@@ -878,7 +878,7 @@ def get_promotional_products(limit=4, category_filter=None):
             and not (p.get('flagged_at') and str(p.get('flagged_at')).strip())
         ]
 
-        # Match products to promotions (scope: all → any product qualifies)
+        # Match products to promotions (scope: all ? any product qualifies)
         promotional = []
         seen_ids = set()
 
@@ -977,7 +977,7 @@ def _fetch_products_from_supabase(categories=None):
 
         return products
     except Exception as e:
-        print(f"❌ _fetch_products_from_supabase error: {e}")
+        print(f"? _fetch_products_from_supabase error: {e}")
         return []
 
 
@@ -1232,7 +1232,7 @@ def send_seller_approval_email(email, first_name, business_name):
         )
         msg.body = f"""Hello {first_name},
 
-🎉 Congratulations! Your seller application for "{business_name}" has been approved!
+?? Congratulations! Your seller application for "{business_name}" has been approved!
 
 You can now:
 - Access your seller dashboard
@@ -1314,7 +1314,7 @@ Quantity: {item['quantity']}
             if item.get('size'):
                 order_items += f"Size: {item['size']}\n"
             
-            order_items += f"Price: ₱{item_total:.2f}\n"
+            order_items += f"Price: ?{item_total:.2f}\n"
             order_items += "-" * 30 + "\n"
         
         customer_email = order_details[0]['email'] if order_details else 'N/A'
@@ -1323,11 +1323,11 @@ Quantity: {item['quantity']}
         
         msg.body = f"""Hello!
 
-🎉 Great news! You have received a new order on MStyle!
+?? Great news! You have received a new order on MStyle!
 
 ORDER DETAILS:
 {order_items}
-TOTAL AMOUNT: ₱{total_amount:.2f}
+TOTAL AMOUNT: ?{total_amount:.2f}
 
 CUSTOMER INFORMATION:
 Email: {customer_email}
@@ -1359,14 +1359,14 @@ def send_low_stock_notification_email(seller_email, product_name, current_stock,
             variant_text = f" ({variant_info['color']} - {variant_info['size']})"
         
         msg = Message(
-            f'⚠️ Low Stock Alert - {product_name}',
+            f'?? Low Stock Alert - {product_name}',
             sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[seller_email]
         )
         
         msg.body = f"""Hello!
 
-⚠️ LOW STOCK ALERT
+?? LOW STOCK ALERT
 
 Your product is running low on stock and needs attention:
 
@@ -1388,10 +1388,10 @@ Best regards,
 MStyle Team
 """
         mail.send(msg)
-        print(f"✅ Low stock email sent to {seller_email} for {product_name}{variant_text}")
+        print(f"? Low stock email sent to {seller_email} for {product_name}{variant_text}")
         return True
     except Exception as e:
-        print(f"❌ Error sending low stock email to {seller_email}: {str(e)}")
+        print(f"? Error sending low stock email to {seller_email}: {str(e)}")
         return False
 
 def send_out_of_stock_notification_email(seller_email, product_name, variant_info=None):
@@ -1402,14 +1402,14 @@ def send_out_of_stock_notification_email(seller_email, product_name, variant_inf
             variant_text = f" ({variant_info['color']} - {variant_info['size']})"
         
         msg = Message(
-            f'🚨 Out of Stock Alert - {product_name}',
+            f'?? Out of Stock Alert - {product_name}',
             sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[seller_email]
         )
         
         msg.body = f"""Hello!
 
-🚨 OUT OF STOCK ALERT
+?? OUT OF STOCK ALERT
 
 Your product is now completely out of stock:
 
@@ -1430,10 +1430,10 @@ Best regards,
 MStyle Team
 """
         mail.send(msg)
-        print(f"✅ Out of stock email sent to {seller_email} for {product_name}{variant_text}")
+        print(f"? Out of stock email sent to {seller_email} for {product_name}{variant_text}")
         return True
     except Exception as e:
-        print(f"❌ Error sending out of stock email to {seller_email}: {str(e)}")
+        print(f"? Error sending out of stock email to {seller_email}: {str(e)}")
         return False
 
 def create_low_stock_notification(seller_email, product_name, current_stock, threshold, product_id, variant_info=None):
@@ -1445,7 +1445,7 @@ def create_low_stock_notification(seller_email, product_name, current_stock, thr
         if variant_info:
             variant_text = f" ({variant_info['color']} - {variant_info['size']})"
         
-        message = f"⚠️ Low Stock Alert: {product_name}{variant_text} - Only {current_stock} units left (threshold: {threshold})"
+        message = f"?? Low Stock Alert: {product_name}{variant_text} - Only {current_stock} units left (threshold: {threshold})"
         
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -1456,11 +1456,11 @@ def create_low_stock_notification(seller_email, product_name, current_stock, thr
         """, (seller_email, message, 'low_stock'))
         
         connection.commit()
-        print(f"✅ Low stock notification created for {seller_email}: {product_name}{variant_text}")
+        print(f"? Low stock notification created for {seller_email}: {product_name}{variant_text}")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating low stock notification: {str(e)}")
+        print(f"? Error creating low stock notification: {str(e)}")
         if connection:
             try:
                 connection.rollback()
@@ -1482,7 +1482,7 @@ def create_out_of_stock_notification(seller_email, product_name, product_id, var
         if variant_info:
             variant_text = f" ({variant_info['color']} - {variant_info['size']})"
         
-        message = f"🚨 Out of Stock: {product_name}{variant_text} - Product is now unavailable for purchase"
+        message = f"?? Out of Stock: {product_name}{variant_text} - Product is now unavailable for purchase"
         
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -1493,11 +1493,11 @@ def create_out_of_stock_notification(seller_email, product_name, product_id, var
         """, (seller_email, message, 'out_of_stock'))
         
         connection.commit()
-        print(f"✅ Out of stock notification created for {seller_email}: {product_name}{variant_text}")
+        print(f"? Out of stock notification created for {seller_email}: {product_name}{variant_text}")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating out of stock notification: {str(e)}")
+        print(f"? Error creating out of stock notification: {str(e)}")
         if connection:
             try:
                 connection.rollback()
@@ -1518,18 +1518,18 @@ def check_and_notify_stock_levels(product_id, seller_email, new_quantity, thresh
             # Send out of stock notifications
             send_out_of_stock_notification_email(seller_email, product_name, variant_info)
             create_out_of_stock_notification(seller_email, product_name, product_id, variant_info)
-            print(f"📢 Out of stock notifications sent for {product_name}")
+            print(f"?? Out of stock notifications sent for {product_name}")
         
         # Check if low stock (but not out of stock)
         elif new_quantity <= threshold:
             # Send low stock notifications
             send_low_stock_notification_email(seller_email, product_name, new_quantity, threshold, variant_info)
             create_low_stock_notification(seller_email, product_name, new_quantity, threshold, product_id, variant_info)
-            print(f"📢 Low stock notifications sent for {product_name}")
+            print(f"?? Low stock notifications sent for {product_name}")
         
         return True
     except Exception as e:
-        print(f"❌ Error in check_and_notify_stock_levels: {str(e)}")
+        print(f"? Error in check_and_notify_stock_levels: {str(e)}")
         return False
 
 def get_user_by_email(email):
@@ -1570,7 +1570,8 @@ def home():
                            promotional_products=promotional_products,
                            current_page=page,
                            total_pages=total_pages,
-                           total_products=total_count)
+                           total_products=total_count,
+                           wishlist_product_ids=_get_wishlist_ids())
 
 @app.route('/backtologin', methods=['GET', 'POST'])
 def backtologin():
@@ -1582,18 +1583,18 @@ def backtologin():
 
 @app.route('/test-supabase')
 def test_supabase():
-    """Diagnostic route — shows Supabase connection status and users table columns."""
+    """Diagnostic route � shows Supabase connection status and users table columns."""
     try:
         # Try fetching one row to see what columns exist
         res = sb.table('users').select('*').limit(1).execute()
         cols = list(res.data[0].keys()) if res.data else []
         return (
-            f"<h2>✅ Supabase connected</h2>"
+            f"<h2>? Supabase connected</h2>"
             f"<p><b>users table columns:</b> {cols}</p>"
             f"<p><b>Sample row:</b> {res.data}</p>"
         )
     except Exception as e:
-        return f"<h2>❌ Supabase error</h2><pre>{e}</pre>"
+        return f"<h2>? Supabase error</h2><pre>{e}</pre>"
 
 @app.route('/test-db')
 def test_db():
@@ -1619,20 +1620,20 @@ def login():
         email    = request.form.get('email', '').strip()
         password = request.form.get('password', '').strip()
 
-        # ── Admin shortcut ────────────────────────────────────────────────
+        # -- Admin shortcut ------------------------------------------------
         if email == 'stylemens2025@gmail.com' and password == 'admin':
             session['user_id']   = 0
             session['user_type'] = 'Admin'
             session['email']     = email
             return redirect(url_for('admin_dashboard'))
 
-        # ── Supabase auth ─────────────────────────────────────────────────
+        # -- Supabase auth -------------------------------------------------
         try:
             res = sb.auth.sign_in_with_password({'email': email, 'password': password})
             uid = res.user.id
             print(f"DEBUG login: Supabase auth OK, uid={uid}")
 
-            # ── Fetch profile from Supabase users table ───────────────────
+            # -- Fetch profile from Supabase users table -------------------
             # Use the user's own access token so RLS allows the read
             role        = 'buyer'
             first_name  = ''
@@ -1683,7 +1684,7 @@ def login():
                             pass
                         return redirect(url_for('login'))
                 else:
-                    # No profile row — check if account is pending approval first
+                    # No profile row � check if account is pending approval first
                     try:
                         pending_user = sb_admin.table('pending_users').select('status').eq('supabase_uid', uid).execute()
                         pending_seller = sb_admin.table('pending_sellers').select('status').eq('supabase_uid', uid).execute()
@@ -1712,7 +1713,7 @@ def login():
             except Exception as profile_err:
                 print(f"DEBUG login: profile fetch error: {profile_err}")
                 # If the error is a genuine network/DB issue (not a missing row),
-                # we still need to block login — we cannot verify the account exists.
+                # we still need to block login � we cannot verify the account exists.
                 # Attempt one more time with the admin client to check if the row exists.
                 try:
                     admin_check = sb_admin.table('users').select('id, role, first_name').eq('id', uid).execute()
@@ -1722,7 +1723,7 @@ def login():
                         first_name = p.get('first_name') or ''
                         print(f"DEBUG login: admin fallback found profile, role={role}")
                     else:
-                        # No profile row found even via admin client — check pending tables
+                        # No profile row found even via admin client � check pending tables
                         print(f"DEBUG login: admin fallback also found no profile row for uid={uid}")
                         try:
                             pending_user = sb_admin.table('pending_users').select('status').eq('supabase_uid', uid).execute()
@@ -1757,7 +1758,7 @@ def login():
                         pass
                     return redirect(url_for('login'))
 
-            # ── Set session ───────────────────────────────────────────────
+            # -- Set session -----------------------------------------------
             session['user_id']       = uid
             session['email']         = email
             session['user_type']     = role.capitalize()
@@ -1774,7 +1775,7 @@ def login():
                     pass
                 session['business_name'] = business_name
 
-            print(f"DEBUG login: session set — email={email}, role={role}")
+            print(f"DEBUG login: session set � email={email}, role={role}")
 
             if role == 'buyer':
                 return redirect(url_for('homepage'))
@@ -1813,7 +1814,7 @@ def login():
                         # Check if the user exists in the users table (restored from archive)
                         users_check = sb_admin.table('users').select('id, status').eq('email', email_check).execute()
                         if users_check.data:
-                            # User exists — their auth ban was not cleared on restore. Fix it now.
+                            # User exists � their auth ban was not cleared on restore. Fix it now.
                             restored_uid = users_check.data[0]['id']
                             try:
                                 sb_admin.auth.admin.update_user_by_id(restored_uid, {'ban_duration': 'none'})
@@ -1857,7 +1858,7 @@ def logout():
 @app.route('/api/check-account-status', methods=['POST'])
 def check_account_status():
     """
-    Mobile login/register helper — called when Supabase auth returns a 'banned' error.
+    Mobile login/register helper � called when Supabase auth returns a 'banned' error.
     Returns the account status so the mobile app can show the right message.
     If the account is banned but not in any pending/users table (stale ban from
     a deleted/archived account), automatically unbans it so the user can re-register.
@@ -1881,7 +1882,7 @@ def check_account_status():
                      or 'pending'
             return jsonify({'status': pu_status})
 
-        # Not in any table — stale ban. Unban so the user can re-register.
+        # Not in any table � stale ban. Unban so the user can re-register.
         try:
             existing = sb_admin.auth.admin.list_users()
             for u in (existing or []):
@@ -1906,7 +1907,7 @@ def send_otp():
     if not email:
         return jsonify({'success': False, 'message': 'Email is required'}), 400
 
-    # ── Temporarily unban the user so Supabase can send the OTP ──────────
+    # -- Temporarily unban the user so Supabase can send the OTP ----------
     # Users who previously registered are banned until admin approves.
     # sign_in_with_otp may fail for banned users in some Supabase versions.
     try:
@@ -1951,7 +1952,7 @@ def verify_otp():
         if not email or not otp_entered:
             return jsonify({'success': False, 'message': 'Email and OTP are required'}), 400
 
-        # ── Temporarily unban the user so OTP verification can succeed ────
+        # -- Temporarily unban the user so OTP verification can succeed ----
         # Users who previously registered are banned until admin approves.
         # We must unban them briefly so Supabase allows the OTP verify call.
         uid_to_rebban = None
@@ -1967,7 +1968,7 @@ def verify_otp():
         except Exception as unban_err:
             print(f"DEBUG verify_otp: unban attempt failed (non-fatal): {unban_err}")
 
-        # ── Verify with Supabase ──────────────────────────────────────────
+        # -- Verify with Supabase ------------------------------------------
         try:
             res = sb.auth.verify_otp({
                 'email': email,
@@ -1989,7 +1990,7 @@ def verify_otp():
             otp_storage[email] = {'verified': True, 'uid': uid}
             print(f"Supabase OTP verified for {email}")
 
-            # Re-ban the account — it stays banned until admin approves
+            # Re-ban the account � it stays banned until admin approves
             # (the register route will set the final ban after inserting into pending_users)
             try:
                 sb_admin.auth.admin.update_user_by_id(uid, {'ban_duration': '876600h'})
@@ -2033,7 +2034,7 @@ def verify_otp():
 def api_seller_register():
     """
     Mobile seller registration endpoint.
-    Called after OTP verification — uses sb_admin to bypass RLS and the
+    Called after OTP verification � uses sb_admin to bypass RLS and the
     auth ban so the seller data can be inserted into pending_sellers.
     """
     data = request.get_json(silent=True) or {}
@@ -2102,7 +2103,7 @@ def api_seller_register():
 def api_buyer_rider_register():
     """
     Mobile buyer/rider registration endpoint.
-    Called after OTP verification — uses sb_admin to bypass RLS and the
+    Called after OTP verification � uses sb_admin to bypass RLS and the
     auth ban so the user data can be inserted into pending_users /
     pending_rider_vehicles.
     """
@@ -2197,7 +2198,7 @@ def register():
     cursor = None
 
     try:
-        # ── Collect form data ─────────────────────────────────────────────
+        # -- Collect form data ---------------------------------------------
         first_name      = request.form.get('first_name', '').strip()
         last_name       = request.form.get('last_name', '').strip()
         phone_number    = request.form.get('phone_number', '').strip()
@@ -2211,7 +2212,7 @@ def register():
         confirm_password = request.form.get('confirm_password', '')
         user_type       = (request.form.get('user_type') or 'buyer').strip().lower()
 
-        # ── Validation ────────────────────────────────────────────────────
+        # -- Validation ----------------------------------------------------
         required = {
             'first_name': first_name, 'last_name': last_name,
             'phone_number': phone_number, 'house_no_street': house_no_street,
@@ -2231,7 +2232,7 @@ def register():
 
         address = f"{house_no_street}, {barangay}, {municipality}, {province}, {region}, {zip_code}"
 
-        # ── File uploads (local storage, unchanged) ───────────────────────
+        # -- File uploads (local storage, unchanged) -----------------------
         def save_uploaded_file(file, folder):
             if file and file.filename:
                 try:
@@ -2276,7 +2277,7 @@ def register():
             if not or_cr_path or not nbi_clearance_path:
                 return render_template('register.html', error="Failed to upload rider documents.")
 
-        # ── Update Supabase auth password ─────────────────────────────────
+        # -- Update Supabase auth password ---------------------------------
         uid = stored.get('uid')
         if uid:
             try:
@@ -2285,7 +2286,7 @@ def register():
             except Exception as pe:
                 print(f"Warning: could not set Supabase password: {pe}")
 
-        # ── Ban the auth account until admin approves ─────────────────────
+        # -- Ban the auth account until admin approves ---------------------
         # User cannot log in until admin approves and unbans them
         if uid:
             try:
@@ -2294,10 +2295,10 @@ def register():
             except Exception as be:
                 print(f"Warning: could not ban auth account: {be}")
 
-        # ── Do NOT insert into Supabase users table yet ───────────────────
+        # -- Do NOT insert into Supabase users table yet -------------------
         # Profile will be inserted into Supabase users table only when admin approves.
 
-        # ── Insert into Supabase pending_users (primary — same as mobile) ─
+        # -- Insert into Supabase pending_users (primary � same as mobile) -
         # This works even when MySQL is unavailable.
         addr_parts = address.split(', ')
         try:
@@ -2323,8 +2324,8 @@ def register():
             sb_admin.table('pending_users').upsert(supabase_pending_data).execute()
             print(f"Inserted into Supabase pending_users for {email}")
 
-            # ── Insert rider vehicle data into pending_rider_vehicles ──────
-            # (mirrors mobile app behaviour — vehicle data lives in its own table)
+            # -- Insert rider vehicle data into pending_rider_vehicles ------
+            # (mirrors mobile app behaviour � vehicle data lives in its own table)
             if user_type == 'rider' and uid:
                 try:
                     rider_vehicle_data = {
@@ -2344,7 +2345,7 @@ def register():
         except Exception as sb_err:
             print(f"Warning: Supabase pending_users insert failed: {sb_err}")
 
-        # ── Also try MySQL pending_users (optional — may not be running) ──
+        # -- Also try MySQL pending_users (optional � may not be running) --
         hashed_password = generate_password_hash(password)
         try:
             db     = get_db_connection()
@@ -2381,8 +2382,8 @@ def register():
             db.commit()
             print(f"Inserted into MySQL pending_users for {email}")
         except Exception as db_error:
-            # MySQL is optional — registration still succeeds via Supabase
-            print(f"⚠️ MySQL pending_users insert skipped (MySQL unavailable): {db_error}")
+            # MySQL is optional � registration still succeeds via Supabase
+            print(f"?? MySQL pending_users insert skipped (MySQL unavailable): {db_error}")
             if db:
                 try: db.rollback()
                 except Exception: pass
@@ -2464,7 +2465,7 @@ def privacy_policy():
 def seller_register():
     if request.method == 'POST':
         try:
-            # ── Collect form data ─────────────────────────────────────────
+            # -- Collect form data -----------------------------------------
             first_name      = (request.form.get('first_name') or '').strip()
             last_name       = (request.form.get('last_name') or '').strip()
             business_name   = (request.form.get('business_name') or '').strip()
@@ -2481,13 +2482,13 @@ def seller_register():
             password        = request.form.get('password', '')
             confirm_password = request.form.get('confirm_password', '')
 
-            # ── Validate OTP was verified ─────────────────────────────────
+            # -- Validate OTP was verified ---------------------------------
             stored = otp_storage.get(email)
             if not stored or not stored.get('verified'):
                 flash('Email verification required or session expired.', 'error')
                 return render_template('seller_register.html', error='Email verification required.')
 
-            # ── Validate passwords ────────────────────────────────────────
+            # -- Validate passwords ----------------------------------------
             if not password or not confirm_password:
                 return render_template('seller_register.html', error='Password and confirm password are required.')
             if password != confirm_password:
@@ -2497,7 +2498,7 @@ def seller_register():
 
             address = f"{house_no_street}, {barangay}, {municipality}, {province}, {region} {zip_code}"
 
-            # ── File uploads (local storage) ──────────────────────────────
+            # -- File uploads (local storage) ------------------------------
             def save_uploaded_file(file, folder):
                 if file and file.filename:
                     ts       = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -2526,7 +2527,7 @@ def seller_register():
                 bir_path             = save_uploaded_file(request.files.get('bir'), 'seller_docs')
                 business_permit_path = save_uploaded_file(request.files.get('business_permit'), 'seller_docs')
 
-            # ── Update Supabase auth password ─────────────────────────────
+            # -- Update Supabase auth password -----------------------------
             uid = stored.get('uid')
             if uid:
                 try:
@@ -2535,7 +2536,7 @@ def seller_register():
                 except Exception as pe:
                     print(f"Warning: could not set Supabase password for seller: {pe}")
 
-            # ── Ban the auth account until admin approves ─────────────────
+            # -- Ban the auth account until admin approves -----------------
             if uid:
                 try:
                     sb_admin.auth.admin.update_user_by_id(uid, {'ban_duration': '876600h'})
@@ -2543,10 +2544,10 @@ def seller_register():
                 except Exception as be:
                     print(f"Warning: could not ban seller auth account: {be}")
 
-            # ── Do NOT insert into Supabase users table yet ───────────────
+            # -- Do NOT insert into Supabase users table yet ---------------
             # Profile will be inserted into Supabase users table only when admin approves.
 
-            # ── Insert into Supabase pending_sellers (primary — works without MySQL) ──
+            # -- Insert into Supabase pending_sellers (primary � works without MySQL) --
             try:
                 sb_admin.table('pending_sellers').upsert({
                     'supabase_uid':        uid,
@@ -2572,7 +2573,7 @@ def seller_register():
             except Exception as sb_err:
                 print(f"Warning: Supabase pending_sellers insert failed: {sb_err}")
 
-            # ── Also try MySQL pending_sellers (optional — may not be running) ──
+            # -- Also try MySQL pending_sellers (optional � may not be running) --
             hashed_password = generate_password_hash(password)
             db = cursor = None
             try:
@@ -2616,8 +2617,8 @@ def seller_register():
                 db.commit()
                 print(f"Inserted into MySQL pending_sellers for {email}")
             except Exception as db_error:
-                # MySQL is optional — registration still succeeds via Supabase
-                print(f"⚠️ MySQL pending_sellers insert skipped (MySQL unavailable): {db_error}")
+                # MySQL is optional � registration still succeeds via Supabase
+                print(f"?? MySQL pending_sellers insert skipped (MySQL unavailable): {db_error}")
                 if db:
                     try: db.rollback()
                     except Exception: pass
@@ -2757,7 +2758,7 @@ def reset_password():
         user_client = create_client(SUPABASE_URL, SUPABASE_ANON)
         user_client.auth.set_session(access_token, refresh_token or access_token)
 
-        # Update password as the authenticated user — no admin key needed
+        # Update password as the authenticated user � no admin key needed
         user_client.auth.update_user({'password': new_password})
 
         print(f"DEBUG reset_password: password updated successfully")
@@ -2943,6 +2944,9 @@ def homepage():
 
     promotional_products = get_promotional_products()
 
+    # Fetch user's wishlist product IDs for heart icon state
+    wishlist_product_ids = _get_wishlist_ids()
+
     return render_template('homepage.html',
                            user_name=user_name,
                            user_email=session.get('email', 'User'),
@@ -2950,155 +2954,90 @@ def homepage():
                            promotional_products=promotional_products,
                            current_page=page,
                            total_pages=total_pages,
-                           total_products=total_count)
+                           total_products=total_count,
+                           wishlist_product_ids=wishlist_product_ids)
 @app.route('/search')
 def search():
-    # Allow viewing without login, but get user data if logged in
     user_name = None
     if 'user_id' in session:
         user_name = get_user_name_from_session()
-    
-    query = request.args.get('query', '').strip()
+
+    query    = request.args.get('query', '').strip()
     category = request.args.get('category', '').strip()
-    sort_by = request.args.get('sort', 'relevance')
-    page = request.args.get('page', 1, type=int)
+    sort_by  = request.args.get('sort', 'relevance')
+    page     = request.args.get('page', 1, type=int)
     per_page = 12
-    
+
     if not query:
         return redirect(url_for('home'))
 
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
+    products    = []
+    categories  = []
+    total_count = 0
+    total_pages = 0
 
     try:
-        # Build the search query with improved search logic and real-time ratings
-        # Exclude flagged products from buyer view
-        base_query = """
-            SELECT p.id, p.name, p.category, p.description, p.price, p.image, 
-                   p.quantity, p.sold, p.rating, p.seller_email, p.variations, p.sizes,
-                   COALESCE(AVG(r.rating), 0) as calculated_rating,
-                   COUNT(r.rating) as review_count,
-                   CASE 
-                       WHEN p.name LIKE %s THEN 3
-                       WHEN p.name LIKE %s THEN 2
-                       WHEN p.description LIKE %s THEN 1
-                       ELSE 0
-                   END as relevance_score
-            FROM products p
-            LEFT JOIN reviews r ON p.id = r.product_id
-            WHERE p.is_active = 1 AND (p.flagged_at IS NULL OR p.flagged_at = '') AND (
-                p.name LIKE %s OR 
-                p.description LIKE %s OR 
-                p.category LIKE %s OR
-                p.variations LIKE %s
-            )
-        """
-        
-        # Parameters for relevance scoring and search
-        exact_match = f"{query}"
-        starts_with = f"{query}%"
-        contains = f"%{query}%"
-        
-        params = [exact_match, starts_with, contains, contains, contains, contains, contains]
-        
-        # Add category filter if specified
+        # Build Supabase query — search name, description, category, variations
+        q = f'%{query}%'
+        sb_q = sb_admin.table('products') \
+            .select('id, name, category, description, price, image, quantity, sold, rating, seller_email, variations, sizes') \
+            .eq('is_active', True) \
+            .or_(f'name.ilike.{q},description.ilike.{q},category.ilike.{q},variations.ilike.{q}')
+
         if category:
-            base_query += " AND p.category = %s"
-            params.append(category)
-        
-        # Add GROUP BY clause for the JOIN
-        base_query += """
-            GROUP BY p.id, p.name, p.category, p.description, p.price, 
-                     p.image, p.quantity, p.sold, p.rating, p.seller_email, p.variations, p.sizes
-        """
-        
-        # Add sorting
+            sb_q = sb_q.eq('category', category)
+
+        # Sorting
         if sort_by == 'price_low':
-            base_query += " ORDER BY p.price ASC, relevance_score DESC"
+            sb_q = sb_q.order('price', desc=False)
         elif sort_by == 'price_high':
-            base_query += " ORDER BY p.price DESC, relevance_score DESC"
-        elif sort_by == 'rating':
-            base_query += " ORDER BY COALESCE(AVG(r.rating), 0) DESC, relevance_score DESC"
+            sb_q = sb_q.order('price', desc=True)
         elif sort_by == 'newest':
-            base_query += " ORDER BY p.id DESC, relevance_score DESC"
+            sb_q = sb_q.order('id', desc=True)
         elif sort_by == 'popular':
-            base_query += " ORDER BY p.sold DESC, relevance_score DESC"
-        else:  # relevance (default)
-            base_query += " ORDER BY relevance_score DESC, p.sold DESC, COALESCE(AVG(r.rating), 0) DESC"
-        
-        # Get total count for pagination (only active products for buyers, including out of stock, excluding flagged)
-        count_query = """
-            SELECT COUNT(*) as total FROM products 
-            WHERE is_active = 1 AND (flagged_at IS NULL OR flagged_at = '') AND (
-                name LIKE %s OR 
-                description LIKE %s OR 
-                category LIKE %s OR
-                variations LIKE %s
-            )
-        """
-        count_params = [contains, contains, contains, contains]
-        if category:
-            count_query += " AND category = %s"
-            count_params.append(category)
-            
-        cursor.execute(count_query, count_params)
-        total_count = cursor.fetchone()['total']
-        
-        # Calculate pagination
+            sb_q = sb_q.order('sold', desc=True)
+        elif sort_by == 'rating':
+            sb_q = sb_q.order('rating', desc=True)
+        else:  # relevance — sort by sold + rating
+            sb_q = sb_q.order('sold', desc=True)
+
+        result = sb_q.execute()
+        all_products = result.data or []
+
+        # Exclude flagged
+        all_products = [p for p in all_products
+                        if not (p.get('flagged_at') and str(p.get('flagged_at')).strip())]
+
+        total_count = len(all_products)
         total_pages = (total_count + per_page - 1) // per_page
         offset = (page - 1) * per_page
-        
-        # Add pagination to main query
-        base_query += " LIMIT %s OFFSET %s"
-        params.extend([per_page, offset])
-        
-        # Execute main search query
-        cursor.execute(base_query, params)
-        products = cursor.fetchall()
-        
-        # Update ratings with calculated ratings
-        for product in products:
-            if product['calculated_rating'] and float(product['calculated_rating']) > 0:
-                product['rating'] = round(float(product['calculated_rating']), 1)
-            else:
-                product['rating'] = None
-        
-        # Get available categories for filter (only active products for buyers, including out of stock, excluding flagged)
-        cursor.execute("""
-            SELECT DISTINCT category FROM products 
-            WHERE is_active = 1 AND (flagged_at IS NULL OR flagged_at = '') AND (
-                name LIKE %s OR 
-                description LIKE %s OR 
-                category LIKE %s OR
-                variations LIKE %s
-            )
-            ORDER BY category
-        """, [contains, contains, contains, contains])
-        categories = [row['category'] for row in cursor.fetchall()]
-        
-    except mysql.connector.Error as err:
-        print("Database error:", err)
-        products = []
-        categories = []
-        total_count = 0
-        total_pages = 0
-        user_name = "User"  # Fallback on database error
-    finally:
-        cursor.close()
-        connection.close()
+        products = all_products[offset:offset + per_page]
 
-    return render_template('search_results.html', 
-                         products=products, 
-                         query=query,
-                         user_email=session.get('email', 'User'),
-                         category=category,
-                         sort_by=sort_by,
-                         categories=categories,
-                         current_page=page,
-                         total_pages=total_pages,
-                         total_count=total_count,
-                         per_page=per_page,
-                         user_name=user_name)
+        # Normalize types
+        for p in products:
+            p['price']    = float(p.get('price') or 0)
+            p['quantity'] = int(p.get('quantity') or 0)
+            p['sold']     = int(p.get('sold') or 0)
+            p['rating']   = round(float(p.get('rating') or 0), 1) or None
+
+        # Distinct categories from results
+        categories = sorted({p['category'] for p in all_products if p.get('category')})
+
+    except Exception as e:
+        print(f'[search] Supabase error: {e}')
+
+    return render_template('search_results.html',
+                           products=products,
+                           query=query,
+                           user_email=session.get('email', 'User'),
+                           category=category,
+                           sort_by=sort_by,
+                           categories=categories,
+                           current_page=page,
+                           total_pages=total_pages,
+                           total_count=total_count,
+                           per_page=per_page,
+                           user_name=user_name)
 
 @app.route('/api/search-suggestions')
 def search_suggestions():
@@ -3144,48 +3083,60 @@ def Suit_page():
     user_name = get_user_name_from_session() if 'user_id' in session else None
     products = _fetch_products_from_supabase(categories=['SUITS', 'BLAZERS'])
     promotional_products = get_promotional_products(limit=4, category_filter=['SUITS', 'BLAZERS'])
+    wishlist_product_ids = _get_wishlist_ids()
     return render_template('suits.html', products=products, user_name=user_name,
-                           user_email=session.get('email', 'User'), promotional_products=promotional_products)
+                           user_email=session.get('email', 'User'), promotional_products=promotional_products,
+                           wishlist_product_ids=wishlist_product_ids)
 
 @app.route('/casual')
 def casual_page():
     user_name = get_user_name_from_session() if 'user_id' in session else None
     products = _fetch_products_from_supabase(categories=['SHIRTS', 'PANTS'])
     promotional_products = get_promotional_products(limit=4, category_filter=['SHIRTS', 'PANTS'])
+    wishlist_product_ids = _get_wishlist_ids()
     return render_template('casual.html', products=products, user_name=user_name,
-                           user_email=session.get('email', 'User'), promotional_products=promotional_products)
+                           user_email=session.get('email', 'User'), promotional_products=promotional_products,
+                           wishlist_product_ids=wishlist_product_ids)
 
 @app.route('/outerwear')
 def outerwear_page():
     user_name = get_user_name_from_session() if 'user_id' in session else None
     products = _fetch_products_from_supabase(categories=['OUTERWEAR', 'JACKETS'])
     promotional_products = get_promotional_products(limit=4, category_filter=['OUTERWEAR', 'JACKETS'])
+    wishlist_product_ids = _get_wishlist_ids()
     return render_template('outerwear.html', products=products, user_name=user_name,
-                           user_email=session.get('email', 'User'), promotional_products=promotional_products)
+                           user_email=session.get('email', 'User'), promotional_products=promotional_products,
+                           wishlist_product_ids=wishlist_product_ids)
 
 @app.route('/activewear')
 def activewear_page():
     user_name = get_user_name_from_session() if 'user_id' in session else None
     products = _fetch_products_from_supabase(categories=['ACTIVEWEAR', 'FITNESS'])
     promotional_products = get_promotional_products(limit=4, category_filter=['ACTIVEWEAR', 'FITNESS'])
+    wishlist_product_ids = _get_wishlist_ids()
     return render_template('activewear.html', products=products, user_name=user_name,
-                           user_email=session.get('email', 'User'), promotional_products=promotional_products)
+                           user_email=session.get('email', 'User'), promotional_products=promotional_products,
+                           wishlist_product_ids=wishlist_product_ids)
 
 @app.route('/shoes')
 def shoes_page():
     user_name = get_user_name_from_session() if 'user_id' in session else None
     products = _fetch_products_from_supabase(categories=['SHOES', 'ACCESSORIES'])
     promotional_products = get_promotional_products(limit=4, category_filter=['SHOES', 'ACCESSORIES'])
+    wishlist_product_ids = _get_wishlist_ids()
     return render_template('shoes.html', products=products, user_name=user_name,
-                           user_email=session.get('email', 'User'), promotional_products=promotional_products)
+                           user_email=session.get('email', 'User'), promotional_products=promotional_products,
+                           wishlist_product_ids=wishlist_product_ids)
 
 @app.route('/grooming')
 def grooming_page():
     user_name = get_user_name_from_session() if 'user_id' in session else None
     products = _fetch_products_from_supabase(categories=['GROOMING'])
     promotional_products = get_promotional_products(limit=4, category_filter='GROOMING')
+    wishlist_product_ids = _get_wishlist_ids()
     return render_template('grooming.html', products=products, user_name=user_name,
-                           user_email=session.get('email', 'User'), promotional_products=promotional_products)
+                           user_email=session.get('email', 'User'), promotional_products=promotional_products,
+                           wishlist_product_ids=wishlist_product_ids)
 
 @app.route('/view_product/<int:product_id>')
 def view_product(product_id):
@@ -3198,11 +3149,11 @@ def view_product(product_id):
     reviews = []
     review_stats = {'total_reviews': 0, 'average_rating': 0, 'rating_distribution': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}}
 
-    # ── PRIMARY: Supabase ─────────────────────────────────────────────────────
+    # -- PRIMARY: Supabase -----------------------------------------------------
     try:
-        # Use list query + take first result — avoids maybeSingle() issues
+        # Use list query + take first result � avoids maybeSingle() issues
         sb_res = sb_admin.table('products').select('*').eq('id', product_id).limit(1).execute()
-        print(f"🔍 view_product({product_id}) Supabase: count={len(sb_res.data) if sb_res.data else 0}")
+        print(f"?? view_product({product_id}) Supabase: count={len(sb_res.data) if sb_res.data else 0}")
 
         sb_product_data = sb_res.data[0] if sb_res.data else None
 
@@ -3210,19 +3161,45 @@ def view_product(product_id):
             product = dict(sb_product_data)
 
             # Get seller info
-            seller_res = sb_admin.table('users').select(
-                'first_name, last_name, business_name, profile_picture'
-            ).eq('email', product.get('seller_email', '')).maybeSingle().execute()
+            seller_email_key = (product.get('seller_email') or '').strip()
+            seller_rows = []
 
-            if seller_res.data:
-                u = seller_res.data
-                full_name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
-                product['seller_name'] = full_name
-                product['business_name'] = u.get('business_name') or full_name or 'Seller'
-                product['seller_profile_picture'] = u.get('profile_picture')
+            if seller_email_key:
+                try:
+                    r = sb_admin.table('users').select(
+                        'first_name, last_name, business_name'
+                    ).eq('email', seller_email_key).limit(1).execute()
+                    seller_rows = r.data or []
+                except Exception as _e:
+                    print(f"[view_product] seller exact match error: {_e}")
+
+                if not seller_rows:
+                    try:
+                        r2 = sb_admin.table('users').select(
+                            'first_name, last_name, business_name'
+                        ).ilike('email', seller_email_key).limit(1).execute()
+                        seller_rows = r2.data or []
+                    except Exception as _e2:
+                        print(f"[view_product] seller ilike match error: {_e2}")
+
+            print(f"[view_product] seller_email={seller_email_key!r}, rows={seller_rows}")
+
+            if seller_rows:
+                u = seller_rows[0]
+                biz   = (u.get('business_name') or '').strip()
+                first = (u.get('first_name') or '').strip()
+                last  = (u.get('last_name') or '').strip()
+                full_name = f"{first} {last}".strip()
+                print(f"[view_product] biz={biz!r}, first={first!r}, last={last!r}, full_name={full_name!r}")
+                # Priority: business_name → full name → email → 'Seller'
+                display_name = biz or full_name or seller_email_key or 'Seller'
+                product['seller_name']            = display_name
+                product['business_name']          = display_name
+                product['seller_profile_picture'] = None
             else:
-                product['seller_name'] = product.get('seller_email', 'Seller')
-                product['business_name'] = product.get('seller_email', 'Seller')
+                # No user row found — use email as display name
+                product['seller_name']            = seller_email_key or 'Seller'
+                product['business_name']          = seller_email_key or 'Seller'
                 product['seller_profile_picture'] = None
 
             # Get reviews
@@ -3269,12 +3246,12 @@ def view_product(product_id):
                         if rating_val in review_stats['rating_distribution']:
                             review_stats['rating_distribution'][rating_val] += 1
             except Exception as rev_err:
-                print(f"⚠️ Reviews fetch failed: {rev_err}")
+                print(f"?? Reviews fetch failed: {rev_err}")
 
     except Exception as sb_err:
-        print(f"⚠️ Supabase view_product failed: {sb_err}")
+        print(f"?? Supabase view_product failed: {sb_err}")
 
-    # ── FALLBACK: MySQL ───────────────────────────────────────────────────────
+    # -- FALLBACK: MySQL -------------------------------------------------------
     if product is None:
         try:
             db = get_db_connection()
@@ -3312,9 +3289,9 @@ def view_product(product_id):
             cursor.close()
             db.close()
         except Exception as mysql_err:
-            print(f"⚠️ MySQL view_product fallback failed: {mysql_err}")
+            print(f"?? MySQL view_product fallback failed: {mysql_err}")
 
-    # ── Promotions ────────────────────────────────────────────────────────────
+    # -- Promotions ------------------------------------------------------------
     active_promotion = None
     if product:
         try:
@@ -3346,7 +3323,7 @@ def view_product(product_id):
             product['discount_percentage'] = 0
 
     if product:
-        # Parse image_colors into a dict { colorName.lower() → imageUrl } for JS
+        # Parse image_colors into a dict { colorName.lower() ? imageUrl } for JS
         image_colors_dict = _parse_image_colors_dict(
             product.get('image_colors', ''),
             product.get('image', '')
@@ -3360,9 +3337,10 @@ def view_product(product_id):
                                reviews=reviews,
                                review_stats=review_stats,
                                active_promotion=active_promotion,
-                               image_colors_dict=image_colors_dict)
+                               image_colors_dict=image_colors_dict,
+                               wishlist_product_ids=_get_wishlist_ids())
     else:
-        print(f"❌ view_product({product_id}): product not found in Supabase or MySQL")
+        print(f"? view_product({product_id}): product not found in Supabase or MySQL")
         flash('Product not found or is no longer available.', 'error')
         return redirect(url_for('home'))
 
@@ -3399,7 +3377,7 @@ def profile():
             vehicle_plate_number = request.form.get('vehicle_plate_number')
             vehicle_year_model = request.form.get('vehicle_year_model')
 
-            # ── Update Supabase users table ───────────────────────────────
+            # -- Update Supabase users table -------------------------------
             supabase_update = {
                 'first_name': first_name,
                 'last_name':  last_name,
@@ -3411,7 +3389,7 @@ def profile():
             try:
                 sb_admin.table('users').update(supabase_update).eq('email', user_email).execute()
             except Exception as sb_err:
-                print(f"⚠️ Supabase profile update error: {sb_err}")
+                print(f"?? Supabase profile update error: {sb_err}")
 
             # Handle profile picture upload
             profile_picture_filename = None
@@ -3428,7 +3406,7 @@ def profile():
                     else:
                         return jsonify({'success': False, 'message': 'Please upload a valid image file (PNG, JPG, JPEG, GIF)'}), 400
 
-            # ── Also update MySQL users table (by email) ──────────────────
+            # -- Also update MySQL users table (by email) ------------------
             user_type = session.get('user_type', '').lower()
             try:
                 connection = get_db_connection()
@@ -3483,7 +3461,7 @@ def profile():
 
                 connection.commit()
             except Exception as mysql_err:
-                print(f"⚠️ MySQL profile update skipped (unavailable): {mysql_err}")
+                print(f"?? MySQL profile update skipped (unavailable): {mysql_err}")
 
             # Update session first_name
             if first_name:
@@ -3510,7 +3488,7 @@ def profile():
             if connection:
                 connection.close()
 
-    # ── GET request — fetch user data from Supabase ───────────────────────
+    # -- GET request � fetch user data from Supabase -----------------------
     try:
         try:
             res = sb_admin.table('users').select(
@@ -3518,7 +3496,7 @@ def profile():
                 'house_street, barangay, city, province, region, zip_code'
             ).eq('email', user_email).execute()
         except Exception:
-            # business_name column may not exist yet — select without it
+            # business_name column may not exist yet � select without it
             res = sb_admin.table('users').select(
                 'id, first_name, last_name, email, phone, role, '
                 'house_street, barangay, city, province, region, zip_code'
@@ -3566,7 +3544,7 @@ def profile():
                 'vehicle_year_model':   '',
             }
 
-        # ── Supplement with MySQL data (profile_picture, business_name, vehicle) ──
+        # -- Supplement with MySQL data (profile_picture, business_name, vehicle) --
         try:
             conn = get_db_connection()
             cur = conn.cursor(dictionary=True)
@@ -3588,9 +3566,9 @@ def profile():
                 user_data['vehicle_plate_number'] = row.get('vehicle_plate_number', '') or ''
                 user_data['vehicle_year_model']   = row.get('vehicle_year_model', '') or ''
         except Exception as mysql_err:
-            print(f"⚠️ MySQL profile supplement skipped: {mysql_err}")
+            print(f"?? MySQL profile supplement skipped: {mysql_err}")
 
-        # ── For riders: also check Supabase rider_vehicles table ──────────
+        # -- For riders: also check Supabase rider_vehicles table ----------
         # Vehicle data is stored there after admin approval (primary source).
         # Only fill in if MySQL didn't already provide values.
         if user_data.get('user_type', '').lower() == 'rider':
@@ -3602,13 +3580,13 @@ def profile():
                     ).eq('user_id', supabase_uid).execute()
                     if rv_res.data:
                         rv = rv_res.data[0]
-                        # Supabase rider_vehicles is the authoritative source — always use it
+                        # Supabase rider_vehicles is the authoritative source � always use it
                         user_data['vehicle_type']         = rv.get('vehicle_type', '') or ''
                         user_data['vehicle_model']        = rv.get('vehicle_model', '') or ''
                         user_data['vehicle_plate_number'] = rv.get('plate_number', '') or ''
                         user_data['vehicle_year_model']   = rv.get('year_model', '') or ''
             except Exception as rv_err:
-                print(f"⚠️ Supabase rider_vehicles fetch skipped: {rv_err}")
+                print(f"?? Supabase rider_vehicles fetch skipped: {rv_err}")
 
         user_name = f"{user_data['first_name']} {user_data['last_name']}".strip() or 'User'
         return render_template('profile.html',
@@ -3645,11 +3623,11 @@ def upload_profile_picture():
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(file_path)
             
-            # Update database — Supabase first, MySQL as fallback
+            # Update database � Supabase first, MySQL as fallback
             try:
                 sb_admin.table('users').update({'profile_picture': filename}).eq('email', session.get('email')).execute()
             except Exception as sb_err:
-                print(f"⚠️ Supabase profile picture update error: {sb_err}")
+                print(f"?? Supabase profile picture update error: {sb_err}")
 
             try:
                 connection = get_db_connection()
@@ -3660,7 +3638,7 @@ def upload_profile_picture():
                 )
                 connection.commit()
             except Exception as mysql_err:
-                print(f"⚠️ MySQL profile picture update skipped: {mysql_err}")
+                print(f"?? MySQL profile picture update skipped: {mysql_err}")
             
             return jsonify({
                 'success': True, 
@@ -3695,7 +3673,7 @@ def seller_dashboard():
     if 'email' not in session:
         return redirect(url_for('home'))
 
-    # ── Get seller name from Supabase (works even when MySQL is down) ─────
+    # -- Get seller name from Supabase (works even when MySQL is down) -----
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
@@ -3703,13 +3681,13 @@ def seller_dashboard():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in seller_dashboard: {sb_err}")
+        print(f"?? Supabase name fetch failed in seller_dashboard: {sb_err}")
 
     # Get date range from query parameters or use default (last 7 days)
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     start_date = request.args.get('start_date', (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d'))
 
-    # Safe defaults — used when MySQL is unavailable
+    # Safe defaults � used when MySQL is unavailable
     total_sales    = 0.0
     total_earnings = 0.0
     total_items    = 0
@@ -3734,7 +3712,7 @@ def seller_dashboard():
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
     except Exception as db_err:
-        print(f"⚠️ MySQL unavailable in seller_dashboard: {db_err}")
+        print(f"?? MySQL unavailable in seller_dashboard: {db_err}")
         return render_template('seller_dashboard.html',
                              total_sales="{:.2f}".format(total_sales),
                              total_earnings="{:.2f}".format(total_earnings),
@@ -3902,7 +3880,7 @@ def seller_dashboard():
                 status_counts[key] = row['count']
 
     except Exception as e:
-        print(f"⚠️ MySQL query error in seller_dashboard: {e}")
+        print(f"?? MySQL query error in seller_dashboard: {e}")
     finally:
         if 'cursor' in locals() and cursor:
             cursor.close()
@@ -3935,7 +3913,7 @@ def reports_analytics():
         flash('Access denied. Seller privileges required.', 'error')
         return redirect(url_for('login'))
 
-    # ── Get seller name from Supabase (works even when MySQL is down) ─────
+    # -- Get seller name from Supabase (works even when MySQL is down) -----
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
@@ -3943,13 +3921,13 @@ def reports_analytics():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in reports_analytics: {sb_err}")
+        print(f"?? Supabase name fetch failed in reports_analytics: {sb_err}")
 
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
     except Exception as db_err:
-        print(f"⚠️ MySQL unavailable in reports_analytics: {db_err}")
+        print(f"?? MySQL unavailable in reports_analytics: {db_err}")
         return render_template('reports_analytics.html',
                              total_revenue="0.00", total_orders=0,
                              avg_order_value="0.00", total_earnings="0.00",
@@ -4324,7 +4302,7 @@ def promotions():
         flash('Access denied. Seller privileges required.', 'error')
         return redirect(url_for('login'))
 
-    # ── Get seller name from Supabase (works even when MySQL is down) ─────
+    # -- Get seller name from Supabase (works even when MySQL is down) -----
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
@@ -4332,7 +4310,7 @@ def promotions():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in promotions: {sb_err}")
+        print(f"?? Supabase name fetch failed in promotions: {sb_err}")
 
     # Ensure promotion tables exist
     try:
@@ -4344,7 +4322,7 @@ def promotions():
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
     except Exception as db_err:
-        print(f"⚠️ MySQL unavailable in promotions: {db_err}")
+        print(f"?? MySQL unavailable in promotions: {db_err}")
         return render_template('promotions.html', products=[], active_promotions=[],
                              user_name=seller_name, user_email=session.get('email', 'Seller'))
 
@@ -4386,7 +4364,7 @@ def promotions():
         
         # Debug: Print promotion usage counts
         for promotion in active_promotions:
-            print(f"DEBUG - Promotion '{promotion['name']}' (ID: {promotion['id']}): {promotion['total_uses']} uses, ₱{promotion['total_discount_given']:.2f} total discount")
+            print(f"DEBUG - Promotion '{promotion['name']}' (ID: {promotion['id']}): {promotion['total_uses']} uses, ?{promotion['total_discount_given']:.2f} total discount")
             
     except Exception as e:
         print(f"Error fetching promotions: {str(e)}")
@@ -4416,7 +4394,7 @@ def seller_reviews():
         flash('Access denied. Seller privileges required.', 'error')
         return redirect(url_for('login'))
 
-    # ── Get seller name from Supabase (works even when MySQL is down) ─────
+    # -- Get seller name from Supabase (works even when MySQL is down) -----
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
@@ -4424,13 +4402,13 @@ def seller_reviews():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in seller_reviews: {sb_err}")
+        print(f"?? Supabase name fetch failed in seller_reviews: {sb_err}")
 
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
     except Exception as db_err:
-        print(f"⚠️ MySQL unavailable in seller_reviews: {db_err}")
+        print(f"?? MySQL unavailable in seller_reviews: {db_err}")
         empty_stats = {'total_reviews': 0, 'average_rating': 0,
                        'five_star': 0, 'four_star': 0, 'three_star': 0,
                        'two_star': 0, 'one_star': 0}
@@ -4458,7 +4436,7 @@ def seller_reviews():
                     ADD COLUMN response_date TIMESTAMP NULL AFTER seller_response
                 """)
                 connection.commit()
-                print("✅ Added seller_response columns to reviews table")
+                print("? Added seller_response columns to reviews table")
             except Exception as alter_error:
                 print(f"Note: Could not add seller_response columns: {alter_error}")
                 connection.rollback()
@@ -4511,7 +4489,7 @@ def seller_reviews():
     for review in reviews:
         review['customer_name'] = f"{review['customer_first_name']} {review['customer_last_name']}" if review['customer_first_name'] else "Anonymous"
         review['time_ago'] = format_time_ago(review['created_at'])
-        review['rating_stars'] = '★' * review['rating'] + '☆' * (5 - review['rating'])
+        review['rating_stars'] = '?' * review['rating'] + '?' * (5 - review['rating'])
         # Format response date if exists
         if review.get('response_date'):
             review['response_time_ago'] = format_time_ago(review['response_date'])
@@ -4627,7 +4605,7 @@ def seller_respond_to_review():
         })
         
     except Exception as e:
-        print(f"❌ Error posting seller response: {str(e)}")
+        print(f"? Error posting seller response: {str(e)}")
         import traceback
         traceback.print_exc()
         
@@ -5384,7 +5362,7 @@ def apply_promotion():
                     item_discount = free_items * item_price
                 elif promotion['type'] == 'free_shipping':
                     # Free shipping discount (you can customize this based on your shipping logic)
-                    item_discount = 50.0  # Assuming ₱50 shipping fee
+                    item_discount = 50.0  # Assuming ?50 shipping fee
                 else:
                     item_discount = 0
                 
@@ -5400,7 +5378,7 @@ def apply_promotion():
         if promotion['min_purchase'] and cart_total < float(promotion['min_purchase']):
             return jsonify({
                 'success': False, 
-                'message': f'Minimum purchase of ₱{promotion["min_purchase"]} required'
+                'message': f'Minimum purchase of ?{promotion["min_purchase"]} required'
             }), 400
         
         # Check minimum quantity requirement
@@ -5442,7 +5420,7 @@ def rider_dashboard():
 
     rider_email = session['email']
 
-    # ── Get rider name from Supabase ──────────────────────────────────────
+    # -- Get rider name from Supabase --------------------------------------
     rider_name = session.get('first_name', 'Rider')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name').eq('email', rider_email).execute()
@@ -5450,7 +5428,7 @@ def rider_dashboard():
             u = sb_res.data[0]
             rider_name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Rider'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in rider_dashboard: {sb_err}")
+        print(f"?? Supabase name fetch failed in rider_dashboard: {sb_err}")
 
     end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     start_date = request.args.get('start_date', (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d'))
@@ -5460,11 +5438,11 @@ def rider_dashboard():
     total_earnings = 0.0
 
     try:
-        # Available deliveries — Confirmed orders with no rider assigned
+        # Available deliveries � Confirmed orders with no rider assigned
         avail_res = sb_admin.table('orders').select('id', count='exact').eq('status', 'Confirmed').is_('rider_email', 'null').execute()
         available_deliveries = avail_res.count or 0
 
-        # Active deliveries — assigned to this rider and in progress
+        # Active deliveries � assigned to this rider and in progress
         active_res = sb_admin.table('orders').select('id', count='exact').eq('rider_email', rider_email).in_('status', ['For Pickup', 'Heading to Seller', 'Shipped']).execute()
         active_deliveries = active_res.count or 0
 
@@ -5477,7 +5455,7 @@ def rider_dashboard():
         total_earnings = completed_count * (delivery_fee - platform_commission)
 
     except Exception as e:
-        print(f"⚠️ Supabase error in rider_dashboard stats: {e}")
+        print(f"?? Supabase error in rider_dashboard stats: {e}")
 
     return render_template('rider_dashboard.html',
                            available_deliveries=available_deliveries,
@@ -5499,14 +5477,14 @@ def available_deliveries():
 
     rider_email = session['email']
 
-    # ── Rider name from Supabase ──────────────────────────────────────────
+    # -- Rider name from Supabase ------------------------------------------
     rider_name = 'Rider'
     try:
         rn = sb_admin.table('users').select('first_name, last_name').eq('email', rider_email).execute()
         if rn.data:
             rider_name = f"{rn.data[0].get('first_name','')} {rn.data[0].get('last_name','')}".strip() or 'Rider'
     except Exception as e:
-        print(f"⚠️ rider name fetch: {e}")
+        print(f"?? rider name fetch: {e}")
 
     available_orders = []
     try:
@@ -5575,7 +5553,7 @@ def available_deliveries():
                 'status':         order.get('status', ''),
             })
     except Exception as e:
-        print(f"⚠️ available_deliveries Supabase error: {e}")
+        print(f"?? available_deliveries Supabase error: {e}")
         import traceback; traceback.print_exc()
 
     return render_template('available_deliveries.html',
@@ -5622,7 +5600,7 @@ def accept_delivery():
         sb_admin.table('orders').update({'status': 'For Pickup', 'rider_email': rider_email}).eq('id', order_id).execute()
 
         # Seller in-app notification
-        notif_msg = f"🚚 Rider {rider_name} has accepted delivery for Order #{order_id} ({product_name}). The rider is now heading to pick up the item."
+        notif_msg = f"?? Rider {rider_name} has accepted delivery for Order #{order_id} ({product_name}). The rider is now heading to pick up the item."
         sb_admin.table('notifications').insert({'seller_email': seller_email, 'message': notif_msg, 'type': 'rider_assigned', 'is_read': False}).execute()
 
         # Email to seller
@@ -5632,7 +5610,7 @@ def accept_delivery():
             <html><body style="font-family:Arial,sans-serif;color:#333;">
             <div style="max-width:600px;margin:0 auto;padding:20px;">
               <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0;">
-                <h1 style="margin:0;">🚚 Rider Assigned to Your Order</h1>
+                <h1 style="margin:0;">?? Rider Assigned to Your Order</h1>
               </div>
               <div style="background:#f9f9f9;padding:30px;border-radius:0 0 10px 10px;">
                 <p>Good news! A rider has been assigned to deliver your order.</p>
@@ -5648,12 +5626,12 @@ def accept_delivery():
             </body></html>"""
             mail.send(msg)
         except Exception as email_err:
-            print(f"⚠️ Email to seller failed: {email_err}")
+            print(f"?? Email to seller failed: {email_err}")
 
         return jsonify({'success': True, 'message': f'Order #{order_id} accepted successfully!'})
 
     except Exception as e:
-        print(f"❌ accept_delivery error: {e}")
+        print(f"? accept_delivery error: {e}")
         return jsonify({'success': False, 'message': f'Error accepting delivery: {str(e)}'}), 500
 
 @app.route('/api/order-details/<int:order_id>')
@@ -5839,7 +5817,7 @@ def active_deliveries():
         if rn.data:
             rider_name = f"{rn.data[0].get('first_name','')} {rn.data[0].get('last_name','')}".strip() or 'Rider'
     except Exception as e:
-        print(f"⚠️ rider name: {e}")
+        print(f"?? rider name: {e}")
 
     active_deliveries_list = []
     pickup_pending_count = in_transit_count = out_for_delivery_count = 0
@@ -5918,7 +5896,7 @@ def active_deliveries():
                 'seller_address': seller.get('address', ''),
             })
     except Exception as e:
-        print(f"⚠️ active_deliveries Supabase error: {e}")
+        print(f"?? active_deliveries Supabase error: {e}")
         import traceback; traceback.print_exc()
 
     return render_template('active_deliveries.html',
@@ -5946,7 +5924,7 @@ def delivery_history():
         if rn.data:
             rider_name = f"{rn.data[0].get('first_name','')} {rn.data[0].get('last_name','')}".strip() or 'Rider'
     except Exception as e:
-        print(f"⚠️ rider name: {e}")
+        print(f"?? rider name: {e}")
 
     completed_deliveries = []
     total_earned = 0.0
@@ -6001,7 +5979,7 @@ def delivery_history():
                 'seller_address': seller.get('address', ''),
             })
     except Exception as e:
-        print(f"⚠️ delivery_history Supabase error: {e}")
+        print(f"?? delivery_history Supabase error: {e}")
         import traceback; traceback.print_exc()
 
     avg_rating = round(sum(d['rating'] for d in completed_deliveries) / len(completed_deliveries), 1) if completed_deliveries else 0.0
@@ -6030,7 +6008,7 @@ def earnings():
         if rn.data:
             rider_name = f"{rn.data[0].get('first_name','')} {rn.data[0].get('last_name','')}".strip() or 'Rider'
     except Exception as e:
-        print(f"⚠️ rider name: {e}")
+        print(f"?? rider name: {e}")
 
     earnings_data = []
     try:
@@ -6076,7 +6054,7 @@ def earnings():
                 'has_free_shipping': has_free_shipping,
             })
     except Exception as e:
-        print(f"⚠️ earnings Supabase error: {e}")
+        print(f"?? earnings Supabase error: {e}")
         import traceback; traceback.print_exc()
 
     total_earnings   = sum(float(e['net_earnings']) for e in earnings_data)
@@ -6173,7 +6151,7 @@ def add_new_product():
             # Store multiple filenames as comma-separated string
             images_string = ','.join(saved_filenames)
 
-            # ── Upload images to Supabase Storage for mobile access ───────
+            # -- Upload images to Supabase Storage for mobile access -------
             STORAGE_BUCKET = 'product-images'
             supabase_image_urls = []
             for fname in saved_filenames:
@@ -6192,16 +6170,16 @@ def add_new_product():
                     )
                     public_url = f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/{storage_path}"
                     supabase_image_urls.append(public_url)
-                    print(f"✅ Uploaded {fname} to Supabase Storage: {public_url}")
+                    print(f"? Uploaded {fname} to Supabase Storage: {public_url}")
                 except Exception as upload_err:
-                    print(f"⚠️ Supabase Storage upload failed for {fname}: {upload_err}")
+                    print(f"?? Supabase Storage upload failed for {fname}: {upload_err}")
                     # Fall back to local filename so the website still works
                     supabase_image_urls.append(fname)
 
             # Use Supabase Storage URLs if all uploads succeeded, else keep filenames
             if supabase_image_urls:
                 images_string = ','.join(supabase_image_urls)
-            # ─────────────────────────────────────────────────────────────
+            # -------------------------------------------------------------
 
             # Store image-color mapping for future use
             image_color_string = ','.join(image_color_mapping)
@@ -6223,7 +6201,7 @@ def add_new_product():
             variations_list = [v.strip() for v in variations_string.split(',') if v.strip()]
             sizes_list = [s.strip() for s in product_sizes.split(',') if s.strip()]
 
-            # ── PRIMARY: Insert into Supabase ─────────────────────────────
+            # -- PRIMARY: Insert into Supabase -----------------------------
             try:
                 product_row = {
                     'name':                product_name,
@@ -6248,7 +6226,7 @@ def add_new_product():
                     raise Exception('Supabase insert returned no data')
 
                 product_id = sb_res.data[0]['id']
-                print(f"✅ Product inserted into Supabase with id={product_id}")
+                print(f"? Product inserted into Supabase with id={product_id}")
 
                 # Insert placeholder variant_inventory rows (stock = 0)
                 variant_rows = []
@@ -6264,15 +6242,15 @@ def add_new_product():
 
                 if variant_rows:
                     sb_admin.table('variant_inventory').insert(variant_rows).execute()
-                    print(f"✅ {len(variant_rows)} variant rows inserted into Supabase")
+                    print(f"? {len(variant_rows)} variant rows inserted into Supabase")
 
             except Exception as sb_err:
-                print(f"❌ Supabase insert failed: {sb_err}")
+                print(f"? Supabase insert failed: {sb_err}")
                 cleanup_saved_files()
                 flash(f'Failed to save product: {sb_err}', 'error')
                 return redirect(request.url)
 
-            # ── SECONDARY: Mirror to MySQL (best-effort, non-blocking) ────
+            # -- SECONDARY: Mirror to MySQL (best-effort, non-blocking) ----
             try:
                 db = get_db_connection()
                 cursor = db.cursor()
@@ -6306,9 +6284,9 @@ def add_new_product():
                 db.commit()
                 cursor.close()
                 db.close()
-                print(f"✅ Product also mirrored to MySQL id={mysql_product_id}")
+                print(f"? Product also mirrored to MySQL id={mysql_product_id}")
             except Exception as mysql_err:
-                print(f"⚠️ MySQL mirror failed (non-fatal, Supabase is primary): {mysql_err}")
+                print(f"?? MySQL mirror failed (non-fatal, Supabase is primary): {mysql_err}")
 
             flash('Product added successfully! Set stock quantities in Variant Inventory.', 'success')
             return redirect(url_for('variant_inventory'))
@@ -6324,7 +6302,7 @@ def add_new_product():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in add_new_product: {sb_err}")
+        print(f"?? Supabase name fetch failed in add_new_product: {sb_err}")
     
     return render_template('add_new_product.html', user_name=seller_name, user_email=session.get('email', 'Seller'))
 
@@ -6337,7 +6315,7 @@ def edit_product(product_id):
 
     if request.method == 'POST':
         try:
-            # ── Validate required fields ──────────────────────────────────
+            # -- Validate required fields ----------------------------------
             required_fields = ['name', 'category', 'description', 'price']
             for field in required_fields:
                 if field not in request.form or not request.form[field].strip():
@@ -6358,7 +6336,7 @@ def edit_product(product_id):
             images_to_remove = request.form.get('images_to_remove', '')
             images_to_remove_list = [i.strip() for i in images_to_remove.split(',') if i.strip()]
 
-            # ── Fetch current product from Supabase ───────────────────────
+            # -- Fetch current product from Supabase -----------------------
             prod_res = sb_admin.table('products') \
                 .select('image, image_colors, sizes, variations') \
                 .eq('id', product_id) \
@@ -6382,7 +6360,7 @@ def edit_product(product_id):
             if not variations.strip():
                 variations = current_variations_in_db or 'Standard'
 
-            # ── Parse current color updates ───────────────────────────────
+            # -- Parse current color updates -------------------------------
             current_color_updates = {}
             if current_image_color_updates:
                 for mapping in current_image_color_updates.split(','):
@@ -6390,7 +6368,7 @@ def edit_product(product_id):
                         img_name, color_name = mapping.split(':', 1)
                         current_color_updates[img_name.strip()] = color_name.strip()
 
-            # ── Build final image + color lists ───────────────────────────
+            # -- Build final image + color lists ---------------------------
             final_images = []
             final_image_colors = []
 
@@ -6420,7 +6398,7 @@ def edit_product(product_id):
                     except Exception:
                         pass
 
-            # ── Handle new image uploads ──────────────────────────────────
+            # -- Handle new image uploads ----------------------------------
             if 'image' in request.files:
                 files = [f for f in request.files.getlist('image') if f.filename]
                 if files:
@@ -6441,7 +6419,7 @@ def edit_product(product_id):
                                 return redirect(url_for('products'))
                     final_images.extend(saved_filenames)
 
-            # ── Auto-sync variations with image colors ────────────────────
+            # -- Auto-sync variations with image colors --------------------
             if color_option_type == 'no_colors':
                 variations = 'Standard'
             elif final_image_colors:
@@ -6459,7 +6437,7 @@ def edit_product(product_id):
             images_string       = ','.join(final_images)
             image_colors_string = ','.join(final_image_colors)
 
-            # ── Update product in Supabase ────────────────────────────────
+            # -- Update product in Supabase --------------------------------
             update_data = {
                 'name':                name,
                 'category':            category,
@@ -6479,9 +6457,9 @@ def edit_product(product_id):
                 .eq('seller_email', seller_email) \
                 .execute()
 
-            print(f"✅ Product {product_id} updated in Supabase")
+            print(f"? Product {product_id} updated in Supabase")
 
-            # ── Update variant_inventory in Supabase (non-fatal) ──────────
+            # -- Update variant_inventory in Supabase (non-fatal) ----------
             try:
                 variations_list = [v.strip() for v in variations.split(',') if v.strip()]
                 sizes_list      = [s.strip() for s in updated_sizes.split(',') if s.strip()]
@@ -6510,11 +6488,11 @@ def edit_product(product_id):
                                 'low_stock_threshold': low_stock_threshold,
                             }).execute()
 
-                print(f"✅ Variant inventory updated for product {product_id}")
+                print(f"? Variant inventory updated for product {product_id}")
             except Exception as vi_err:
-                print(f"⚠️ Variant inventory update failed (non-fatal): {vi_err}")
+                print(f"?? Variant inventory update failed (non-fatal): {vi_err}")
 
-            # ── Stock notifications (non-fatal) ───────────────────────────
+            # -- Stock notifications (non-fatal) ---------------------------
             try:
                 check_and_notify_stock_levels(
                     product_id=product_id,
@@ -6534,7 +6512,7 @@ def edit_product(product_id):
             flash(f'Error updating product: {str(e)}', 'error')
             return redirect(url_for('products'))
 
-    # GET — redirect to products page (editing is done via modal)
+    # GET � redirect to products page (editing is done via modal)
     try:
         prod_res = sb_admin.table('products') \
             .select('name') \
@@ -6557,7 +6535,7 @@ def debug_form_data(product_id):
         return jsonify({'error': 'Not logged in'}), 401
     
     # Log all form data received
-    print(f"🔍 DEBUG FORM DATA for product {product_id}:")
+    print(f"?? DEBUG FORM DATA for product {product_id}:")
     print(f"  - All form keys: {list(request.form.keys())}")
     
     form_data = {}
@@ -6570,7 +6548,7 @@ def debug_form_data(product_id):
     updated_sizes = request.form.get('updated_sizes')
     updated_variations = request.form.get('updated_variations')
     
-    print(f"🔍 CRITICAL FIELDS:")
+    print(f"?? CRITICAL FIELDS:")
     print(f"  - updated_sizes: '{updated_sizes}' (type: {type(updated_sizes)})")
     print(f"  - updated_variations: '{updated_variations}' (type: {type(updated_variations)})")
     
@@ -6605,7 +6583,7 @@ def test_sizes_update(product_id):
         test_sizes = request.form.get('test_sizes', 'Test Size 1, Test Size 2')
         test_variations = request.form.get('test_variations', 'Red, Blue, Green')
         
-        print(f"🧪 TEST SIZES & VARIATIONS UPDATE:")
+        print(f"?? TEST SIZES & VARIATIONS UPDATE:")
         print(f"  - Product ID: {product_id}")
         print(f"  - Current sizes: '{current_product['sizes']}'")
         print(f"  - Current variations: '{current_product['variations']}'")
@@ -6663,7 +6641,7 @@ def test_sizes_update(product_id):
             return jsonify({'error': 'Could not verify update'}), 500
             
     except Exception as e:
-        print(f"❌ Test update error: {str(e)}")
+        print(f"? Test update error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/products', methods=['GET'])
@@ -6679,7 +6657,7 @@ def products():
     page = request.args.get('page', 1, type=int)
     per_page = 12
 
-    # ── Seller name from Supabase ─────────────────────────────────────────
+    # -- Seller name from Supabase -----------------------------------------
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', user_email).execute()
@@ -6687,10 +6665,10 @@ def products():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in products: {sb_err}")
+        print(f"?? Supabase name fetch failed in products: {sb_err}")
 
     try:
-        # ── Fetch all seller products from Supabase ───────────────────────
+        # -- Fetch all seller products from Supabase -----------------------
         products_res = sb_admin.table('products') \
             .select(
                 'id, name, category, description, variations, price, image, '
@@ -6702,7 +6680,7 @@ def products():
 
         all_products = products_res.data or []
 
-        # ── Fetch reviews for rating calculation ──────────────────────────
+        # -- Fetch reviews for rating calculation --------------------------
         if all_products:
             product_ids = [p['id'] for p in all_products]
             reviews_res = sb_admin.table('reviews') \
@@ -6732,7 +6710,7 @@ def products():
                 p['review_count'] = 0
                 p['rating'] = None
 
-        # ── Apply filters in Python ───────────────────────────────────────
+        # -- Apply filters in Python ---------------------------------------
         filtered = all_products
 
         if search_query:
@@ -6758,7 +6736,7 @@ def products():
                     return qty > 0 and qty <= thr
                 filtered = [p for p in filtered if _is_low(p)]
 
-        # ── Sort ──────────────────────────────────────────────────────────
+        # -- Sort ----------------------------------------------------------
         def _price(p):
             try: return float(p.get('price') or 0)
             except: return 0.0
@@ -6788,20 +6766,20 @@ def products():
         else:  # newest (default)
             filtered.sort(key=lambda p: p['id'], reverse=True)
 
-        # ── Distinct categories for dropdown ──────────────────────────────
+        # -- Distinct categories for dropdown ------------------------------
         categories = sorted(set(p['category'] for p in all_products if p.get('category')))
 
-        # ── Paginate ──────────────────────────────────────────────────────
+        # -- Paginate ------------------------------------------------------
         total_products = len(filtered)
         total_pages = max(1, (total_products + per_page - 1) // per_page)
         page = max(1, min(page, total_pages))
         offset = (page - 1) * per_page
         products_page = filtered[offset: offset + per_page]
 
-        print(f"✅ Products loaded from Supabase: {total_products} total, page {page}/{total_pages}")
+        print(f"? Products loaded from Supabase: {total_products} total, page {page}/{total_pages}")
 
     except Exception as e:
-        print(f"❌ Error loading products from Supabase: {e}")
+        print(f"? Error loading products from Supabase: {e}")
         products_page = []
         categories = []
         total_products = 0
@@ -6844,8 +6822,32 @@ def get_product_variant_stock(product_id):
         return jsonify({'success': True, 'variants': res.data or []})
 
     except Exception as e:
-        print(f"❌ Error fetching variant stock from Supabase: {e}")
+        print(f"? Error fetching variant stock from Supabase: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/debug/seller-lookup/<int:product_id>')
+def debug_seller_lookup(product_id):
+    """Temporary debug: show what seller email is stored and what users table returns."""
+    try:
+        prod = sb_admin.table('products').select('seller_email').eq('id', product_id).limit(1).execute()
+        if not prod.data:
+            return jsonify({'error': 'product not found'})
+        seller_email = prod.data[0].get('seller_email', '')
+        # Try exact
+        exact = sb_admin.table('users').select('email, business_name, first_name, last_name').eq('email', seller_email).limit(1).execute()
+        # Try ilike
+        ilike = sb_admin.table('users').select('email, business_name, first_name, last_name').ilike('email', seller_email).limit(1).execute()
+        # List first 5 users emails for comparison
+        all_users = sb_admin.table('users').select('email, business_name').limit(5).execute()
+        return jsonify({
+            'product_seller_email': seller_email,
+            'exact_match': exact.data,
+            'ilike_match': ilike.data,
+            'sample_users': all_users.data,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 
 @app.route('/api/mobile/seller_info', methods=['GET'])
@@ -6873,11 +6875,149 @@ def mobile_seller_info():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/mobile/get_mysql_user_id', methods=['GET'])
+def get_mysql_user_id():
+    """Return a stable integer user_id for a given email using polynomial hash.
+    Same algorithm as _resolve_wishlist_user_id and Dart _getMysqlUserId."""
+    email = request.args.get('email', '').strip()
+    if not email:
+        return jsonify({'success': False, 'error': 'email required'}), 400
+    hash_id = 0
+    for c in email.lower().encode('utf-8'):
+        hash_id = (hash_id * 31 + c) & 0x7FFFFFFF
+    return jsonify({'success': True, 'user_id': hash_id, 'source': 'polynomial_hash'})
+
+
+def _resolve_wishlist_user_id(email):
+    """
+    Returns a stable integer user_id for the wishlist table.
+    Uses the same polynomial hash as the Dart/Flutter mobile app:
+      hashId = (hashId * 31 + codeUnit) & 0x7FFFFFFF
+    This ensures website and mobile app always produce the same user_id.
+    """
+    hash_id = 0
+    for c in email.lower().encode('utf-8'):
+        hash_id = (hash_id * 31 + c) & 0x7FFFFFFF
+    return hash_id
+
+
+def _get_wishlist_ids():
+    """Return a set of product_id strings for the current session user's wishlist."""
+    try:
+        email = session.get('email')
+        if not email:
+            return set()
+        uid = _resolve_wishlist_user_id(email)
+        res = sb_admin.table('wishlist').select('product_id').eq('user_id', uid).execute()
+        return {str(r['product_id']) for r in (res.data or [])}
+    except Exception:
+        return set()
+
+
+@app.route('/api/mobile/wishlist', methods=['GET'])
+def mobile_wishlist_get():
+    email = request.args.get('email', '').strip()
+    if not email:
+        return jsonify({'success': False, 'error': 'email required'}), 400
+    try:
+        user_id = _resolve_wishlist_user_id(email)
+        wl_res = sb_admin.table('wishlist').select('id, product_id').eq('user_id', user_id).order('id', desc=True).execute()
+        rows = wl_res.data or []
+        if not rows:
+            return jsonify({'success': True, 'items': []})
+        product_ids = [r['product_id'] for r in rows]
+        prod_res = sb_admin.table('products').select('id, name, price, image, seller_email, variations, sizes').in_('id', product_ids).execute()
+        prod_map = {p['id']: p for p in (prod_res.data or [])}
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        promo_map = {}
+        try:
+            promo_res = sb_admin.table('promotions').select('id, type, discount_value, code, product_scope').eq('is_active', True).lte('start_date', today).gte('end_date', today).execute()
+            for promo in (promo_res.data or []):
+                scope = promo.get('product_scope', 'all')
+                if scope == 'all':
+                    for pid in product_ids:
+                        if pid not in promo_map: promo_map[pid] = promo
+                elif scope == 'specific':
+                    pp_res = sb_admin.table('promotion_products').select('product_id').eq('promotion_id', promo['id']).in_('product_id', product_ids).execute()
+                    for pp in (pp_res.data or []):
+                        pid = pp['product_id']
+                        if pid not in promo_map: promo_map[pid] = promo
+        except Exception as pe:
+            print(f'Promo fetch error: {pe}')
+        items = []
+        for r in rows:
+            pid = r['product_id']
+            prod = prod_map.get(pid)
+            if not prod: continue
+            base_price = float(prod.get('price') or 0)
+            promo = promo_map.get(pid)
+            sale_price = None; promo_type = ''; promo_discount = 0.0; promo_code = ''
+            if promo:
+                promo_type = promo.get('type', ''); promo_discount = float(promo.get('discount_value') or 0); promo_code = promo.get('code', '')
+                if promo_type == 'percentage' and promo_discount > 0: sale_price = max(base_price * (1 - promo_discount / 100), 0.01)
+                elif promo_type == 'fixed' and promo_discount > 0: sale_price = max(base_price - promo_discount, 0.01)
+            items.append({'id': r['id'], 'product_id': pid, 'products': {'id': pid, 'name': prod.get('name', ''), 'price': base_price, 'sale_price': sale_price, 'image': prod.get('image') or '', 'seller_email': prod.get('seller_email') or '', 'variations': prod.get('variations') or '', 'sizes': prod.get('sizes') or '', 'promotion_type': promo_type, 'promotion_discount': promo_discount, 'promotion_code': promo_code}})
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        print(f'mobile_wishlist_get error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/mobile/wishlist/add', methods=['POST'])
+def mobile_wishlist_add():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip()
+    product_id = data.get('product_id')
+    if not email or not product_id:
+        return jsonify({'success': False, 'error': 'email and product_id required'}), 400
+    try:
+        user_id = _resolve_wishlist_user_id(email)
+        existing = sb_admin.table('wishlist').select('id').eq('user_id', user_id).eq('product_id', int(product_id)).execute()
+        if not existing.data:
+            sb_admin.table('wishlist').insert({'user_id': user_id, 'product_id': int(product_id)}).execute()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'mobile_wishlist_add error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/mobile/wishlist/remove', methods=['POST'])
+def mobile_wishlist_remove():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip()
+    product_id = data.get('product_id')
+    if not email or not product_id:
+        return jsonify({'success': False, 'error': 'email and product_id required'}), 400
+    try:
+        user_id = _resolve_wishlist_user_id(email)
+        sb_admin.table('wishlist').delete().eq('user_id', user_id).eq('product_id', int(product_id)).execute()
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f'mobile_wishlist_remove error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/mobile/wishlist/check', methods=['GET'])
+def mobile_wishlist_check():
+    email = request.args.get('email', '').strip()
+    product_id = request.args.get('product_id', '').strip()
+    if not email or not product_id:
+        return jsonify({'in_wishlist': False}), 200
+    try:
+        user_id = _resolve_wishlist_user_id(email)
+        res = sb_admin.table('wishlist').select('id').eq('user_id', user_id).eq('product_id', int(product_id)).execute()
+        return jsonify({'in_wishlist': bool(res.data)})
+    except Exception as e:
+        print(f'mobile_wishlist_check error: {e}')
+        return jsonify({'in_wishlist': False}), 200
+
+
 @app.route('/api/mobile/available_deliveries', methods=['GET'])
 def mobile_available_deliveries():
     """
     Returns orders with status 'Waiting for Pickup' and no rider assigned.
-    Uses sb_admin to bypass RLS — safe because it only returns non-sensitive order data.
+    Uses sb_admin to bypass RLS � safe because it only returns non-sensitive order data.
     """
     try:
         res = sb_admin.table('orders') \
@@ -6889,14 +7029,14 @@ def mobile_available_deliveries():
             .execute()
         return jsonify({'success': True, 'orders': res.data or []})
     except Exception as e:
-        print(f"❌ mobile_available_deliveries error: {e}")
+        print(f"? mobile_available_deliveries error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/mobile/accept_delivery', methods=['POST'])
 def mobile_accept_delivery():
     """
-    Rider accepts a delivery — sets status to 'For Pickup' and assigns rider_email.
+    Rider accepts a delivery � sets status to 'For Pickup' and assigns rider_email.
     Uses sb_admin to bypass RLS.
     """
     try:
@@ -6913,14 +7053,14 @@ def mobile_accept_delivery():
 
         return jsonify({'success': True})
     except Exception as e:
-        print(f"❌ mobile_accept_delivery error: {e}")
+        print(f"? mobile_accept_delivery error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/mobile/place_order', methods=['POST'])
 def mobile_place_order():
     """
-    Mobile order placement endpoint — uses sb_admin (service role) to bypass RLS.
+    Mobile order placement endpoint � uses sb_admin (service role) to bypass RLS.
     Accepts JSON: { email, items: [{name, product_id, price, quantity, color, size,
                                     image, seller_email, shipping_fee}],
                     payment_method, address }
@@ -7005,7 +7145,7 @@ def mobile_place_order():
                             .eq('id', vi['id']) \
                             .execute()
                 except Exception as vi_err:
-                    print(f"⚠️ mobile_place_order: variant stock update failed: {vi_err}")
+                    print(f"?? mobile_place_order: variant stock update failed: {vi_err}")
 
             # Update product total quantity + sold count
             if product_id:
@@ -7023,7 +7163,7 @@ def mobile_place_order():
                             .eq('id', int(product_id)) \
                             .execute()
                 except Exception as pq_err:
-                    print(f"⚠️ mobile_place_order: product quantity update failed: {pq_err}")
+                    print(f"?? mobile_place_order: product quantity update failed: {pq_err}")
 
             # Remove item from cart (best-effort)
             try:
@@ -7037,17 +7177,17 @@ def mobile_place_order():
             except Exception:
                 pass
 
-        print(f"✅ mobile_place_order: {len(order_ids)} orders placed for {email}")
+        print(f"? mobile_place_order: {len(order_ids)} orders placed for {email}")
         return jsonify({'success': True, 'order_ids': order_ids})
 
     except Exception as e:
-        print(f"❌ mobile_place_order error: {e}")
+        print(f"? mobile_place_order error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/seller/products-with-variants')
 def get_products_with_variants():
-    """Get all products with their variants for the logged-in seller — reads from Supabase"""
+    """Get all products with their variants for the logged-in seller � reads from Supabase"""
     seller_email = session.get('email')
     user_type = session.get('user_type')
 
@@ -7107,13 +7247,13 @@ def get_products_with_variants():
         return jsonify({'success': True, 'products': result_products})
 
     except Exception as e:
-        print(f"❌ Error fetching products with variants from Supabase: {e}")
+        print(f"? Error fetching products with variants from Supabase: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/seller/update-variants', methods=['POST'])
 def update_variants():
-    """Update variant stock quantities — writes to Supabase (primary) + MySQL (mirror)"""
+    """Update variant stock quantities � writes to Supabase (primary) + MySQL (mirror)"""
     seller_email = session.get('email')
     user_type = session.get('user_type')
 
@@ -7129,7 +7269,7 @@ def update_variants():
         if not product_id or not variants:
             return jsonify({'success': False, 'error': 'Missing required data'}), 400
 
-        # ── Verify ownership via Supabase ─────────────────────────────────
+        # -- Verify ownership via Supabase ---------------------------------
         owner_res = sb_admin.table('products') \
             .select('id, name') \
             .eq('id', product_id) \
@@ -7141,14 +7281,14 @@ def update_variants():
 
         product_name = owner_res.data[0]['name']
 
-        # ── Update product-level threshold + total quantity in Supabase ──
+        # -- Update product-level threshold + total quantity in Supabase --
         total_stock = sum(v.get('stock_quantity', 0) for v in variants)
         sb_admin.table('products').update({
             'low_stock_threshold': low_stock_threshold,
             'quantity': total_stock,
         }).eq('id', product_id).execute()
 
-        # ── Upsert all variants in Supabase (single batch call) ─────────
+        # -- Upsert all variants in Supabase (single batch call) ---------
         upsert_rows = []
         for variant in variants:
             upsert_rows.append({
@@ -7176,7 +7316,7 @@ def update_variants():
                     variant_info={'color': variant.get('color'), 'size': variant.get('size')}
                 )
             except Exception as notify_err:
-                print(f"⚠️ Variant stock notification error: {notify_err}")
+                print(f"?? Variant stock notification error: {notify_err}")
 
         # Total product stock notification
         try:
@@ -7189,11 +7329,11 @@ def update_variants():
                 variant_info=None
             )
         except Exception as notify_err:
-            print(f"⚠️ Product stock notification error: {notify_err}")
+            print(f"?? Product stock notification error: {notify_err}")
 
-        print(f"✅ Variants updated in Supabase for product {product_id}")
+        print(f"? Variants updated in Supabase for product {product_id}")
 
-        # ── Mirror to MySQL (best-effort) ─────────────────────────────────
+        # -- Mirror to MySQL (best-effort) ---------------------------------
         try:
             connection = get_db_connection()
             cursor = connection.cursor(dictionary=True)
@@ -7229,160 +7369,109 @@ def update_variants():
             connection.commit()
             cursor.close()
             connection.close()
-            print(f"✅ Variants also mirrored to MySQL for product {product_id}")
+            print(f"? Variants also mirrored to MySQL for product {product_id}")
         except Exception as mysql_err:
-            print(f"⚠️ MySQL mirror failed (non-fatal): {mysql_err}")
+            print(f"?? MySQL mirror failed (non-fatal): {mysql_err}")
 
         return jsonify({'success': True, 'message': 'Variants updated successfully'})
 
     except Exception as e:
-        print(f"❌ Error updating variants: {e}")
+        print(f"? Error updating variants: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
 
 @app.route('/view_shop/<seller_email>')
 def view_shop(seller_email):
-    if 'email' not in session:
-        return redirect(url_for('home'))
+    user_name = None
+    if 'email' in session:
+        user_name = get_user_name_from_session(default='User')
 
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-    
-    # Get seller information
-    cursor.execute("SELECT * FROM users WHERE email = %s", (seller_email,))
-    seller = cursor.fetchone()
-    
-    if not seller:
-        cursor.close()
-        connection.close()
-        flash('Seller not found', 'error')
-        return redirect(url_for('homepage'))
+    try:
+        # Seller info from Supabase
+        seller_res = sb_admin.table('users').select(
+            'first_name, last_name, business_name'
+        ).eq('email', seller_email).limit(1).execute()
 
-    # Get seller's products with real-time ratings from reviews (including out of stock)
-    cursor.execute("""
-        SELECT p.id, p.name, p.category, p.description, p.price, p.image, 
-               p.quantity, p.sold, p.rating, p.seller_email, p.variations, p.sizes,
-               COUNT(DISTINCT o.id) as total_orders,
-               COALESCE(AVG(r.rating), 0) as calculated_rating,
-               COUNT(r.rating) as review_count
-        FROM products p 
-        LEFT JOIN orders o ON p.id = o.product_id 
-        LEFT JOIN reviews r ON p.id = r.product_id
-        WHERE p.seller_email = %s
-        GROUP BY p.id, p.name, p.category, p.description, p.price, p.image, 
-                 p.quantity, p.sold, p.rating, p.seller_email, p.variations, p.sizes
-        ORDER BY p.sold DESC, COALESCE(AVG(r.rating), 0) DESC, p.id DESC
-    """, (seller_email,))
-    products = cursor.fetchall()
-    
-    # Update the rating field with calculated rating and check for promotions
-    for product in products:
-        if product['calculated_rating'] and float(product['calculated_rating']) > 0:
-            product['rating'] = round(float(product['calculated_rating']), 1)
-        else:
-            product['rating'] = None
-        
-        # Check for active promotions for this product
-        active_promotion = get_active_promotions_for_product(
-            product['id'], 
-            product['seller_email'], 
-            product['category']
-        )
-        
-        if active_promotion:
-            # Calculate promotional price
-            original_price = float(product['price'])
-            promotional_price, discount_amount = calculate_promotional_price(original_price, active_promotion)
-            
-            product['has_promotion'] = True
-            product['promotional_price'] = promotional_price
-            product['discount_amount'] = discount_amount
-            product['promotion_type'] = active_promotion.get('type', 'percentage')
-            product['promotion_code'] = active_promotion.get('code', '')
-            
-            # Get the discount value from promotion
-            discount_value = active_promotion.get('discount_value', 0)
-            if discount_value:
-                product['promotion_discount'] = float(discount_value)
+        if not seller_res.data:
+            flash('Seller not found', 'error')
+            return redirect(url_for('home'))
+
+        s = seller_res.data[0]
+        full_name = f"{s.get('first_name', '')} {s.get('last_name', '')}".strip()
+        seller_display_name = (s.get('business_name') or '').strip() or full_name or seller_email
+        seller_phone = ''
+        seller_avatar_url = None
+
+        # Products from Supabase
+        prod_res = sb_admin.table('products').select(
+            'id, name, category, description, price, image, quantity, sold, rating, '
+            'seller_email, variations, sizes, is_active, flagged_at'
+        ).eq('seller_email', seller_email).eq('is_active', True).order('id', desc=True).execute()
+
+        raw_products = [
+            p for p in (prod_res.data or [])
+            if not (p.get('flagged_at') and str(p.get('flagged_at')).strip())
+        ]
+
+        # Ratings from reviews
+        from collections import defaultdict
+        rating_map = defaultdict(list)
+        if raw_products:
+            product_ids = [p['id'] for p in raw_products]
+            rev_res = sb_admin.table('reviews').select('product_id, rating').in_('product_id', product_ids).execute()
+            for r in (rev_res.data or []):
+                rating_map[r['product_id']].append(r['rating'])
+
+        products = []
+        for p in raw_products:
+            p = dict(p)
+            ratings = rating_map.get(p['id'], [])
+            p['rating'] = round(sum(ratings) / len(ratings), 1) if ratings else (p.get('rating') or 0)
+            p['price'] = float(p.get('price') or 0)
+            p['quantity'] = int(p.get('quantity') or 0)
+            p['sold'] = int(p.get('sold') or 0)
+            active_promotion = get_active_promotions_for_product(
+                p['id'], p.get('seller_email', ''), p.get('category', '')
+            )
+            if active_promotion:
+                promo_price, disc_amt = calculate_promotional_price(p['price'], active_promotion)
+                p['has_promotion'] = True
+                p['promotional_price'] = float(promo_price)
+                p['discount_amount'] = float(disc_amt)
+                p['promotion_type'] = active_promotion.get('type', 'percentage')
+                p['promotion_code'] = active_promotion.get('code', '')
+                p['promotion_discount'] = float(active_promotion.get('discount_value') or 0)
+                p['discount_percentage'] = round((disc_amt / p['price']) * 100, 0) if p['price'] > 0 else 0
             else:
-                product['promotion_discount'] = 0
-            
-            # Calculate discount percentage for display
-            if original_price > 0:
-                product['discount_percentage'] = round((discount_amount / original_price) * 100, 0)
-            else:
-                product['discount_percentage'] = 0
-        else:
-            product['has_promotion'] = False
-            product['discount_percentage'] = 0
-            product['promotional_price'] = product['price']
-            product['discount_amount'] = 0
-            product['promotion_type'] = None
-            product['promotion_discount'] = 0
-    
-    # Debug: Print first product to verify image field is present
-    if products:
-        print(f"DEBUG: First product image field: {products[0].get('image', 'MISSING')}")
-        print(f"DEBUG: First product keys: {list(products[0].keys())}")
+                p['has_promotion'] = False
+                p['promotional_price'] = p['price']
+                p['discount_amount'] = 0
+                p['promotion_type'] = None
+                p['promotion_code'] = ''
+                p['promotion_discount'] = 0
+                p['discount_percentage'] = 0
+            products.append(p)
 
-    # Calculate total sales (both amount and quantity)
-    cursor.execute("""
-        SELECT 
-            COUNT(DISTINCT o.id) as total_orders,
-            COALESCE(SUM(o.total_price), 0) as total_sales_amount,
-            COALESCE(SUM(o.quantity), 0) as total_items_sold
-        FROM orders o
-        WHERE o.seller_email = %s AND o.status = 'Completed'
-    """, (seller_email,))
-    sales_data = cursor.fetchone()
+        return render_template('view_shop.html',
+                               seller_name=seller_display_name,
+                               seller_email=seller_email,
+                               seller_phone_number=seller_phone,
+                               seller_avatar_url=seller_avatar_url,
+                               products=products,
+                               total_products=len(products),
+                               total_sales=sum(p['sold'] for p in products),
+                               total_sales_amount=0,
+                               rating=None,
+                               total_ratings=0,
+                               user_name=user_name,
+                               user_email=session.get('email', 'User'))
 
-    # Calculate seller rating from reviews (more accurate)
-    cursor.execute("""
-        SELECT AVG(r.rating) as avg_rating, COUNT(r.rating) as total_ratings
-        FROM reviews r
-        WHERE r.seller_email = %s
-    """, (seller_email,))
-    rating_data = cursor.fetchone()
-
-    # Get current user's name for header
-    connection_user = get_db_connection()
-    cursor_user = connection_user.cursor(dictionary=True)
-    cursor_user.execute("SELECT first_name, last_name, business_name FROM users WHERE email = %s", (session['email'],))
-    user_data = cursor_user.fetchone()
-    cursor_user.close()
-    connection_user.close()
-    
-    # Determine user name to display
-    user_name = "User"  # Default fallback
-    if user_data:
-        if user_data.get('business_name'):
-            user_name = user_data['business_name']
-        else:
-            user_name = f"{user_data['first_name']} {user_data['last_name']}"
-    
-    cursor.close()
-    connection.close()
-
-    # Format rating to one decimal place if exists
-    rating = None
-    if rating_data and rating_data['avg_rating']:
-        rating = f"{rating_data['avg_rating']:.1f}"
-
-    return render_template('view_shop.html',
-                         seller_name=seller['business_name'] if seller['business_name'] else f"{seller['first_name']} {seller['last_name']}",
-                         seller_email=seller_email,
-                         seller_phone_number=seller['phone_number'],
-                         seller_avatar_url=url_for('static', filename='uploads/' + seller['profile_picture']) if seller.get('profile_picture') else None,
-                         products=products,
-                         total_products=len(products),
-                         total_sales=sales_data['total_items_sold'],
-                         total_sales_amount=sales_data['total_sales_amount'],
-                         rating=rating,
-                         total_ratings=rating_data['total_ratings'] if rating_data else 0,
-                         user_name=user_name,
-                         user_email=session.get('email', 'User'))
-
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f'[view_shop] ERROR: {e}\n{tb}')
+        return f"<pre>view_shop error:\n{tb}</pre>", 500
 @app.route('/orders_list')
 def orders_list():
     if 'email' not in session:
@@ -7390,7 +7479,7 @@ def orders_list():
 
     seller_email = session['email']
 
-    # ── Get seller name from Supabase ─────────────────────────────────────
+    # -- Get seller name from Supabase -------------------------------------
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', seller_email).execute()
@@ -7398,11 +7487,11 @@ def orders_list():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in orders_list: {sb_err}")
+        print(f"?? Supabase name fetch failed in orders_list: {sb_err}")
 
     orders = []
 
-    # ── PRIMARY: Supabase ──────────────────────────────────────────────────
+    # -- PRIMARY: Supabase --------------------------------------------------
     try:
         orders_res = sb_admin.table('orders') \
             .select('*') \
@@ -7489,7 +7578,7 @@ def orders_list():
             o.setdefault('discount_amount', 0)
             o.setdefault('discount_percentage', 0)
 
-            # Date — keep as string for template (already formatted or ISO)
+            # Date � keep as string for template (already formatted or ISO)
             raw_date = o.get('date')
             if raw_date:
                 try:
@@ -7500,7 +7589,7 @@ def orders_list():
             else:
                 o['date'] = ''
 
-            # Image — resolve URL
+            # Image � resolve URL
             raw_img = (o.get('image') or '').strip()
             if raw_img.startswith('http://') or raw_img.startswith('https://'):
                 o['image_url'] = raw_img
@@ -7513,12 +7602,12 @@ def orders_list():
             o.setdefault('product_sizes', '')
 
         orders = raw_orders
-        print(f"✅ orders_list Supabase: {len(orders)} orders for seller {seller_email}")
+        print(f"? orders_list Supabase: {len(orders)} orders for seller {seller_email}")
 
     except Exception as sb_err:
-        print(f"⚠️ orders_list Supabase failed: {sb_err}")
+        print(f"?? orders_list Supabase failed: {sb_err}")
 
-        # ── FALLBACK: MySQL ────────────────────────────────────────────────
+        # -- FALLBACK: MySQL ------------------------------------------------
         try:
             connection = get_db_connection()
             cursor = connection.cursor(dictionary=True)
@@ -7553,9 +7642,9 @@ def orders_list():
                 o['image_url']          = ''
             cursor.close()
             connection.close()
-            print(f"⚠️ orders_list MySQL fallback: {len(orders)} orders")
+            print(f"?? orders_list MySQL fallback: {len(orders)} orders")
         except Exception as my_err:
-            print(f"⚠️ orders_list MySQL fallback failed: {my_err}")
+            print(f"?? orders_list MySQL fallback failed: {my_err}")
             orders = []
 
     return render_template('order_lists.html', orders=orders,
@@ -7568,7 +7657,7 @@ def seller_order_history():
     if 'email' not in session:
         return redirect(url_for('home'))
 
-    # ── Get seller name from Supabase (works even when MySQL is down) ─────
+    # -- Get seller name from Supabase (works even when MySQL is down) -----
     seller_name = session.get('first_name', 'Seller')
     try:
         sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
@@ -7576,13 +7665,13 @@ def seller_order_history():
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
     except Exception as sb_err:
-        print(f"⚠️ Supabase name fetch failed in seller_order_history: {sb_err}")
+        print(f"?? Supabase name fetch failed in seller_order_history: {sb_err}")
 
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
     except Exception as db_err:
-        print(f"⚠️ MySQL unavailable in seller_order_history: {db_err}")
+        print(f"?? MySQL unavailable in seller_order_history: {db_err}")
         return render_template('seller_order_history.html', orders=[],
                              user_name=seller_name, user_email=session.get('email', 'Seller'),
                              completed_count=0, cancelled_count=0,
@@ -8315,10 +8404,10 @@ def update_order_status(order_id):
     new_status = request.form['stat']
     seller_email = session.get('email')
 
-    print(f"📦 Updating order {order_id} status to: {new_status}")
-    print(f"👤 Seller: {seller_email}")
+    print(f"?? Updating order {order_id} status to: {new_status}")
+    print(f"?? Seller: {seller_email}")
 
-    # ── PRIMARY: Supabase ──────────────────────────────────────────────────
+    # -- PRIMARY: Supabase --------------------------------------------------
     try:
         # Fetch current order from Supabase
         order_res = sb_admin.table('orders') \
@@ -8335,8 +8424,8 @@ def update_order_status(order_id):
         current_status = order['status']
         customer_email = order['email']
 
-        print(f"📋 Order: {order['name']} for {customer_email}")
-        print(f"🔄 Status: {current_status} → {new_status}")
+        print(f"?? Order: {order['name']} for {customer_email}")
+        print(f"?? Status: {current_status} ? {new_status}")
 
         # Build update payload
         from datetime import datetime as _dt, timedelta as _td
@@ -8346,32 +8435,32 @@ def update_order_status(order_id):
             update_payload['auto_complete_at'] = (_dt.now() + _td(days=7)).isoformat()
 
         sb_admin.table('orders').update(update_payload).eq('id', order_id).execute()
-        print(f"✅ Supabase order {order_id} → {new_status}")
+        print(f"? Supabase order {order_id} ? {new_status}")
 
     except Exception as sb_err:
-        print(f"❌ Supabase update_order_status failed: {sb_err}")
+        print(f"? Supabase update_order_status failed: {sb_err}")
         flash('An error occurred while updating the order status.', 'error')
         return redirect(url_for('orders_list'))
 
-    # ── Notifications (best-effort) ────────────────────────────────────────
+    # -- Notifications (best-effort) ----------------------------------------
     if current_status != new_status:
         try:
             send_order_status_update_email(customer_email, order, new_status)
         except Exception as e:
-            print(f"⚠️ Email failed: {e}")
+            print(f"?? Email failed: {e}")
 
         try:
             create_buyer_notification(customer_email, order, new_status, order_id)
         except Exception as e:
-            print(f"⚠️ Buyer notification failed: {e}")
+            print(f"?? Buyer notification failed: {e}")
 
         if new_status == 'Waiting for Pickup':
             try:
                 notify_riders_of_new_order(order_id, order, seller_email)
             except Exception as e:
-                print(f"⚠️ Rider notification failed: {e}")
+                print(f"?? Rider notification failed: {e}")
 
-    # ── Flash message ──────────────────────────────────────────────────────
+    # -- Flash message ------------------------------------------------------
     status_messages = {
         'Confirmed':         'Order confirmed! You can now start preparing it.',
         'Preparing':         'Order is now being prepared. Click "Ready for Pickup" when ready.',
@@ -8381,7 +8470,7 @@ def update_order_status(order_id):
     flash(status_messages.get(new_status,
           f'Order status updated to {new_status}.'), 'success')
 
-    # ── MIRROR: MySQL (best-effort) ────────────────────────────────────────
+    # -- MIRROR: MySQL (best-effort) ----------------------------------------
     try:
         conn = get_db_connection()
         cur  = conn.cursor()
@@ -8396,7 +8485,7 @@ def update_order_status(order_id):
         cur.close()
         conn.close()
     except Exception as my_err:
-        print(f"⚠️ MySQL mirror failed for order {order_id}: {my_err}")
+        print(f"?? MySQL mirror failed for order {order_id}: {my_err}")
 
     return redirect(url_for('orders_list'))
 
@@ -8564,7 +8653,7 @@ def pending_users():
         conn.close()
         pending_users_list = mysql_pending
     except Exception as e:
-        print(f"⚠️ MySQL unavailable in pending_users: {e}")
+        print(f"?? MySQL unavailable in pending_users: {e}")
 
     # Also fetch mobile registrations from Supabase pending_users table
     try:
@@ -8625,7 +8714,7 @@ def pending_users():
                     'source':                'mobile',  # flag to identify mobile/web-via-supabase registrations
                 })
     except Exception as e:
-        print(f"⚠️ Supabase pending_users fetch error: {e}")
+        print(f"?? Supabase pending_users fetch error: {e}")
 
     return render_template('pending_users.html', pending_users=pending_users_list)
 
@@ -8639,7 +8728,7 @@ def approve_user(user_id):
 
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
-    # ── Supabase-sourced (mobile) registration ────────────────────────────
+    # -- Supabase-sourced (mobile) registration ----------------------------
     if str(user_id).startswith('sb_'):
         supabase_record_id = user_id[3:]  # strip 'sb_' prefix
         try:
@@ -8716,7 +8805,7 @@ def approve_user(user_id):
             flash(f'Error approving user: {e}', 'error')
             return redirect(url_for('pending_users'))
 
-    # ── MySQL-sourced (web) registration ──────────────────────────────────
+    # -- MySQL-sourced (web) registration ----------------------------------
     try:
         mysql_id = int(user_id)
     except ValueError:
@@ -8747,7 +8836,7 @@ def approve_user(user_id):
         address_to_insert = pending_user['address']
         print(f"DEBUG: Original address: {address_to_insert}")
 
-        # ── Insert profile into Supabase users table ──────────────────────
+        # -- Insert profile into Supabase users table ----------------------
         supabase_uid = pending_user.get('supabase_uid')
         if supabase_uid:
             try:
@@ -9032,7 +9121,7 @@ def test_login():
 
 @app.route('/reject_user/<string:user_id>', methods=['POST'])
 def reject_user_str(user_id):
-    """Reject a pending user — handles both MySQL (numeric) and Supabase (sb_) IDs."""
+    """Reject a pending user � handles both MySQL (numeric) and Supabase (sb_) IDs."""
     is_ajax = (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or
                'application/json' in request.headers.get('Accept', '') or
                request.is_json)
@@ -9054,7 +9143,7 @@ def reject_user_str(user_id):
         flash('Please provide a reason for rejection.', 'error')
         return redirect(url_for('pending_users'))
 
-    # ── Supabase-sourced (sb_ prefix) ─────────────────────────────────────
+    # -- Supabase-sourced (sb_ prefix) -------------------------------------
     if str(user_id).startswith('sb_'):
         supabase_record_id = user_id[3:]
         try:
@@ -9094,7 +9183,7 @@ def reject_user_str(user_id):
             flash(f'Error rejecting user: {e}', 'error')
             return redirect(url_for('pending_users'))
 
-    # ── MySQL-sourced (numeric ID) ─────────────────────────────────────────
+    # -- MySQL-sourced (numeric ID) -----------------------------------------
     try:
         numeric_id = int(user_id)
     except ValueError:
@@ -9270,7 +9359,7 @@ def admin_users():
         now = datetime.utcnow()
 
         for u in raw_users:
-            # Supabase may use 'role' or 'user_type' — handle both
+            # Supabase may use 'role' or 'user_type' � handle both
             role = (u.get('role') or u.get('user_type') or 'buyer').lower()
             status = (u.get('status') or 'active').lower()
 
@@ -9380,7 +9469,7 @@ def product_management():
     try:
         conn = get_db_connection()
     except Exception as e:
-        print(f"⚠️ MySQL unavailable in product_management: {e}")
+        print(f"?? MySQL unavailable in product_management: {e}")
         return render_template('product_management.html',
                              products=[], categories=[], sellers=[],
                              page=1, total_pages=1, total_products=0,
@@ -9664,7 +9753,7 @@ def admin_dashboard():
         connection.close()
 
     except Exception as e:
-        print(f"⚠️ MySQL unavailable in admin_dashboard: {e}")
+        print(f"?? MySQL unavailable in admin_dashboard: {e}")
 
     return render_template('admin_dashboard.html',
                            total_users=total_buyers + total_sellers + total_riders,
@@ -9816,7 +9905,7 @@ def pending_sellers_dashboard():
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"⚠️ MySQL unavailable in pending_sellers_dashboard: {e}")
+        print(f"?? MySQL unavailable in pending_sellers_dashboard: {e}")
 
     # Also fetch mobile seller registrations from Supabase pending_sellers table
     try:
@@ -9869,7 +9958,7 @@ def pending_sellers_dashboard():
                     'source':               'mobile',
                 })
     except Exception as e:
-        print(f"⚠️ Supabase pending_sellers fetch error: {e}")
+        print(f"?? Supabase pending_sellers fetch error: {e}")
 
     return render_template('pending_sellers.html', sellers=sellers, current_status=status_filter)
 
@@ -9879,7 +9968,7 @@ def reject_seller(seller_id):
     if not rejection_reason:
         rejection_reason = 'Application does not meet our requirements'
 
-    # ── Supabase-sourced (sb_ prefix) ─────────────────────────────────────
+    # -- Supabase-sourced (sb_ prefix) -------------------------------------
     if str(seller_id).startswith('sb_'):
         supabase_record_id = seller_id[3:]
         try:
@@ -9912,7 +10001,7 @@ def reject_seller(seller_id):
             import traceback; traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)})
 
-    # ── MySQL-sourced (numeric ID) ─────────────────────────────────────────
+    # -- MySQL-sourced (numeric ID) -----------------------------------------
     try:
         mysql_id = int(seller_id)
     except ValueError:
@@ -9973,7 +10062,7 @@ def get_seller_documents(seller_id):
             print(f'seller signed_url error for {storage_path}: {e}')
         return f"{SUPABASE_STORAGE_BASE}/{storage_path}"
 
-    # ── Supabase-registered seller (sb_ prefix) ──────────────────────────
+    # -- Supabase-registered seller (sb_ prefix) --------------------------
     if str(seller_id).startswith('sb_'):
         supabase_id = seller_id[3:]  # strip 'sb_' prefix
         try:
@@ -10034,7 +10123,7 @@ def get_seller_documents(seller_id):
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)})
 
-    # ── MySQL-registered seller (numeric ID) ─────────────────────────────
+    # -- MySQL-registered seller (numeric ID) -----------------------------
     try:
         numeric_id = int(seller_id)
     except ValueError:
@@ -10110,7 +10199,7 @@ def get_seller_documents(seller_id):
 
 @app.route('/api/user_documents/<string:user_id>')
 def get_user_documents(user_id):
-    """API endpoint to get user documents — handles both MySQL (numeric) and Supabase (sb_) IDs"""
+    """API endpoint to get user documents � handles both MySQL (numeric) and Supabase (sb_) IDs"""
 
     BUCKET = 'user-documents'
     SUPABASE_STORAGE_BASE = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}"
@@ -10134,15 +10223,15 @@ def get_user_documents(user_id):
         """
         Convert a stored document path to a list of web-accessible URLs.
         Handles two cases:
-          1. Local file path (web registration) — e.g. C:\\...\\static\\images\\uploads\\ids\\file.png
-             → returns ['/static/images/uploads/ids/file.png', ...]
-          2. Supabase Storage key (mobile registration) — e.g. user-documents/ids/file.png
-             → returns a signed URL
+          1. Local file path (web registration) � e.g. C:\\...\\static\\images\\uploads\\ids\\file.png
+             ? returns ['/static/images/uploads/ids/file.png', ...]
+          2. Supabase Storage key (mobile registration) � e.g. user-documents/ids/file.png
+             ? returns a signed URL
         """
         if not stored_path:
             return None, []
 
-        # Normalise backslashes → forward slashes
+        # Normalise backslashes ? forward slashes
         normalised = stored_path.replace('\\', '/')
 
         # Detect local path: contains 'static/images/uploads' or 'static/uploads'
@@ -10163,11 +10252,11 @@ def get_user_documents(user_id):
             ]
             return variations[0], variations
 
-        # Supabase Storage key — generate signed URL
+        # Supabase Storage key � generate signed URL
         url = signed_url(stored_path)
         return url, [url] if url else []
 
-    # ── Supabase-registered user (sb_ prefix) ────────────────────────────
+    # -- Supabase-registered user (sb_ prefix) ----------------------------
     if str(user_id).startswith('sb_'):
         supabase_id = user_id[3:]  # strip 'sb_' prefix
         try:
@@ -10243,7 +10332,7 @@ def get_user_documents(user_id):
             import traceback; traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)})
 
-    # ── MySQL-registered user (numeric ID) ───────────────────────────────
+    # -- MySQL-registered user (numeric ID) -------------------------------
     try:
         numeric_id = int(user_id)
     except ValueError:
@@ -10539,14 +10628,14 @@ def serve_file_from_uploads(filename):
             print(f"Checking path: {abs_path}")
             
             if os.path.exists(abs_path) and os.path.isfile(abs_path):
-                print(f"✅ Serving file from: {abs_path}")
+                print(f"? Serving file from: {abs_path}")
                 # Get the directory and filename for send_from_directory
                 directory = os.path.dirname(abs_path)
                 file_name = os.path.basename(abs_path)
                 return send_from_directory(directory, file_name)
         
         # If file not found in any directory, return 404
-        print(f"❌ File not found: {filename}")
+        print(f"? File not found: {filename}")
         print(f"Searched in directories: {upload_dirs}")
         return "File not found", 404
         
@@ -10590,10 +10679,10 @@ def approve_seller(seller_id):
     
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         print("DEBUG: Access denied - not admin")
-        flash('❌ Access denied. Admin privileges required.', 'error')
+        flash('? Access denied. Admin privileges required.', 'error')
         return redirect(url_for('pending_sellers_dashboard'))
 
-    # ── Supabase-sourced (mobile) seller registration ─────────────────────
+    # -- Supabase-sourced (mobile) seller registration ---------------------
     if str(seller_id).startswith('sb_'):
         supabase_record_id = seller_id[3:]
         try:
@@ -10657,7 +10746,7 @@ def approve_seller(seller_id):
             import traceback; traceback.print_exc()
             return jsonify({'success': False, 'error': f'Error approving seller: {str(e)}'})
 
-    # ── MySQL-sourced (web) seller registration ───────────────────────────
+    # -- MySQL-sourced (web) seller registration ---------------------------
     try:
         mysql_id = int(seller_id)
     except ValueError:
@@ -10701,7 +10790,7 @@ def approve_seller(seller_id):
                         seller.get('bir_path'), seller.get('business_permit_path')))
         print("DEBUG: Seller inserted into users table successfully")
 
-        # ── Insert into Supabase users table and unban auth account ──────
+        # -- Insert into Supabase users table and unban auth account ------
         supabase_uid = seller.get('supabase_uid')
         if supabase_uid:
             try:
@@ -10774,9 +10863,9 @@ def test_flash():
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         return "Access denied"
     
-    flash('✅ Test success message!', 'success')
-    flash('❌ Test error message!', 'error')
-    flash('⚠️ Test warning message!', 'warning')
+    flash('? Test success message!', 'success')
+    flash('? Test error message!', 'error')
+    flash('?? Test warning message!', 'warning')
     return redirect(url_for('pending_sellers_dashboard'))
 
 @app.route('/test-approve-simple')
@@ -10785,7 +10874,7 @@ def test_approve_simple():
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         return "Access denied"
     
-    flash('✅ Test Seller successfully approved!', 'success')
+    flash('? Test Seller successfully approved!', 'success')
     print("DEBUG: Test success message set")
     return redirect(url_for('pending_sellers_dashboard'))
 
@@ -10805,16 +10894,16 @@ def simple_approve(seller_id):
         
         if seller:
             seller_name = f"{seller['first_name']} {seller['last_name']}"
-            flash(f'✅ {seller_name} successfully approved!', 'success')
+            flash(f'? {seller_name} successfully approved!', 'success')
             print(f"DEBUG: Simple approval success message set for {seller_name}")
         else:
-            flash('❌ Seller not found!', 'error')
+            flash('? Seller not found!', 'error')
         
         cursor.close()
         db.close()
         
     except Exception as e:
-        flash(f'❌ Error: {str(e)}', 'error')
+        flash(f'? Error: {str(e)}', 'error')
         print(f"DEBUG: Simple approval error: {e}")
     
     return redirect(url_for('pending_sellers_dashboard'))
@@ -10847,7 +10936,7 @@ def test_approve(seller_id):
         result = f"""
         <h2>Database Test Results for Seller ID {seller_id}</h2>
         <h3>Database Connection:</h3>
-        <p>✅ Connected successfully: {test_result}</p>
+        <p>? Connected successfully: {test_result}</p>
         
         <h3>Users Table Structure:</h3>
         <table border="1">
@@ -10865,7 +10954,7 @@ def test_approve(seller_id):
             <pre>{seller}</pre>
             """
         else:
-            result += f"<h3>❌ No seller found with ID {seller_id}</h3>"
+            result += f"<h3>? No seller found with ID {seller_id}</h3>"
             
         result += f'<p><a href="/pending_sellers">Back to Pending Sellers</a></p>'
         return result
@@ -10911,12 +11000,12 @@ def debug_approve(seller_id):
             """
             
             if existing_user:
-                result += "<p style='color: orange;'>⚠️ This seller already exists in the users table!</p>"
+                result += "<p style='color: orange;'>?? This seller already exists in the users table!</p>"
             else:
-                result += "<p style='color: green;'>✅ This seller can be inserted into users table.</p>"
+                result += "<p style='color: green;'>? This seller can be inserted into users table.</p>"
                 
         else:
-            result = f"<h2>❌ No seller found with ID {seller_id}</h2>"
+            result = f"<h2>? No seller found with ID {seller_id}</h2>"
         
         cursor.close()
         db.close()
@@ -12098,7 +12187,7 @@ def admin_issue_reports():
                              search_query=search_query)
         
     except Exception as e:
-        print(f"⚠️ MySQL unavailable in admin_issue_reports: {e}")
+        print(f"?? MySQL unavailable in admin_issue_reports: {e}")
         empty_stats = {'total_issues': 0, 'pending_issues': 0, 'in_progress_issues': 0,
                        'resolved_issues': 0, 'seller_issues': 0, 'delivery_issues': 0,
                        'buyer_issues': 0, 'platform_issues': 0}
@@ -12328,9 +12417,9 @@ def admin_update_issue_status(issue_id):
         reporter_name = f"{issue.get('reporter_first_name', '')} {issue.get('reporter_last_name', '')}".strip() or 'User'
         reporter_role = issue.get('reporter_role', 'user')
         
-        print(f"📧 Reporter Email: {reporter_email}")
-        print(f"👤 Reporter Role: {reporter_role}")
-        print(f"📝 Reporter Name: {reporter_name}")
+        print(f"?? Reporter Email: {reporter_email}")
+        print(f"?? Reporter Role: {reporter_role}")
+        print(f"?? Reporter Name: {reporter_name}")
         
         if reporter_email:
             try:
@@ -12345,10 +12434,10 @@ def admin_update_issue_status(issue_id):
                     admin_response=admin_response
                 )
             except Exception as email_error:
-                print(f"❌ Error sending email notification: {email_error}")
+                print(f"? Error sending email notification: {email_error}")
             
             try:
-                print(f"🔔 Calling create_issue_status_notification for: {reporter_email}")
+                print(f"?? Calling create_issue_status_notification for: {reporter_email}")
                 # Create in-app notification
                 create_issue_status_notification(
                     customer_email=reporter_email,
@@ -12451,7 +12540,7 @@ def cart():
     cart_items = []
     user_name = get_user_name_from_session(default='User')
 
-    # ── PRIMARY: Supabase ─────────────────────────────────────────────────────
+    # -- PRIMARY: Supabase -----------------------------------------------------
     try:
         res = sb_admin.table('cart') \
             .select('id, email, product_id, name, price, seller_email, variations, size, quantity, image') \
@@ -12460,7 +12549,7 @@ def cart():
             .execute()
 
         raw_items = res.data or []
-        print(f"✅ Cart from Supabase: {len(raw_items)} items for {email}")
+        print(f"? Cart from Supabase: {len(raw_items)} items for {email}")
 
         # Fetch image_colors for each product to find color-specific image
         product_ids = list({item['product_id'] for item in raw_items if item.get('product_id')})
@@ -12476,7 +12565,7 @@ def cart():
                     image_colors_map[prod['id']] = prod.get('image_colors', '') or ''
                     images_map[prod['id']] = prod.get('image', '') or ''
             except Exception as e:
-                print(f"⚠️ Could not fetch product image_colors: {e}")
+                print(f"?? Could not fetch product image_colors: {e}")
 
         for item in raw_items:
             item['price'] = float(item.get('price') or 0)
@@ -12513,9 +12602,9 @@ def cart():
         cart_items = raw_items
 
     except Exception as sb_err:
-        print(f"⚠️ Supabase cart failed: {sb_err}")
+        print(f"?? Supabase cart failed: {sb_err}")
 
-    # ── FALLBACK: MySQL ───────────────────────────────────────────────────────
+    # -- FALLBACK: MySQL -------------------------------------------------------
     if not cart_items:
         try:
             db = get_db_connection()
@@ -12544,9 +12633,9 @@ def cart():
                     item['first_image_url'] = ''
 
             cart_items = raw_items
-            print(f"✅ Cart from MySQL fallback: {len(cart_items)} items")
+            print(f"? Cart from MySQL fallback: {len(cart_items)} items")
         except Exception as mysql_err:
-            print(f"⚠️ MySQL cart fallback failed: {mysql_err}")
+            print(f"?? MySQL cart fallback failed: {mysql_err}")
             cart_items = []
 
     return render_template('cart.html', cart_items=cart_items, user_name=user_name, user_email=email)
@@ -12559,7 +12648,7 @@ def delete_selected_items():
     if not selected_ids:
         return jsonify({'success': False, 'error': 'No IDs provided'}), 400
 
-    # ── PRIMARY: Supabase ─────────────────────────────────────────────────────
+    # -- PRIMARY: Supabase -----------------------------------------------------
     try:
         int_ids = [int(i) for i in selected_ids]
         sb_admin.table('cart').delete() \
@@ -12568,9 +12657,9 @@ def delete_selected_items():
             .execute()
         return jsonify({'success': True})
     except Exception as sb_err:
-        print(f"⚠️ Supabase delete_selected failed: {sb_err}")
+        print(f"?? Supabase delete_selected failed: {sb_err}")
 
-    # ── FALLBACK: MySQL ───────────────────────────────────────────────────────
+    # -- FALLBACK: MySQL -------------------------------------------------------
     try:
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -12618,7 +12707,7 @@ def add_to_cart():
         qty_int = int(quantity) if str(quantity).isdigit() else 1
         price_float = float(product_price) if product_price else 0.0
 
-        # ── Get product details from Supabase ─────────────────────────────
+        # -- Get product details from Supabase -----------------------------
         seller_email = ''
         all_product_images = ''
         image_colors_str = ''
@@ -12633,7 +12722,7 @@ def add_to_cart():
                 all_product_images = prod_res.data[0].get('image', '') or ''
                 image_colors_str = prod_res.data[0].get('image_colors', '') or ''
         except Exception as e:
-            print(f"⚠️ Could not fetch product from Supabase: {e}")
+            print(f"?? Could not fetch product from Supabase: {e}")
             # Fallback to MySQL
             try:
                 db = get_db_connection()
@@ -12658,7 +12747,7 @@ def add_to_cart():
 
         print(f"ADD_TO_CART: {product_name} | color={product_variation} | size={size} | qty={qty_int} | img={cart_image[:60] if cart_image else ''}")
 
-        # ── PRIMARY: Write to Supabase ────────────────────────────────────
+        # -- PRIMARY: Write to Supabase ------------------------------------
         supabase_ok = False
         try:
             # Check cart limit in Supabase
@@ -12726,11 +12815,11 @@ def add_to_cart():
                 }).execute()
 
             supabase_ok = True
-            print(f"✅ Cart item saved to Supabase")
+            print(f"? Cart item saved to Supabase")
         except Exception as sb_err:
-            print(f"⚠️ Supabase cart insert failed: {sb_err}")
+            print(f"?? Supabase cart insert failed: {sb_err}")
 
-        # ── SECONDARY: Mirror to MySQL ────────────────────────────────────
+        # -- SECONDARY: Mirror to MySQL ------------------------------------
         try:
             db = get_db_connection()
             cursor = db.cursor()
@@ -12745,7 +12834,7 @@ def add_to_cart():
             cursor.close()
             db.close()
         except Exception as mysql_err:
-            print(f"⚠️ MySQL cart mirror failed (non-fatal): {mysql_err}")
+            print(f"?? MySQL cart mirror failed (non-fatal): {mysql_err}")
 
         if not supabase_ok:
             return jsonify({'error': 'Failed to add item to cart. Please try again.'}), 500
@@ -12772,15 +12861,15 @@ def checkout_route():
 
         user_email = session['email']
 
-        # ── PRIMARY: Supabase ──────────────────────────────────────────────
+        # -- PRIMARY: Supabase ----------------------------------------------
         try:
-            # IDs from the cart may be strings or ints — handle both
+            # IDs from the cart may be strings or ints � handle both
             int_ids = []
             for i in selected_ids:
                 try:
                     int_ids.append(int(i))
                 except (ValueError, TypeError):
-                    print(f"⚠️ checkout_route: skipping non-integer id: {i!r}")
+                    print(f"?? checkout_route: skipping non-integer id: {i!r}")
 
             if not int_ids:
                 return jsonify(success=False, error="No valid item IDs provided"), 400
@@ -12862,9 +12951,9 @@ def checkout_route():
             session['checkout_source'] = 'cart'
             session.modified = True
 
-            print(f"✅ checkout_route Supabase: {len(checkout_items_session)} items stored in session")
+            print(f"? checkout_route Supabase: {len(checkout_items_session)} items stored in session")
 
-            # ── MIRROR: MySQL checkout table (best-effort) ─────────────────
+            # -- MIRROR: MySQL checkout table (best-effort) -----------------
             try:
                 conn = get_db_connection()
                 cur = conn.cursor()
@@ -12884,12 +12973,12 @@ def checkout_route():
                 cur.close()
                 conn.close()
             except Exception as my_err:
-                print(f"⚠️ checkout_route MySQL mirror failed: {my_err}")
+                print(f"?? checkout_route MySQL mirror failed: {my_err}")
 
             return jsonify(success=True)
 
         except Exception as sb_err:
-            print(f"⚠️ checkout_route Supabase failed: {sb_err}")
+            print(f"?? checkout_route Supabase failed: {sb_err}")
             import traceback; traceback.print_exc()
             return jsonify(success=False, error=f"Failed to process checkout: {str(sb_err)}"), 500
 
@@ -12902,7 +12991,7 @@ def checkout_route():
 def checkout():
     user_email = session.get('email')
 
-    # ── PRIMARY: read from session (populated by checkout_route via Supabase) ──
+    # -- PRIMARY: read from session (populated by checkout_route via Supabase) --
     checkout_items = []
     session_items = session.get('checkout_items')
 
@@ -12919,7 +13008,7 @@ def checkout():
                 for p in (pr.data or []):
                     prod_map[p['id']] = p
             except Exception as e:
-                print(f"⚠️ checkout product fetch failed: {e}")
+                print(f"?? checkout product fetch failed: {e}")
 
         for item in session_items:
             pid = item.get('product_id')
@@ -12954,10 +13043,10 @@ def checkout():
                 'promotion_name':      '',
                 'promotion_type':      '',
             })
-        print(f"✅ checkout: loaded {len(checkout_items)} items from session (Supabase)")
+        print(f"? checkout: loaded {len(checkout_items)} items from session (Supabase)")
 
     else:
-        # ── FALLBACK: MySQL checkout table ─────────────────────────────────
+        # -- FALLBACK: MySQL checkout table ---------------------------------
         try:
             connection = get_db_connection()
             cursor = connection.cursor(dictionary=True)
@@ -12971,9 +13060,9 @@ def checkout():
             checkout_items = cursor.fetchall()
             cursor.close()
             connection.close()
-            print(f"⚠️ checkout: MySQL fallback, {len(checkout_items)} items")
+            print(f"?? checkout: MySQL fallback, {len(checkout_items)} items")
         except Exception as my_err:
-            print(f"⚠️ checkout MySQL fallback failed: {my_err}")
+            print(f"?? checkout MySQL fallback failed: {my_err}")
             checkout_items = []
 
     if not checkout_items:
@@ -13162,7 +13251,7 @@ def checkout():
     if 'checkout_source' not in session:
         session['checkout_source'] = 'cart'
 
-    # Get user name for header display — Supabase primary
+    # Get user name for header display � Supabase primary
     user_name = "User"
     user_address = ''
     try:
@@ -13197,10 +13286,10 @@ def checkout():
     
     if not has_free_shipping:
         # Calculate shipping fee based on total order value
-        # Standard shipping: ₱50 base fee + ₱10 per ₱500 of order value (max ₱200)
+        # Standard shipping: ?50 base fee + ?10 per ?500 of order value (max ?200)
         base_shipping = 50.0
         if total_price > 0:
-            additional_shipping = min(150.0, (total_price // 500) * 10)  # Max additional ₱150
+            additional_shipping = min(150.0, (total_price // 500) * 10)  # Max additional ?150
             shipping_fee = base_shipping + additional_shipping
         else:
             shipping_fee = base_shipping
@@ -13220,10 +13309,10 @@ def checkout():
         print(f"    Discount Amount: {item.get('discount_amount')} (type: {type(item.get('discount_amount'))})")
     
     print(f"DEBUG - Shipping calculation:")
-    print(f"  Subtotal: ₱{total_price:.2f}")
+    print(f"  Subtotal: ?{total_price:.2f}")
     print(f"  Has Free Shipping: {has_free_shipping}")
-    print(f"  Shipping Fee: ₱{shipping_fee:.2f}")
-    print(f"  Final Total: ₱{final_total:.2f}")
+    print(f"  Shipping Fee: ?{shipping_fee:.2f}")
+    print(f"  Final Total: ?{final_total:.2f}")
     
     # Debug promotion types
     free_shipping_items = [item for item in checkout_items if item.get('promotion_type') == 'free_shipping']
@@ -13253,11 +13342,11 @@ def return_to_cart():
     try:
         selected_id_set = {str(i) for i in selected_ids}
 
-        # ── Read checkout items from session (primary source) ─────────────
+        # -- Read checkout items from session (primary source) -------------
         session_items = session.get('checkout_items') or []
         checkout_items = [i for i in session_items if str(i.get('id')) in selected_id_set]
 
-        # ── Fallback: try Supabase checkout table ─────────────────────────
+        # -- Fallback: try Supabase checkout table -------------------------
         if not checkout_items:
             try:
                 int_ids = [int(i) for i in selected_ids]
@@ -13268,12 +13357,12 @@ def return_to_cart():
                     .execute()
                 checkout_items = co_res.data or []
             except Exception as sb_err:
-                print(f"⚠️ return_to_cart Supabase fallback failed: {sb_err}")
+                print(f"?? return_to_cart Supabase fallback failed: {sb_err}")
 
         if not checkout_items:
             return jsonify(success=False, error="No items found to return to the cart"), 400
 
-        # ── Move each item back to cart ───────────────────────────────────
+        # -- Move each item back to cart -----------------------------------
         for item in checkout_items:
             product_id = item.get('product_id')
             color      = item.get('variations') or ''
@@ -13281,7 +13370,7 @@ def return_to_cart():
             qty        = int(item.get('quantity') or 1)
 
             # Check if same product+color+size already in cart
-            # (the original cart row may still exist — just restore its quantity)
+            # (the original cart row may still exist � just restore its quantity)
             existing_res = sb_admin.table('cart') \
                 .select('id, quantity') \
                 .eq('email', user_email) \
@@ -13291,13 +13380,13 @@ def return_to_cart():
                 .limit(1).execute()
 
             if existing_res.data:
-                # Item still in cart — restore to the checkout quantity (don't add)
+                # Item still in cart � restore to the checkout quantity (don't add)
                 sb_admin.table('cart') \
                     .update({'quantity': qty}) \
                     .eq('id', existing_res.data[0]['id']) \
                     .execute()
             else:
-                # Item was removed from cart — re-insert it
+                # Item was removed from cart � re-insert it
                 sb_admin.table('cart').insert({
                     'email':        user_email,
                     'product_id':   product_id,
@@ -13310,12 +13399,12 @@ def return_to_cart():
                     'seller_email': item.get('seller_email', ''),
                 }).execute()
 
-        # ── Clear checkout session ────────────────────────────────────────
+        # -- Clear checkout session ----------------------------------------
         session.pop('checkout_items', None)
         session.pop('checkout_source', None)
         session.modified = True
 
-        # ── Also clean up Supabase checkout table if it exists ────────────
+        # -- Also clean up Supabase checkout table if it exists ------------
         try:
             int_ids = [int(i) for i in selected_ids]
             sb_admin.table('checkout') \
@@ -13369,7 +13458,7 @@ def confirm_order():
 
         print(f"DEBUG confirm_order: subtotal={subtotal} shipping={shipping_fee} total={final_total} method={payment_method}")
 
-        # ── 1. Fetch checkout items from session (primary) or Supabase ──────
+        # -- 1. Fetch checkout items from session (primary) or Supabase ------
         checkout_item_ids = [int(item['id']) for item in frontend_items]
         id_set = {str(i) for i in checkout_item_ids}
 
@@ -13387,14 +13476,14 @@ def confirm_order():
                     .execute()
                 checkout_items = co_res.data or []
             except Exception as co_err:
-                print(f"⚠️ confirm_order: Supabase checkout fallback failed: {co_err}")
+                print(f"?? confirm_order: Supabase checkout fallback failed: {co_err}")
 
         if len(checkout_items) != len(frontend_items):
             raise Exception(f"Checkout item mismatch: expected {len(frontend_items)}, got {len(checkout_items)}")
 
         frontend_item_map = {str(item['id']): item for item in frontend_items}
 
-        # ── 2. Process each item ──────────────────────────────────────────
+        # -- 2. Process each item ------------------------------------------
         for checkout_item in checkout_items:
             frontend_item = frontend_item_map.get(str(checkout_item['id']))
             if not frontend_item:
@@ -13406,7 +13495,7 @@ def confirm_order():
             except (ValueError, TypeError):
                 product_id_int = None
 
-            # ── Fetch product from Supabase ───────────────────────────────
+            # -- Fetch product from Supabase -------------------------------
             product = None
             if product_id_int:
                 p_res = sb_admin.table('products') \
@@ -13436,7 +13525,7 @@ def confirm_order():
             if new_qty < 0:
                 raise Exception(f"Insufficient stock for: {checkout_item['name']}")
 
-            # ── Update product quantity + sold ────────────────────────────
+            # -- Update product quantity + sold ----------------------------
             sb_admin.table('products').update({
                 'quantity': new_qty,
                 'sold': int(product.get('sold') or 0) + order_qty,
@@ -13452,7 +13541,7 @@ def confirm_order():
                 variant_info=None,
             )
 
-            # ── Update variant inventory ──────────────────────────────────
+            # -- Update variant inventory ----------------------------------
             order_color = (checkout_item.get('variations') or '').strip()
             order_size  = (checkout_item.get('size') or '').strip()
 
@@ -13486,7 +13575,7 @@ def confirm_order():
                         variant_info={'color': order_color, 'size': order_size},
                     )
 
-            # ── Insert order into Supabase orders table ───────────────────
+            # -- Insert order into Supabase orders table -------------------
             item_product_price = float(frontend_item.get('itemTotal', 0))
             item_shipping_fee  = float(checkout_item.get('shipping_fee', 50))
 
@@ -13524,9 +13613,9 @@ def confirm_order():
             order_res = sb_admin.table('orders').insert(order_row).execute()
             new_order_id = (order_res.data or [{}])[0].get('id')
 
-            print(f"✅ Order inserted id={new_order_id} item={checkout_item['name']} price={item_product_price}")
+            print(f"? Order inserted id={new_order_id} item={checkout_item['name']} price={item_product_price}")
 
-            # ── Record promotion usage (non-fatal) ────────────────────────
+            # -- Record promotion usage (non-fatal) ------------------------
             if product_id_int and checkout_item.get('seller_email'):
                 try:
                     p_price_res = sb_admin.table('products').select('price').eq('id', product_id_int).limit(1).execute()
@@ -13548,16 +13637,16 @@ def confirm_order():
                                 'discount_applied': total_disc,
                             }).execute()
                 except Exception as promo_err:
-                    print(f"⚠️ Promotion usage record failed (non-fatal): {promo_err}")
+                    print(f"?? Promotion usage record failed (non-fatal): {promo_err}")
 
-            # ── Remove from checkout ──────────────────────────────────────
+            # -- Remove from checkout --------------------------------------
             sb_admin.table('checkout') \
                 .delete() \
                 .eq('id', checkout_item['id']) \
                 .eq('email', user_email) \
                 .execute()
 
-        # ── 3. Send seller notifications (non-fatal) ──────────────────────
+        # -- 3. Send seller notifications (non-fatal) ----------------------
         seller_orders: dict = {}
         for checkout_item in checkout_items:
             fe = frontend_item_map.get(str(checkout_item['id']), {})
@@ -13579,11 +13668,11 @@ def confirm_order():
             try:
                 send_order_notification_email(s_email, orders)
             except Exception as e:
-                print(f"⚠️ Email to {s_email} failed (non-fatal): {e}")
+                print(f"?? Email to {s_email} failed (non-fatal): {e}")
             try:
                 _create_order_notification_supabase(s_email, orders)
             except Exception as e:
-                print(f"⚠️ Notification for {s_email} failed (non-fatal): {e}")
+                print(f"?? Notification for {s_email} failed (non-fatal): {e}")
 
         session.pop('checkout_source', None)
         session.pop('checkout_items', None)
@@ -13591,7 +13680,7 @@ def confirm_order():
         return jsonify({"success": True})
 
     except Exception as e:
-        print(f"❌ confirm_order error: {e}")
+        print(f"? confirm_order error: {e}")
         import traceback; traceback.print_exc()
         return jsonify({"success": False, "error": str(e)})
 
@@ -13604,7 +13693,7 @@ def orders():
     user_name = get_user_name_from_session(default='User')
     orders = []
 
-    # ── PRIMARY: Supabase ──────────────────────────────────────────────────
+    # -- PRIMARY: Supabase --------------------------------------------------
     try:
         orders_res = sb_admin.table('orders') \
             .select('*') \
@@ -13678,7 +13767,7 @@ def orders():
             o['promotion_type'] = o.get('promotion_type') or ''
             o['promotion_name'] = o.get('promotion_name') or ''
 
-            # Image — resolve to displayable URL
+            # Image � resolve to displayable URL
             raw_img = (o.get('image') or '').strip()
             if raw_img.startswith('http://') or raw_img.startswith('https://'):
                 o['image_url'] = raw_img
@@ -13688,12 +13777,12 @@ def orders():
                 o['image']     = raw_img     # legacy filename
 
         orders = raw_orders
-        print(f"✅ orders route Supabase: {len(orders)} orders for {user_email}")
+        print(f"? orders route Supabase: {len(orders)} orders for {user_email}")
 
     except Exception as sb_err:
-        print(f"⚠️ orders route Supabase failed: {sb_err}")
+        print(f"?? orders route Supabase failed: {sb_err}")
 
-        # ── FALLBACK: MySQL ────────────────────────────────────────────────
+        # -- FALLBACK: MySQL ------------------------------------------------
         try:
             connection = get_db_connection()
             cursor = connection.cursor(dictionary=True)
@@ -13726,9 +13815,9 @@ def orders():
                     o['has_review'] = False
             cursor.close()
             connection.close()
-            print(f"⚠️ orders route MySQL fallback: {len(orders)} orders")
+            print(f"?? orders route MySQL fallback: {len(orders)} orders")
         except Exception as my_err:
-            print(f"⚠️ orders route MySQL fallback failed: {my_err}")
+            print(f"?? orders route MySQL fallback failed: {my_err}")
             orders = []
 
     return render_template('orders.html', orders=orders,
@@ -13781,16 +13870,16 @@ def mark_as_received(order_id):
         # Send notification to seller about order completion
         try:
             send_order_completion_notification(order['seller_email'], order, user_email)
-            print(f"✅ Order completion notification sent to seller: {order['seller_email']}")
+            print(f"? Order completion notification sent to seller: {order['seller_email']}")
         except Exception as email_error:
-            print(f"❌ Failed to send completion notification: {str(email_error)}")
+            print(f"? Failed to send completion notification: {str(email_error)}")
         
         flash("Order confirmed as received! Thank you for your purchase.", "success")
         
     except Exception as e:
         connection.rollback()
         flash(f"An error occurred: {str(e)}", "error")
-        print(f"❌ Error in mark_as_received: {str(e)}")
+        print(f"? Error in mark_as_received: {str(e)}")
     finally:
         cursor.close()
         connection.close()
@@ -13824,9 +13913,9 @@ def submit_review(order_id):
         order = cursor.fetchone()
         
         # Debug: Check what we found
-        print(f"🔍 Review eligibility check for order {order_id}, user {user_email}")
+        print(f"?? Review eligibility check for order {order_id}, user {user_email}")
         if order:
-            print(f"✅ Order found: status={order['status']}, name={order['name']}")
+            print(f"? Order found: status={order['status']}, name={order['name']}")
         else:
             # Let's check what status this order actually has
             cursor.execute("""
@@ -13834,10 +13923,10 @@ def submit_review(order_id):
             """, (order_id,))
             debug_order = cursor.fetchone()
             if debug_order:
-                print(f"❌ Order {order_id} exists but has status '{debug_order['status']}' for email '{debug_order['email']}'")
+                print(f"? Order {order_id} exists but has status '{debug_order['status']}' for email '{debug_order['email']}'")
                 print(f"   Expected: status='Completed' for email '{user_email}'")
             else:
-                print(f"❌ Order {order_id} not found in database")
+                print(f"? Order {order_id} not found in database")
         
         if not order:
             flash('Order not found or not completed yet. You can only review completed orders.', 'error')
@@ -13845,7 +13934,7 @@ def submit_review(order_id):
         
         # Use the actual product_id from products table
         actual_product_id = order['actual_product_id'] or order['order_product_id']
-        print(f"🔍 Review Debug: order_product_id={order['order_product_id']}, actual_product_id={order['actual_product_id']}")
+        print(f"?? Review Debug: order_product_id={order['order_product_id']}, actual_product_id={order['actual_product_id']}")
         
         # Check if review already exists
         cursor.execute("""
@@ -13860,13 +13949,13 @@ def submit_review(order_id):
             return redirect(url_for('orders'))
         
         # Insert the review using the actual product_id
-        print(f"📝 Inserting review: Order {order_id}, Product {actual_product_id}, Rating {rating}")
+        print(f"?? Inserting review: Order {order_id}, Product {actual_product_id}, Rating {rating}")
         cursor.execute("""
             INSERT INTO reviews (order_id, product_id, customer_email, seller_email, rating, review_text)
             VALUES (%s, %s, %s, %s, %s, %s)
         """, (order_id, actual_product_id, user_email, order['seller_email'], rating, review_text))
         
-        print(f"✅ Review inserted successfully")
+        print(f"? Review inserted successfully")
         
         # Update product rating (calculate average)
         cursor.execute("""
@@ -13878,7 +13967,7 @@ def submit_review(order_id):
         rating_data = cursor.fetchone()
         new_avg_rating = round(rating_data['avg_rating'], 1) if rating_data['avg_rating'] else float(rating)
         
-        print(f"📊 Calculated new average rating: {new_avg_rating} from {rating_data['review_count']} reviews")
+        print(f"?? Calculated new average rating: {new_avg_rating} from {rating_data['review_count']} reviews")
         
         # Update the product's rating
         cursor.execute("""
@@ -13888,21 +13977,21 @@ def submit_review(order_id):
         """, (new_avg_rating, actual_product_id))
         
         connection.commit()
-        print(f"✅ Product rating updated to {new_avg_rating}")
+        print(f"? Product rating updated to {new_avg_rating}")
         
         # Send email notification to seller about new review
         try:
             send_review_notification_email(order['seller_email'], order, rating, review_text, user_email)
-            print(f"✅ Review notification email sent to seller: {order['seller_email']}")
+            print(f"? Review notification email sent to seller: {order['seller_email']}")
         except Exception as email_error:
-            print(f"❌ Failed to send review notification email: {str(email_error)}")
+            print(f"? Failed to send review notification email: {str(email_error)}")
         
         # Create seller notification about new review
         try:
             create_review_notification(order['seller_email'], order, rating, review_text, user_email, order_id)
-            print(f"✅ Review notification created for seller: {order['seller_email']}")
+            print(f"? Review notification created for seller: {order['seller_email']}")
         except Exception as notif_error:
-            print(f"❌ Failed to create review notification: {str(notif_error)}")
+            print(f"? Failed to create review notification: {str(notif_error)}")
         
         flash(f'Thank you for your review! Your {rating}-star rating has been submitted.', 'success')
         
@@ -14071,15 +14160,15 @@ def delete_order(order_id):
                             WHERE id = %s
                         """, (new_stock, new_sold, product_id))
                         
-                        print(f"✅ Product {product_id} stock restored: {current_stock} → {new_stock}")
-                        print(f"✅ Product {product_id} sold count decreased: {current_sold} → {new_sold}")
+                        print(f"? Product {product_id} stock restored: {current_stock} ? {new_stock}")
+                        print(f"? Product {product_id} sold count decreased: {current_sold} ? {new_sold}")
                     else:
-                        print(f"⚠️ Product {product_id} not found, skipping stock restoration")
+                        print(f"?? Product {product_id} not found, skipping stock restoration")
                 except Exception as stock_error:
-                    print(f"❌ Error restoring stock for product {product_id}: {str(stock_error)}")
+                    print(f"? Error restoring stock for product {product_id}: {str(stock_error)}")
                     # Continue with cancellation even if stock restoration fails
             else:
-                print(f"⚠️ Order {order_id} has no product_id, skipping stock restoration")
+                print(f"?? Order {order_id} has no product_id, skipping stock restoration")
 
             # Check if cancellation columns exist
             cursor.execute("""
@@ -14110,22 +14199,22 @@ def delete_order(order_id):
             
             connection.commit()
 
-            print(f"✅ Order {order_id} status updated to Cancelled")
+            print(f"? Order {order_id} status updated to Cancelled")
 
             # Send an email to the seller with the cancellation reason and customer email
             try:
                 send_cancellation_email(seller_email, order_name, reason, customer_email)
-                print(f"✅ Cancellation email sent to seller: {seller_email}")
+                print(f"? Cancellation email sent to seller: {seller_email}")
             except Exception as email_error:
-                print(f"❌ Failed to send cancellation email to seller {seller_email}: {str(email_error)}")
+                print(f"? Failed to send cancellation email to seller {seller_email}: {str(email_error)}")
                 # Don't fail the entire cancellation if email fails
 
             # Create cancellation notification in database
             try:
                 create_cancellation_notification(seller_email, order_name, reason, customer_email, order_id)
-                print(f"✅ Cancellation notification created for seller: {seller_email}")
+                print(f"? Cancellation notification created for seller: {seller_email}")
             except Exception as notification_error:
-                print(f"❌ Failed to create cancellation notification for seller {seller_email}: {str(notification_error)}")
+                print(f"? Failed to create cancellation notification for seller {seller_email}: {str(notification_error)}")
                 # Don't fail the entire cancellation if notification creation fails
 
             flash('Order cancelled successfully. The seller has been notified.', 'success')
@@ -14135,7 +14224,7 @@ def delete_order(order_id):
     except mysql.connector.Error as err:
         connection.rollback()
         flash(f"Error cancelling order: {err}", 'error')
-        print(f"❌ Database error cancelling order: {err}")
+        print(f"? Database error cancelling order: {err}")
     finally:
         cursor.close()
         connection.close()
@@ -14377,7 +14466,7 @@ def archive_user(user_id):
             sb_admin.auth.admin.delete_user(user_id)
             print(f'archive_user: auth account deleted for user_id={user_id}')
         except Exception as del_auth_err:
-            # Non-fatal — profile row is already deleted, login will fail anyway
+            # Non-fatal � profile row is already deleted, login will fail anyway
             print(f'archive_user: auth delete failed (non-fatal): {del_auth_err}')
 
         return jsonify({'success': True, 'message': 'User archived successfully!'})
@@ -14400,16 +14489,16 @@ def restore_archived_user(archive_id):
         original_user_id = record.get('user_id')
         email = record.get('email', '')
 
-        # ── Ensure the auth account exists ───────────────────────────────────
+        # -- Ensure the auth account exists -----------------------------------
         # Since archive_user now deletes the auth account, we may need to recreate it.
         restored_uid = original_user_id
         try:
             auth_user = sb_admin.auth.admin.get_user_by_id(original_user_id)
-            # Auth account still exists — unban it
+            # Auth account still exists � unban it
             sb_admin.auth.admin.update_user_by_id(original_user_id, {'ban_duration': 'none'})
             print(f'restore_archived_user: auth account unbanned for {email}')
         except Exception:
-            # Auth account was deleted — create a new one with the same email
+            # Auth account was deleted � create a new one with the same email
             try:
                 import secrets
                 temp_password = secrets.token_urlsafe(16)
@@ -14428,9 +14517,9 @@ def restore_archived_user(archive_id):
                     print(f'restore_archived_user: password reset email failed (non-fatal): {reset_err}')
             except Exception as create_err:
                 print(f'restore_archived_user: could not create auth account: {create_err}')
-                # Continue anyway — profile row will be restored
+                # Continue anyway � profile row will be restored
 
-        # ── Re-insert the user profile row ───────────────────────────────────
+        # -- Re-insert the user profile row -----------------------------------
         existing = sb_admin.table('users').select('id').eq('id', restored_uid).execute()
         if not existing.data:
             sb_admin.table('users').insert({
@@ -14489,7 +14578,7 @@ def delete_archived_user(archive_id):
                 sb_admin.auth.admin.delete_user(original_user_id)
                 print(f'delete_archived_user: auth account deleted for user_id={original_user_id}')
             except Exception as del_auth_err:
-                # Non-fatal — archive record is already deleted
+                # Non-fatal � archive record is already deleted
                 print(f'delete_archived_user: auth delete failed (non-fatal): {del_auth_err}')
 
         return jsonify({'success': True, 'message': 'Archive record deleted.'})
@@ -14506,7 +14595,7 @@ def update_cart_quantity(item_id):
         if not new_quantity:
             return jsonify({'error': 'No quantity provided'}), 400
 
-        # ── PRIMARY: Supabase ─────────────────────────────────────────────
+        # -- PRIMARY: Supabase ---------------------------------------------
         try:
             sb_admin.table('cart') \
                 .update({'quantity': int(new_quantity)}) \
@@ -14515,9 +14604,9 @@ def update_cart_quantity(item_id):
                 .execute()
             return jsonify({'success': True})
         except Exception as sb_err:
-            print(f"⚠️ Supabase update_cart_quantity failed: {sb_err}")
+            print(f"?? Supabase update_cart_quantity failed: {sb_err}")
 
-        # ── FALLBACK: MySQL ───────────────────────────────────────────────
+        # -- FALLBACK: MySQL -----------------------------------------------
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE cart SET quantity = %s WHERE id = %s AND email = %s",
@@ -14548,7 +14637,7 @@ def update_cart_specification():
         if spec_type not in ('color', 'size'):
             return jsonify({'error': 'Invalid specification type'}), 400
 
-        # ── PRIMARY: Supabase ──────────────────────────────────────────────
+        # -- PRIMARY: Supabase ----------------------------------------------
         try:
             # Verify the item belongs to the user
             check_res = sb_admin.table('cart') \
@@ -14561,18 +14650,44 @@ def update_cart_specification():
                 return jsonify({'error': 'Item not found or access denied'}), 404
 
             field = 'variations' if spec_type == 'color' else 'size'
+            update_data = {field: new_value}
+
+            # When color changes, also update the cart image to the color-matched image
+            if spec_type == 'color':
+                try:
+                    prod_res = sb_admin.table('cart').select('product_id').eq('id', int(item_id)).limit(1).execute()
+                    if prod_res.data:
+                        product_id = prod_res.data[0].get('product_id')
+                        img_res = sb_admin.table('products').select('image, image_colors').eq('id', product_id).limit(1).execute()
+                        if img_res.data:
+                            p = img_res.data[0]
+                            color_map = _parse_image_colors_dict(p.get('image_colors', ''), p.get('image', ''))
+                            color_lower = new_value.lower().strip()
+                            matched_img = color_map.get(color_lower) or color_map.get(new_value)
+                            if not matched_img:
+                                # fallback: filename match
+                                for img in (p.get('image') or '').split(','):
+                                    img = img.strip()
+                                    if color_lower in img.lower():
+                                        matched_img = img
+                                        break
+                            if matched_img:
+                                update_data['image'] = matched_img
+                except Exception as img_err:
+                    print(f'[update_specification] image update skipped: {img_err}')
+
             sb_admin.table('cart') \
-                .update({field: new_value}) \
+                .update(update_data) \
                 .eq('id', int(item_id)) \
                 .eq('email', user_email) \
                 .execute()
 
-            print(f"✅ update_specification Supabase: item {item_id} {spec_type}={new_value}")
+            print(f"? update_specification Supabase: item {item_id} {spec_type}={new_value}")
         except Exception as sb_err:
-            print(f"⚠️ update_specification Supabase failed: {sb_err}")
+            print(f"?? update_specification Supabase failed: {sb_err}")
             return jsonify({'error': 'Failed to update specification'}), 500
 
-        # ── MIRROR: MySQL (best-effort) ────────────────────────────────────
+        # -- MIRROR: MySQL (best-effort) ------------------------------------
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -14586,9 +14701,10 @@ def update_cart_specification():
             cursor.close()
             conn.close()
         except Exception as my_err:
-            print(f"⚠️ update_specification MySQL mirror failed: {my_err}")
+            print(f"?? update_specification MySQL mirror failed: {my_err}")
 
-        return jsonify({'success': True, 'message': f'{spec_type.title()} updated successfully'})
+        return jsonify({'success': True, 'message': f'{spec_type.title()} updated successfully',
+                        'new_image': update_data.get('image')})
 
     except Exception as e:
         print(f"Error updating cart specification: {str(e)}")
@@ -14602,9 +14718,9 @@ def get_product_variations(item_id):
     try:
         user_email = session['email']
 
-        # ── PRIMARY: Supabase ──────────────────────────────────────────────
+        # -- PRIMARY: Supabase ----------------------------------------------
         try:
-            # Get cart item → product_id
+            # Get cart item ? product_id
             cart_res = sb_admin.table('cart') \
                 .select('product_id') \
                 .eq('id', item_id) \
@@ -14643,13 +14759,13 @@ def get_product_variations(item_id):
                     variations_str = prod_res.data[0].get('variations') or ''
                     variations = [v.strip() for v in variations_str.split(',') if v.strip()]
 
-            print(f"✅ get_product_variations Supabase: product {product_id} → {variations}")
+            print(f"? get_product_variations Supabase: product {product_id} ? {variations}")
             return jsonify({'success': True, 'variations': variations})
 
         except Exception as sb_err:
-            print(f"⚠️ get_product_variations Supabase failed: {sb_err}")
+            print(f"?? get_product_variations Supabase failed: {sb_err}")
 
-        # ── FALLBACK: MySQL ────────────────────────────────────────────────
+        # -- FALLBACK: MySQL ------------------------------------------------
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute('SELECT product_id FROM cart WHERE id = %s AND email = %s', (item_id, user_email))
@@ -14678,7 +14794,7 @@ def get_product_images(item_id):
     try:
         user_email = session['email']
 
-        # ── PRIMARY: Supabase ──────────────────────────────────────────────
+        # -- PRIMARY: Supabase ----------------------------------------------
         try:
             cart_res = sb_admin.table('cart') \
                 .select('product_id') \
@@ -14701,7 +14817,7 @@ def get_product_images(item_id):
 
             product = prod_res.data[0]
 
-            # Parse images — may be comma-separated filenames or full URLs
+            # Parse images � may be comma-separated filenames or full URLs
             images_raw = product.get('image') or ''
             raw_list = [img.strip() for img in images_raw.split(',') if img.strip()]
 
@@ -14728,7 +14844,7 @@ def get_product_images(item_id):
             variations_str = product.get('variations') or ''
             variations = [v.strip() for v in variations_str.split(',') if v.strip()]
 
-            print(f"✅ get_product_images Supabase: product {product_id} → {len(images)} images")
+            print(f"? get_product_images Supabase: product {product_id} ? {len(images)} images")
             return jsonify({
                 'success': True,
                 'images': images,
@@ -14737,9 +14853,9 @@ def get_product_images(item_id):
             })
 
         except Exception as sb_err:
-            print(f"⚠️ get_product_images Supabase failed: {sb_err}")
+            print(f"?? get_product_images Supabase failed: {sb_err}")
 
-        # ── FALLBACK: MySQL ────────────────────────────────────────────────
+        # -- FALLBACK: MySQL ------------------------------------------------
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute('SELECT product_id FROM cart WHERE id = %s AND email = %s', (item_id, user_email))
@@ -14770,7 +14886,7 @@ def get_product_sizes(item_id):
     try:
         user_email = session['email']
 
-        # ── PRIMARY: Supabase ──────────────────────────────────────────────
+        # -- PRIMARY: Supabase ----------------------------------------------
         try:
             cart_res = sb_admin.table('cart') \
                 .select('product_id, variations') \
@@ -14815,13 +14931,13 @@ def get_product_sizes(item_id):
                     sizes = [s.strip() for s in sizes_str.split(',') if s.strip()]
                     return jsonify({'success': True, 'sizes': ','.join(sizes)})
 
-            print(f"✅ get_product_sizes Supabase: product {product_id} color={current_color!r} → {sizes}")
+            print(f"? get_product_sizes Supabase: product {product_id} color={current_color!r} ? {sizes}")
             return jsonify({'success': True, 'sizes': ','.join(sizes)})
 
         except Exception as sb_err:
-            print(f"⚠️ get_product_sizes Supabase failed: {sb_err}")
+            print(f"?? get_product_sizes Supabase failed: {sb_err}")
 
-        # ── FALLBACK: MySQL ────────────────────────────────────────────────
+        # -- FALLBACK: MySQL ------------------------------------------------
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute('SELECT product_id FROM cart WHERE id = %s AND email = %s', (item_id, user_email))
@@ -15053,7 +15169,7 @@ def update_address():
 
         user_email = session['email']
 
-        # ── PRIMARY: Supabase ──────────────────────────────────────────────
+        # -- PRIMARY: Supabase ----------------------------------------------
         try:
             sb_admin.table('users').update({
                 'house_street': house_street,
@@ -15064,7 +15180,7 @@ def update_address():
                 'zip_code':     zip_code,
             }).eq('email', user_email).execute()
         except Exception as sb_err:
-            print(f"⚠️ update_address Supabase failed: {sb_err}")
+            print(f"?? update_address Supabase failed: {sb_err}")
             return jsonify({'success': False, 'error': 'Failed to save address'}), 500
 
         # Build joined address for session
@@ -15072,7 +15188,7 @@ def update_address():
         session['address'] = joined
         session.modified = True
 
-        # ── MIRROR: MySQL (best-effort) ────────────────────────────────────
+        # -- MIRROR: MySQL (best-effort) ------------------------------------
         try:
             conn = get_db_connection()
             cur = conn.cursor()
@@ -15082,7 +15198,7 @@ def update_address():
             cur.close()
             conn.close()
         except Exception as my_err:
-            print(f"⚠️ update_address MySQL mirror failed: {my_err}")
+            print(f"?? update_address MySQL mirror failed: {my_err}")
 
         return jsonify({'success': True, 'message': 'Address saved successfully'})
 
@@ -15315,7 +15431,7 @@ def flag_product(product_id):
             seller_email = product['seller_email']
             product_name = product['name']
             
-            notification_message = f"⚠️ Your product '{product_name}' has been flagged for policy violation. Reason: {reason}. Please review and take appropriate action."
+            notification_message = f"?? Your product '{product_name}' has been flagged for policy violation. Reason: {reason}. Please review and take appropriate action."
             
             cursor.execute("""
                 INSERT INTO notifications (seller_email, message, type, is_read, created_at)
@@ -15323,7 +15439,7 @@ def flag_product(product_id):
             """, (seller_email, notification_message, 'product_flagged'))
             
             connection.commit()
-            print(f"✅ In-app notification created for seller: {seller_email}")
+            print(f"? In-app notification created for seller: {seller_email}")
             
         except Exception as notif_error:
             print(f"Error creating in-app notification: {notif_error}")
@@ -15338,7 +15454,7 @@ def flag_product(product_id):
                 
                 # Create and send email
                 msg = Message(
-                    subject=f"⚠️ Product Flagged for Policy Violation - {product_name}",
+                    subject=f"?? Product Flagged for Policy Violation - {product_name}",
                     sender=app.config["MAIL_DEFAULT_SENDER"],
                     recipients=[seller_email]
                 )
@@ -15362,13 +15478,13 @@ def flag_product(product_id):
                 <body>
                     <div class="container">
                         <div class="header">
-                            <h1>⚠️ Product Flagged for Policy Violation</h1>
+                            <h1>?? Product Flagged for Policy Violation</h1>
                         </div>
                         <div class="content">
                             <p>Dear {seller_name},</p>
                             
                             <div class="warning-box">
-                                <strong>⚠️ Important Notice</strong><br>
+                                <strong>?? Important Notice</strong><br>
                                 Your product has been flagged by our admin team for policy violation.
                             </div>
                             
@@ -15407,10 +15523,10 @@ def flag_product(product_id):
                 """
                 
                 mail.send(msg)
-                print(f"✅ Email notification sent to seller: {seller_email}")
+                print(f"? Email notification sent to seller: {seller_email}")
                 
             except Exception as email_error:
-                print(f"❌ Error sending email: {email_error}")
+                print(f"? Error sending email: {email_error}")
                 import traceback
                 traceback.print_exc()
                 # Don't fail the request if email fails
@@ -15552,21 +15668,21 @@ def toggle_product_status(product_id):
             seller_name = f"{product['first_name']} {product['last_name']}"
             
             if is_active:
-                notification_message = f"✅ Your product '{product_name}' has been activated by admin and is now visible to buyers."
+                notification_message = f"? Your product '{product_name}' has been activated by admin and is now visible to buyers."
                 notification_type = "product_activated"
-                email_subject = f"✅ Product Activated - {product_name}"
+                email_subject = f"? Product Activated - {product_name}"
                 email_title = "Product Activated"
-                email_icon = "✅"
+                email_icon = "?"
                 email_color = "#28a745"
                 reason_text = ""
             else:
-                notification_message = f"⚠️ Your product '{product_name}' has been deactivated by admin and is no longer visible to buyers."
+                notification_message = f"?? Your product '{product_name}' has been deactivated by admin and is no longer visible to buyers."
                 if reason:
                     notification_message += f" Reason: {reason}"
                 notification_type = "product_deactivated"
-                email_subject = f"⚠️ Product Deactivated - {product_name}"
+                email_subject = f"?? Product Deactivated - {product_name}"
                 email_title = "Product Deactivated"
-                email_icon = "⚠️"
+                email_icon = "??"
                 email_color = "#dc3545"
                 reason_text = f"<p><strong>Reason:</strong> {reason}</p>" if reason else ""
             
@@ -15577,7 +15693,7 @@ def toggle_product_status(product_id):
             """, (seller_email, notification_message, notification_type))
             
             connection.commit()
-            print(f"✅ In-app notification created for seller: {seller_email}")
+            print(f"? In-app notification created for seller: {seller_email}")
             
             # Send email notification
             try:
@@ -15632,15 +15748,15 @@ def toggle_product_status(product_id):
                 """
                 
                 mail.send(msg)
-                print(f"✅ Email notification sent to seller: {seller_email}")
+                print(f"? Email notification sent to seller: {seller_email}")
                 
             except Exception as email_error:
-                print(f"❌ Error sending email: {email_error}")
+                print(f"? Error sending email: {email_error}")
                 import traceback
                 traceback.print_exc()
                 
         except Exception as notif_error:
-            print(f"❌ Error creating notification: {notif_error}")
+            print(f"? Error creating notification: {notif_error}")
             import traceback
             traceback.print_exc()
             # Don't fail the request if notification fails
@@ -15806,200 +15922,138 @@ def privacy():
 def wishlist():
     if 'user_id' not in session:
         return redirect(url_for('home'))
-        
     user_email = session.get('email')
     user_name = get_user_name_from_session(default='User')
-
+    wishlist_items = []
+    promotional_products = []
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-    except Exception as db_err:
-        print(f"MySQL unavailable in wishlist route: {db_err}")
-        return render_template('wishlist.html', wishlist_items=[], user_name=user_name,
-                               user_email=user_email, promotional_products=[],
-                               error="Wishlist is temporarily unavailable. Please try again later.")
-
-    try:
-        # Get wishlist items for the current user (join via email through users table)
-        cursor.execute("""
-            SELECT p.* FROM wishlist w
-            JOIN products p ON w.product_id = p.id
-            JOIN users u ON w.user_id = u.id
-            WHERE u.email = %s
-        """, (user_email,))
-        wishlist_items = cursor.fetchall()
-        
-        # Get promotional products data for wishlist items
+        user_id = _resolve_wishlist_user_id(user_email)
+        print(f'[wishlist] email={user_email} resolved user_id={user_id}')
+        wl_res = sb_admin.table('wishlist').select('product_id').eq('user_id', user_id).execute()
+        print(f'[wishlist] Supabase wishlist rows for user_id={user_id}: {wl_res.data}')
+        product_ids = [r['product_id'] for r in (wl_res.data or [])]
+        if product_ids:
+            prod_res = sb_admin.table('products').select('*').in_('id', product_ids).execute()
+            wishlist_items = prod_res.data or []
         promotional_products = get_promotional_products()
     except Exception as e:
-        print(f"Error in wishlist route: {e}")
-        wishlist_items = []
-        promotional_products = []
-    finally:
-        cursor.close()
-        conn.close()
+        import traceback; traceback.print_exc()
+        print(f'Error in wishlist route: {e}')
+    return render_template('wishlist.html', wishlist_items=wishlist_items,
+                           user_name=user_name, user_email=user_email,
+                           promotional_products=promotional_products,
+                           wishlist_product_ids={str(item['id']) for item in wishlist_items})
 
-    return render_template('wishlist.html', wishlist_items=wishlist_items, user_name=user_name, user_email=user_email, promotional_products=promotional_products)
+
+@app.route('/debug-wishlist')
+def debug_wishlist():
+    """Debug route � shows what user_id is computed and what's in the wishlist table."""
+    if 'user_id' not in session:
+        return 'Not logged in', 401
+    import hashlib
+    user_email = session.get('email', '')
+    # Compute user_id both ways
+    sb_res = sb_admin.table('users').select('id').eq('email', user_email).execute()
+    supabase_raw_id = sb_res.data[0].get('id') if sb_res.data else None
+    try:
+        supabase_int_id = int(supabase_raw_id)
+    except (ValueError, TypeError):
+        supabase_int_id = None
+    md5_id = int(hashlib.md5(user_email.lower().encode()).hexdigest()[:8], 16) & 0x7FFFFFFF
+    resolved_id = supabase_int_id if supabase_int_id is not None else md5_id
+    # Fetch ALL wishlist rows (no filter) to see what's there
+    all_wl = sb_admin.table('wishlist').select('*').limit(50).execute()
+    # Fetch rows for this user
+    user_wl = sb_admin.table('wishlist').select('*').eq('user_id', resolved_id).execute()
+    html = f"""
+    <h2>Wishlist Debug</h2>
+    <p><b>Email:</b> {user_email}</p>
+    <p><b>Supabase users.id (raw):</b> {supabase_raw_id}</p>
+    <p><b>Supabase users.id as int:</b> {supabase_int_id}</p>
+    <p><b>MD5 hash id:</b> {md5_id}</p>
+    <p><b>Resolved user_id used:</b> {resolved_id}</p>
+    <hr>
+    <h3>All wishlist rows in Supabase (first 50):</h3>
+    <pre>{all_wl.data}</pre>
+    <h3>Wishlist rows for user_id={resolved_id}:</h3>
+    <pre>{user_wl.data}</pre>
+    """
+    return html
+
 
 @app.route('/add-to-wishlist', methods=['POST'])
 def add_to_wishlist():
     if 'user_id' not in session:
         return jsonify({'error': 'Please login first'}), 401
-    
     try:
         data = request.get_json()
         user_email = session.get('email')
         product_id = data.get('product_id')
-        
-        print(f"Debug: user_email={user_email}, product_id={product_id}")  # Debug log
-        
         if not product_id:
             return jsonify({'error': 'Product ID is required'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Resolve the MySQL integer user id from email
-        cursor.execute("SELECT id FROM users WHERE email = %s", (user_email,))
-        user_row = cursor.fetchone()
-        if not user_row:
-            cursor.close()
-            conn.close()
-            return jsonify({'error': 'User not found'}), 404
-        user_id = user_row[0]
-        
-        # Ensure wishlist table exists
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS `wishlist` (
-              `id` INT AUTO_INCREMENT PRIMARY KEY,
-              `user_id` int(11) NOT NULL,
-              `product_id` int(11) NOT NULL,
-              `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
-              UNIQUE KEY `unique_user_product` (`user_id`, `product_id`),
-              INDEX `idx_user_id` (`user_id`),
-              INDEX `idx_product_id` (`product_id`),
-              FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
-              FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE
+        user_id = _resolve_wishlist_user_id(user_email)
+        pid = int(product_id)
+
+        # Retry wrapper for WinError 10035 (WSAEWOULDBLOCK) on Windows
+        def _supabase_call(fn, retries=3):
+            import time
+            last_err = None
+            for attempt in range(retries):
+                try:
+                    return fn()
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e)
+                    if '10035' in err_str or 'WinError' in err_str or 'non-blocking' in err_str.lower():
+                        time.sleep(0.3 * (attempt + 1))
+                        continue
+                    raise
+            raise last_err
+
+        existing = _supabase_call(
+            lambda: sb_admin.table('wishlist').select('id').eq('user_id', user_id).eq('product_id', pid).execute()
+        )
+        if existing.data:
+            _supabase_call(
+                lambda: sb_admin.table('wishlist').delete().eq('user_id', user_id).eq('product_id', pid).execute()
             )
-        """)
-        conn.commit()
-        
-        # Check if item already exists in wishlist
-        cursor.execute("SELECT id FROM wishlist WHERE user_id = %s AND product_id = %s", (user_id, product_id))
-        existing_item = cursor.fetchone()
-        
-        if existing_item:
-            # Remove from wishlist if already exists (toggle functionality)
-            cursor.execute("DELETE FROM wishlist WHERE user_id = %s AND product_id = %s", (user_id, product_id))
-            conn.commit()
-            message = 'Item removed from wishlist'
-            print(f"Debug: Item removed from wishlist")
+            return jsonify({'success': True, 'message': 'Item removed from wishlist'})
         else:
-            # Add to wishlist
-            cursor.execute("INSERT INTO wishlist (user_id, product_id) VALUES (%s, %s)", (user_id, product_id))
-            conn.commit()
-            message = 'Item added to wishlist successfully!'
-            print(f"Debug: Item added to wishlist")
-        
-        cursor.close()
-        conn.close()
-        
-        response_data = {'success': True, 'message': message}
-        print(f"Debug: Returning response: {response_data}")
-        response = jsonify(response_data)
-        response.headers['Content-Type'] = 'application/json'
-        return response
-        
+            _supabase_call(
+                lambda: sb_admin.table('wishlist').insert({'user_id': user_id, 'product_id': pid}).execute()
+            )
+            return jsonify({'success': True, 'message': 'Item added to wishlist successfully!'})
     except Exception as e:
-        print(f"Error adding to wishlist: {e}")
-        import traceback
-        traceback.print_exc()  # Print full error traceback
-        error_response = {'success': False, 'error': f'Failed to add item to wishlist: {str(e)}'}
-        print(f"Debug: Returning error response: {error_response}")
-        return jsonify(error_response), 500
+        print(f'Error in add_to_wishlist: {e}')
+        return jsonify({'success': False, 'error': 'Failed to update wishlist. Please try again.'}), 500
+
 
 @app.route('/remove_from_wishlist', methods=['POST'])
 def remove_from_wishlist():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    
     try:
         user_email = session.get('email')
         product_id = request.form.get('product_id')
-        
         if not product_id:
             flash('Product ID is required', 'error')
             return redirect(url_for('wishlist'))
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Resolve MySQL integer user id from email
-        cursor.execute("SELECT id FROM users WHERE email = %s", (user_email,))
-        user_row = cursor.fetchone()
-        if not user_row:
-            cursor.close()
-            conn.close()
-            flash('User not found', 'error')
-            return redirect(url_for('wishlist'))
-        user_id = user_row[0]
-        
-        # Remove from wishlist
-        cursor.execute("DELETE FROM wishlist WHERE user_id = %s AND product_id = %s", (user_id, product_id))
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
-        
+        user_id = _resolve_wishlist_user_id(user_email)
+        sb_admin.table('wishlist').delete().eq('user_id', user_id).eq('product_id', int(product_id)).execute()
         flash('Item removed from wishlist successfully!', 'success')
-        return redirect(url_for('wishlist'))
-        
     except Exception as e:
-        print(f"Error removing from wishlist: {e}")
+        print(f'Error removing from wishlist: {e}')
         flash('Failed to remove item from wishlist', 'error')
-        return redirect(url_for('wishlist'))
+    return redirect(url_for('wishlist'))
+
 
 @app.route('/test-wishlist')
 def test_wishlist():
-    """Test route to check wishlist table"""
+    """Test route to check Supabase wishlist table"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Check if table exists
-        cursor.execute("SHOW TABLES LIKE 'wishlist'")
-        table_exists = cursor.fetchone()
-        
-        if not table_exists:
-            # Create the table
-            cursor.execute("""
-                CREATE TABLE `wishlist` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `user_id` int(11) NOT NULL,
-                  `product_id` int(11) NOT NULL,
-                  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
-                  UNIQUE KEY `unique_user_product` (`user_id`, `product_id`),
-                  INDEX `idx_user_id` (`user_id`),
-                  INDEX `idx_product_id` (`product_id`),
-                  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
-                  FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE
-                )
-            """)
-            conn.commit()
-            result = "Wishlist table created successfully!"
-        else:
-            result = "Wishlist table already exists!"
-        
-        # Test a simple query
-        cursor.execute("SELECT COUNT(*) FROM wishlist")
-        count = cursor.fetchone()[0]
-        result += f" Current wishlist items: {count}"
-        
-        cursor.close()
-        conn.close()
-        
-        return f"<h1>Wishlist Test</h1><p>{result}</p>"
-        
+        res = sb_admin.table('wishlist').select('*').limit(10).execute()
+        count = len(res.data or [])
+        return f"<h1>Wishlist Test (Supabase)</h1><p>Wishlist table accessible. Rows (first 10): {count}</p><pre>{res.data}</pre>"
     except Exception as e:
         return f"<h1>Wishlist Test Error</h1><p>Error: {str(e)}</p>"
 
@@ -16049,11 +16103,11 @@ def check_database_connection():
 
         cursor.close()
         db.close()
-        print("✓ MySQL connection successful")
+        print("? MySQL connection successful")
         return True
     except Exception as e:
-        # Don't crash — app runs in Supabase-only mode
-        print(f"⚠️  MySQL not available: {e}")
+        # Don't crash � app runs in Supabase-only mode
+        print(f"??  MySQL not available: {e}")
         return False
 
 # Notification API endpoints
@@ -16063,17 +16117,17 @@ def get_seller_notifications():
     seller_email = session.get('email')
     user_type = session.get('user_type')
     
-    print(f"🔍 Fetching notifications for: {seller_email} (type: {user_type})")
-    print(f"🔍 Full session data: {dict(session)}")
+    print(f"?? Fetching notifications for: {seller_email} (type: {user_type})")
+    print(f"?? Full session data: {dict(session)}")
     
     # More flexible user type checking
     if not seller_email:
-        print(f"❌ No email in session")
+        print(f"? No email in session")
         return jsonify({'success': False, 'error': 'No email in session'}), 401
     
     # Check if user_type is seller (case insensitive) or if no user_type restriction for debugging
     if user_type and user_type.lower() != 'seller':
-        print(f"❌ User type mismatch - Expected: seller, Got: {user_type}")
+        print(f"? User type mismatch - Expected: seller, Got: {user_type}")
         return jsonify({'success': False, 'error': f'User type mismatch. Expected: seller, Got: {user_type}'}), 401
     
     try:
@@ -16090,7 +16144,7 @@ def get_seller_notifications():
         """, (seller_email,))
         
         notifications = cursor.fetchall()
-        print(f"📋 Found {len(notifications)} notifications for {seller_email}")
+        print(f"?? Found {len(notifications)} notifications for {seller_email}")
         
         # Convert datetime objects to strings and use type from database
         for notification in notifications:
@@ -16117,14 +16171,14 @@ def get_seller_notifications():
         cursor.close()
         connection.close()
         
-        print(f"✅ Returning {len(notifications)} notifications")
+        print(f"? Returning {len(notifications)} notifications")
         return jsonify({
             'success': True,
             'notifications': notifications
         })
         
     except Exception as e:
-        print(f"❌ Error fetching notifications for {seller_email}: {str(e)}")
+        print(f"? Error fetching notifications for {seller_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -16135,14 +16189,14 @@ def mark_notification_read():
     seller_email = session.get('email')
     user_type = session.get('user_type')
     
-    print(f"📝 Mark as read request - Seller: {seller_email}, Type: {user_type}")
+    print(f"?? Mark as read request - Seller: {seller_email}, Type: {user_type}")
     
     if not seller_email:
-        print("❌ No email in session")
+        print("? No email in session")
         return jsonify({'success': False, 'error': 'No email in session'}), 401
     
     if user_type and user_type.lower() != 'seller':
-        print(f"❌ User type mismatch - Expected: seller, Got: {user_type}")
+        print(f"? User type mismatch - Expected: seller, Got: {user_type}")
         return jsonify({'success': False, 'error': f'User type mismatch. Expected: seller, Got: {user_type}'}), 401
     
     connection = None
@@ -16151,10 +16205,10 @@ def mark_notification_read():
         data = request.get_json()
         notification_id = data.get('notification_id')
         
-        print(f"📝 Marking notification ID: {notification_id} as read for seller: {seller_email}")
+        print(f"?? Marking notification ID: {notification_id} as read for seller: {seller_email}")
         
         if not notification_id:
-            print("❌ No notification ID provided")
+            print("? No notification ID provided")
             return jsonify({'success': False, 'error': 'Notification ID required'}), 400
         
         connection = get_db_connection()
@@ -16169,10 +16223,10 @@ def mark_notification_read():
         notification = cursor.fetchone()
         
         if not notification:
-            print(f"❌ Notification {notification_id} not found for seller {seller_email}")
+            print(f"? Notification {notification_id} not found for seller {seller_email}")
             return jsonify({'success': False, 'error': 'Notification not found'}), 404
         
-        print(f"📋 Found notification - ID: {notification[0]}, Currently read: {notification[1]}")
+        print(f"?? Found notification - ID: {notification[0]}, Currently read: {notification[1]}")
         
         # Mark notification as read (only if it belongs to this seller)
         cursor.execute("""
@@ -16182,15 +16236,15 @@ def mark_notification_read():
         """, (notification_id, seller_email))
         
         affected_rows = cursor.rowcount
-        print(f"💾 Updated {affected_rows} rows")
+        print(f"?? Updated {affected_rows} rows")
         
         connection.commit()
         
-        print(f"✅ Notification {notification_id} marked as read successfully")
+        print(f"? Notification {notification_id} marked as read successfully")
         return jsonify({'success': True, 'affected_rows': affected_rows})
         
     except Exception as e:
-        print(f"❌ Error marking notification as read: {str(e)}")
+        print(f"? Error marking notification as read: {str(e)}")
         import traceback
         traceback.print_exc()
         if connection:
@@ -16211,16 +16265,16 @@ def mark_all_notifications_read():
     seller_email = session.get('email')
     user_type = session.get('user_type')
     
-    print(f"🔍 Mark all as read - Email: {seller_email}, User type: {user_type}")
-    print(f"🔍 Full session data: {dict(session)}")
+    print(f"?? Mark all as read - Email: {seller_email}, User type: {user_type}")
+    print(f"?? Full session data: {dict(session)}")
     
     if not seller_email:
-        print(f"❌ No email in session")
+        print(f"? No email in session")
         return jsonify({'success': False, 'error': 'No email in session. Please log in.'}), 401
     
     # More flexible user type checking - only check if user_type exists
     if user_type and user_type.lower() != 'seller':
-        print(f"❌ User type mismatch - Expected: seller, Got: {user_type}")
+        print(f"? User type mismatch - Expected: seller, Got: {user_type}")
         return jsonify({'success': False, 'error': f'Unauthorized. User type: {user_type}'}), 401
     
     connection = None
@@ -16239,7 +16293,7 @@ def mark_all_notifications_read():
         affected_rows = cursor.rowcount
         connection.commit()
         
-        print(f"✅ Marked {affected_rows} notifications as read for seller: {seller_email}")
+        print(f"? Marked {affected_rows} notifications as read for seller: {seller_email}")
         return jsonify({'success': True, 'affected_rows': affected_rows})
         
     except Exception as e:
@@ -16262,16 +16316,16 @@ def delete_notification():
     seller_email = session.get('email')
     user_type = session.get('user_type')
     
-    print(f"🗑️ Delete notification request - Seller: {seller_email}, Type: {user_type}")
-    print(f"🔍 Full session data: {dict(session)}")
+    print(f"??? Delete notification request - Seller: {seller_email}, Type: {user_type}")
+    print(f"?? Full session data: {dict(session)}")
     
     # More flexible authentication - check if user_type contains 'seller' (case insensitive)
     if not seller_email:
-        print(f"❌ No email in session")
+        print(f"? No email in session")
         return jsonify({'success': False, 'error': 'No email in session. Please log in.'}), 401
     
     if user_type and user_type.lower() != 'seller':
-        print(f"❌ User type mismatch - Expected: seller, Got: {user_type}")
+        print(f"? User type mismatch - Expected: seller, Got: {user_type}")
         return jsonify({'success': False, 'error': f'Access denied. User type: {user_type}'}), 401
     
     connection = None
@@ -16280,8 +16334,8 @@ def delete_notification():
         data = request.get_json()
         notification_id = data.get('notification_id')
         
-        print(f"🔍 Delete request data: {data}")
-        print(f"📋 Notification ID to delete: {notification_id}")
+        print(f"?? Delete request data: {data}")
+        print(f"?? Notification ID to delete: {notification_id}")
         
         if not notification_id:
             return jsonify({'success': False, 'error': 'Notification ID required'}), 400
@@ -16298,10 +16352,10 @@ def delete_notification():
         notification = cursor.fetchone()
         
         if not notification:
-            print(f"❌ Notification {notification_id} not found for seller {seller_email}")
+            print(f"? Notification {notification_id} not found for seller {seller_email}")
             return jsonify({'success': False, 'error': 'Notification not found or unauthorized'}), 404
         
-        print(f"📋 Found notification to delete: ID={notification[0]}, Seller={notification[1]}")
+        print(f"?? Found notification to delete: ID={notification[0]}, Seller={notification[1]}")
         
         # Delete notification
         cursor.execute("""
@@ -16310,15 +16364,15 @@ def delete_notification():
         """, (notification_id, seller_email))
         
         deleted_count = cursor.rowcount
-        print(f"💾 Deleted {deleted_count} rows")
+        print(f"?? Deleted {deleted_count} rows")
         
         connection.commit()
         
-        print(f"✅ Notification {notification_id} deleted successfully for seller: {seller_email}")
+        print(f"? Notification {notification_id} deleted successfully for seller: {seller_email}")
         return jsonify({'success': True, 'deleted_count': deleted_count})
         
     except Exception as e:
-        print(f"❌ Error deleting notification: {str(e)}")
+        print(f"? Error deleting notification: {str(e)}")
         import traceback
         traceback.print_exc()
         if connection:
@@ -16339,16 +16393,16 @@ def delete_all_notifications():
     seller_email = session.get('email')
     user_type = session.get('user_type')
     
-    print(f"🗑️ Delete all notifications request - Seller: {seller_email}, Type: {user_type}")
-    print(f"🔍 Full session data: {dict(session)}")
+    print(f"??? Delete all notifications request - Seller: {seller_email}, Type: {user_type}")
+    print(f"?? Full session data: {dict(session)}")
     
     # More flexible authentication
     if not seller_email:
-        print(f"❌ No email in session")
+        print(f"? No email in session")
         return jsonify({'success': False, 'error': 'No email in session. Please log in.'}), 401
     
     if user_type and user_type.lower() != 'seller':
-        print(f"❌ User type mismatch - Expected: seller, Got: {user_type}")
+        print(f"? User type mismatch - Expected: seller, Got: {user_type}")
         return jsonify({'success': False, 'error': f'Access denied. User type: {user_type}'}), 401
     
     connection = None
@@ -16364,7 +16418,7 @@ def delete_all_notifications():
         """, (seller_email,))
         
         count_before = cursor.fetchone()[0]
-        print(f"📊 Found {count_before} notifications to delete for seller: {seller_email}")
+        print(f"?? Found {count_before} notifications to delete for seller: {seller_email}")
         
         # Delete all notifications for this seller
         cursor.execute("""
@@ -16373,15 +16427,15 @@ def delete_all_notifications():
         """, (seller_email,))
         
         deleted_count = cursor.rowcount
-        print(f"💾 Actually deleted {deleted_count} notifications")
+        print(f"?? Actually deleted {deleted_count} notifications")
         
         connection.commit()
         
-        print(f"✅ {deleted_count} notifications deleted successfully for seller: {seller_email}")
+        print(f"? {deleted_count} notifications deleted successfully for seller: {seller_email}")
         return jsonify({'success': True, 'deleted_count': deleted_count})
         
     except Exception as e:
-        print(f"❌ Error deleting all notifications: {str(e)}")
+        print(f"? Error deleting all notifications: {str(e)}")
         if connection:
             try:
                 connection.rollback()
@@ -16401,17 +16455,17 @@ def get_buyer_notifications():
     buyer_email = session.get('email')
     user_type = session.get('user_type')
     
-    print(f"🔍 Fetching buyer notifications for: {buyer_email} (type: {user_type})")
-    print(f"🔍 Full session data: {dict(session)}")
+    print(f"?? Fetching buyer notifications for: {buyer_email} (type: {user_type})")
+    print(f"?? Full session data: {dict(session)}")
     
     # More flexible user type checking
     if not buyer_email:
-        print(f"❌ No email in session")
+        print(f"? No email in session")
         return jsonify({'success': False, 'error': 'No email in session'}), 401
     
     # Check if user_type is buyer (case insensitive) or allow for debugging
     if user_type and user_type.lower() != 'buyer':
-        print(f"❌ User type mismatch - Expected: buyer, Got: {user_type}")
+        print(f"? User type mismatch - Expected: buyer, Got: {user_type}")
         return jsonify({'success': False, 'error': f'User type mismatch. Expected: buyer, Got: {user_type}'}), 401
     
     try:
@@ -16428,7 +16482,7 @@ def get_buyer_notifications():
         """, (buyer_email,))
         
         notifications = cursor.fetchall()
-        print(f"📋 Found {len(notifications)} buyer notifications for {buyer_email}")
+        print(f"?? Found {len(notifications)} buyer notifications for {buyer_email}")
         
         # Convert datetime objects to strings for JSON serialization
         for notification in notifications:
@@ -16439,14 +16493,14 @@ def get_buyer_notifications():
         cursor.close()
         connection.close()
         
-        print(f"✅ Returning {len(notifications)} buyer notifications")
+        print(f"? Returning {len(notifications)} buyer notifications")
         return jsonify({
             'success': True,
             'notifications': notifications
         })
         
     except Exception as e:
-        print(f"❌ Error fetching buyer notifications for {buyer_email}: {str(e)}")
+        print(f"? Error fetching buyer notifications for {buyer_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -16482,11 +16536,11 @@ def mark_buyer_notification_read():
         affected_rows = cursor.rowcount
         connection.commit()
         
-        print(f"✅ Buyer notification {notification_id} marked as read")
+        print(f"? Buyer notification {notification_id} marked as read")
         return jsonify({'success': True, 'affected_rows': affected_rows})
         
     except Exception as e:
-        print(f"❌ Error marking buyer notification as read: {str(e)}")
+        print(f"? Error marking buyer notification as read: {str(e)}")
         if connection:
             try:
                 connection.rollback()
@@ -16524,7 +16578,7 @@ def mark_all_buyer_notifications_read():
         affected_rows = cursor.rowcount
         connection.commit()
         
-        print(f"✅ Marked {affected_rows} buyer notifications as read")
+        print(f"? Marked {affected_rows} buyer notifications as read")
         return jsonify({'success': True, 'affected_rows': affected_rows})
         
     except Exception as e:
@@ -16576,11 +16630,11 @@ def delete_buyer_notification():
         
         connection.commit()
         
-        print(f"✅ Buyer notification {notification_id} deleted for buyer: {buyer_email}")
+        print(f"? Buyer notification {notification_id} deleted for buyer: {buyer_email}")
         return jsonify({'success': True, 'deleted_count': deleted_count})
         
     except Exception as e:
-        print(f"❌ Error deleting buyer notification: {str(e)}")
+        print(f"? Error deleting buyer notification: {str(e)}")
         if connection:
             try:
                 connection.rollback()
@@ -16617,11 +16671,11 @@ def delete_all_buyer_notifications():
         deleted_count = cursor.rowcount
         connection.commit()
         
-        print(f"✅ {deleted_count} buyer notifications deleted for buyer: {buyer_email}")
+        print(f"? {deleted_count} buyer notifications deleted for buyer: {buyer_email}")
         return jsonify({'success': True, 'deleted_count': deleted_count})
         
     except Exception as e:
-        print(f"❌ Error deleting all buyer notifications: {str(e)}")
+        print(f"? Error deleting all buyer notifications: {str(e)}")
         if connection:
             try:
                 connection.rollback()
@@ -16642,19 +16696,19 @@ def _create_order_notification_supabase(seller_email, order_details):
         customer     = order_details[0].get('email', 'Unknown') if order_details else 'Unknown'
         if total_items == 1:
             item = order_details[0]
-            msg = f"New order: {item['name']} (Qty: {item['quantity']}) - ₱{total_amount:.2f} from {customer}"
+            msg = f"New order: {item['name']} (Qty: {item['quantity']}) - ?{total_amount:.2f} from {customer}"
         else:
-            msg = f"New order: {total_items} items - ₱{total_amount:.2f} from {customer}"
+            msg = f"New order: {total_items} items - ?{total_amount:.2f} from {customer}"
         sb_admin.table('notifications').insert({
             'seller_email': seller_email,
             'message':      msg,
             'type':         'order',
             'is_read':      False,
         }).execute()
-        print(f"✅ Supabase notification created for {seller_email}")
+        print(f"? Supabase notification created for {seller_email}")
         return True
     except Exception as e:
-        print(f"❌ _create_order_notification_supabase error: {e}")
+        print(f"? _create_order_notification_supabase error: {e}")
         return False
 
 
@@ -16663,8 +16717,8 @@ def create_order_notification(seller_email, order_details):
     connection = None
     cursor = None
     try:
-        print(f"🔔 Creating notification for seller: {seller_email}")
-        print(f"📦 Order details: {order_details}")
+        print(f"?? Creating notification for seller: {seller_email}")
+        print(f"?? Order details: {order_details}")
         
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -16676,11 +16730,11 @@ def create_order_notification(seller_email, order_details):
         
         if total_items == 1:
             item = order_details[0]
-            message = f"New order: {item['name']} (Qty: {item['quantity']}) - ₱{total_amount:.2f} from {customer_email}"
+            message = f"New order: {item['name']} (Qty: {item['quantity']}) - ?{total_amount:.2f} from {customer_email}"
         else:
-            message = f"New order: {total_items} items - ₱{total_amount:.2f} from {customer_email}"
+            message = f"New order: {total_items} items - ?{total_amount:.2f} from {customer_email}"
         
-        print(f"📝 Notification message: {message}")
+        print(f"?? Notification message: {message}")
         
         # Insert notification
         cursor.execute("""
@@ -16690,15 +16744,15 @@ def create_order_notification(seller_email, order_details):
         
         # Get the inserted notification ID for confirmation
         notification_id = cursor.lastrowid
-        print(f"💾 Notification inserted with ID: {notification_id}")
+        print(f"?? Notification inserted with ID: {notification_id}")
         
         connection.commit()
         
-        print(f"✅ Notification created successfully for seller: {seller_email}")
+        print(f"? Notification created successfully for seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating notification for {seller_email}: {str(e)}")
+        print(f"? Error creating notification for {seller_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         if connection:
@@ -16716,8 +16770,8 @@ def create_order_notification(seller_email, order_details):
 def create_cancellation_notification(seller_email, order_name, reason, customer_email, order_id=None):
     """Create a notification in the database when an order is cancelled"""
     try:
-        print(f"🚫 Creating cancellation notification for seller: {seller_email}")
-        print(f"📦 Order: {order_name}, Reason: {reason}, Customer: {customer_email}")
+        print(f"?? Creating cancellation notification for seller: {seller_email}")
+        print(f"?? Order: {order_name}, Reason: {reason}, Customer: {customer_email}")
         
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -16725,7 +16779,7 @@ def create_cancellation_notification(seller_email, order_name, reason, customer_
         # Create cancellation message - include "cancelled" keyword so it's detected as cancellation type
         message = f"Order cancelled: {order_name} by {customer_email}. Reason: {reason}"
         
-        print(f"📝 Cancellation notification message: {message}")
+        print(f"?? Cancellation notification message: {message}")
         
         # Insert notification with type
         cursor.execute("""
@@ -16737,16 +16791,16 @@ def create_cancellation_notification(seller_email, order_name, reason, customer_
         
         # Get the inserted notification ID for confirmation
         notification_id = cursor.lastrowid
-        print(f"💾 Cancellation notification inserted with ID: {notification_id}")
+        print(f"?? Cancellation notification inserted with ID: {notification_id}")
         
         cursor.close()
         connection.close()
         
-        print(f"✅ Cancellation notification created successfully for seller: {seller_email}")
+        print(f"? Cancellation notification created successfully for seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating cancellation notification for {seller_email}: {str(e)}")
+        print(f"? Error creating cancellation notification for {seller_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -16754,8 +16808,8 @@ def create_cancellation_notification(seller_email, order_name, reason, customer_
 def send_order_status_update_email(customer_email, order_details, new_status, seller_info=None):
     """Send order status update email to customer"""
     try:
-        print(f"📧 Sending order status update email to customer: {customer_email}")
-        print(f"📦 Order: {order_details['name']}, New Status: {new_status}")
+        print(f"?? Sending order status update email to customer: {customer_email}")
+        print(f"?? Order: {order_details['name']}, New Status: {new_status}")
         
         msg = Message(
             f'Order Status Update - {new_status}',
@@ -16808,7 +16862,7 @@ Quantity: {order_details['quantity']}
         if order_details.get('size'):
             msg.body += f"Size: {order_details['size']}\n"
             
-        msg.body += f"""Total: ₱{order_total:.2f}
+        msg.body += f"""Total: ?{order_total:.2f}
 Order Date: {order_details.get('date', 'N/A')}
 
 STATUS UPDATE:
@@ -16827,11 +16881,11 @@ MStyle Team
 """
         
         mail.send(msg)
-        print(f"✅ Order status update email sent to customer: {customer_email}")
+        print(f"? Order status update email sent to customer: {customer_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending order status update email to {customer_email}: {str(e)}")
+        print(f"? Error sending order status update email to {customer_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -16839,14 +16893,14 @@ MStyle Team
 def notify_riders_of_new_order(order_id, order_details, seller_email):
     """Notify all available riders about a new confirmed order via Supabase"""
     try:
-        print(f"🏍️ Notifying riders about confirmed order {order_id}")
+        print(f"??? Notifying riders about confirmed order {order_id}")
 
         # Get all riders from Supabase
         riders_res = sb_admin.table('users').select('email, first_name, last_name').eq('role', 'rider').execute()
         riders = riders_res.data or []
 
         if not riders:
-            print("⚠️ No riders found in Supabase")
+            print("?? No riders found in Supabase")
             return False
 
         # Get seller info from Supabase
@@ -16866,22 +16920,22 @@ def notify_riders_of_new_order(order_id, order_details, seller_email):
             # Email
             try:
                 msg = Message(f'New Delivery Available - Order #{order_id}', sender=app.config['MAIL_DEFAULT_SENDER'], recipients=[rider['email']])
-                msg.body = f"""Hello {rider['first_name']}!\n\nA new delivery order is now available!\n\nOrder #{order_id} - {order_details.get('name','')}\nQty: {order_details.get('quantity',1)}\nValue: ₱{order_total:.2f}\nPickup: {seller_name}, {seller_addr}\nDelivery: {order_details.get('address','N/A')}\n\nLog in to your rider dashboard to accept.\n\nMStyle Team"""
+                msg.body = f"""Hello {rider['first_name']}!\n\nA new delivery order is now available!\n\nOrder #{order_id} - {order_details.get('name','')}\nQty: {order_details.get('quantity',1)}\nValue: ?{order_total:.2f}\nPickup: {seller_name}, {seller_addr}\nDelivery: {order_details.get('address','N/A')}\n\nLog in to your rider dashboard to accept.\n\nMStyle Team"""
                 mail.send(msg)
             except Exception as email_err:
-                print(f"⚠️ Email to rider {rider['email']} failed: {email_err}")
+                print(f"?? Email to rider {rider['email']} failed: {email_err}")
 
-            notif_rows.append({'rider_email': rider['email'], 'message': f"New delivery available! Order #{order_id} - {order_details.get('name','')} (₱{order_total:.2f}). Pickup from {seller_name}.", 'order_id': order_id, 'is_read': False})
+            notif_rows.append({'rider_email': rider['email'], 'message': f"New delivery available! Order #{order_id} - {order_details.get('name','')} (?{order_total:.2f}). Pickup from {seller_name}.", 'order_id': order_id, 'is_read': False})
             riders_notified += 1
 
         if notif_rows:
             sb_admin.table('rider_notifications').insert(notif_rows).execute()
 
-        print(f"✅ Notified {riders_notified} riders")
+        print(f"? Notified {riders_notified} riders")
         return riders_notified > 0
 
     except Exception as e:
-        print(f"❌ Error notifying riders: {e}")
+        print(f"? Error notifying riders: {e}")
         import traceback; traceback.print_exc()
         return False
 
@@ -16906,10 +16960,10 @@ def create_buyer_notification(customer_email, order_details, status, order_id=No
             'is_read':     False,
             'order_id':    order_id,
         }).execute()
-        print(f"✅ Buyer notification created for: {customer_email}")
+        print(f"? Buyer notification created for: {customer_email}")
         return True
     except Exception as e:
-        print(f"❌ Error creating buyer notification for {customer_email}: {e}")
+        print(f"? Error creating buyer notification for {customer_email}: {e}")
         import traceback; traceback.print_exc()
         return False
 
@@ -16933,14 +16987,14 @@ def test_notifications():
             'size': 'Large'
         }]
         
-        print(f"🧪 Creating test notification for seller: {seller_email}")
+        print(f"?? Creating test notification for seller: {seller_email}")
         
         success = create_order_notification(seller_email, test_order)
         
         if success:
-            return f"✅ Test notification created for {seller_email}<br><br>Check your notifications dropdown!"
+            return f"? Test notification created for {seller_email}<br><br>Check your notifications dropdown!"
         else:
-            return "❌ Failed to create test notification"
+            return "? Failed to create test notification"
             
     except Exception as e:
         return f"Error: {str(e)}"
@@ -16962,14 +17016,14 @@ def test_notifications_for_seller(seller_email):
             'size': 'Medium'
         }]
         
-        print(f"🧪 Creating test notification for specific seller: {seller_email}")
+        print(f"?? Creating test notification for specific seller: {seller_email}")
         
         success = create_order_notification(seller_email, test_order)
         
         if success:
-            return f"✅ Test notification created for {seller_email}<br><br>The seller should see this in their notifications dropdown!"
+            return f"? Test notification created for {seller_email}<br><br>The seller should see this in their notifications dropdown!"
         else:
-            return "❌ Failed to create test notification"
+            return "? Failed to create test notification"
             
     except Exception as e:
         return f"Error: {str(e)}"
@@ -16989,14 +17043,14 @@ def test_cancellation_notification():
         reason = 'Changed my mind about the purchase'
         customer_email = 'customer@test.com'
         
-        print(f"🧪 Creating test cancellation notification for seller: {seller_email}")
+        print(f"?? Creating test cancellation notification for seller: {seller_email}")
         
         success = create_cancellation_notification(seller_email, order_name, reason, customer_email)
         
         if success:
-            return f"✅ Test cancellation notification created for {seller_email}<br><br>Check your notifications dropdown for the cancellation!"
+            return f"? Test cancellation notification created for {seller_email}<br><br>Check your notifications dropdown for the cancellation!"
         else:
-            return "❌ Failed to create test cancellation notification"
+            return "? Failed to create test cancellation notification"
             
     except Exception as e:
         return f"Error: {str(e)}"
@@ -17013,14 +17067,14 @@ def test_cancellation_for_seller(seller_email):
         reason = "Size doesn't fit properly"
         customer_email = 'testcustomer@example.com'
         
-        print(f"🧪 Creating test cancellation notification for specific seller: {seller_email}")
+        print(f"?? Creating test cancellation notification for specific seller: {seller_email}")
         
         success = create_cancellation_notification(seller_email, order_name, reason, customer_email)
         
         if success:
-            return f"✅ Test cancellation notification created for {seller_email}<br><br>The seller should see this cancellation in their notifications dropdown!"
+            return f"? Test cancellation notification created for {seller_email}<br><br>The seller should see this cancellation in their notifications dropdown!"
         else:
-            return "❌ Failed to create test cancellation notification"
+            return "? Failed to create test cancellation notification"
             
     except Exception as e:
         return f"Error: {str(e)}"
@@ -17057,8 +17111,8 @@ def debug_auth():
         <ul>
             <li><strong>Email:</strong> {auth_status['email'] or 'Not set'}</li>
             <li><strong>User Type:</strong> {auth_status['user_type'] or 'Not set'}</li>
-            <li><strong>Has Email:</strong> {'✅ Yes' if auth_status['has_email'] else '❌ No'}</li>
-            <li><strong>Is Seller:</strong> {'✅ Yes' if auth_status['is_seller'] else '❌ No'}</li>
+            <li><strong>Has Email:</strong> {'? Yes' if auth_status['has_email'] else '? No'}</li>
+            <li><strong>Is Seller:</strong> {'? Yes' if auth_status['is_seller'] else '? No'}</li>
         </ul>
         
         <h3>Full Session Data:</h3>
@@ -17066,8 +17120,8 @@ def debug_auth():
         
         <h3>API Access Status:</h3>
         <ul>
-            <li><strong>Can access notifications API:</strong> {'✅ Yes' if auth_status['has_email'] and auth_status['is_seller'] else '❌ No'}</li>
-            <li><strong>Can delete notifications:</strong> {'✅ Yes' if auth_status['has_email'] and auth_status['is_seller'] else '❌ No'}</li>
+            <li><strong>Can access notifications API:</strong> {'? Yes' if auth_status['has_email'] and auth_status['is_seller'] else '? No'}</li>
+            <li><strong>Can delete notifications:</strong> {'? Yes' if auth_status['has_email'] and auth_status['is_seller'] else '? No'}</li>
         </ul>
     </div>
     
@@ -17093,7 +17147,7 @@ def set_test_session():
     session['first_name'] = 'Test Seller'
     
     return """
-    <h2>✅ Test Seller Session Set</h2>
+    <h2>? Test Seller Session Set</h2>
     <p>Session has been set with test seller data:</p>
     <ul>
         <li><strong>Email:</strong> test-seller@example.com</li>
@@ -17136,17 +17190,17 @@ def test_status_update_email():
         test_customer_email = 'customer@test.com'
         test_status = request.args.get('status', 'Shipped')
         
-        print(f"🧪 Testing status update email for: {test_customer_email}")
+        print(f"?? Testing status update email for: {test_customer_email}")
         
         success = send_order_status_update_email(test_customer_email, test_order, test_status)
         
         if success:
             return f"""
-            <h2>✅ Test Status Update Email Sent</h2>
+            <h2>? Test Status Update Email Sent</h2>
             <p><strong>Customer Email:</strong> {test_customer_email}</p>
             <p><strong>Order:</strong> {test_order['name']}</p>
             <p><strong>New Status:</strong> {test_status}</p>
-            <p><strong>Total:</strong> ₱{test_order['total_price']:.2f}</p>
+            <p><strong>Total:</strong> ?{test_order['total_price']:.2f}</p>
             
             <p>Check the email inbox for the status update notification!</p>
             
@@ -17158,7 +17212,7 @@ def test_status_update_email():
             </ul>
             """
         else:
-            return "❌ Failed to send test status update email"
+            return "? Failed to send test status update email"
             
     except Exception as e:
         return f"Error: {str(e)}"
@@ -17231,7 +17285,7 @@ def get_notifications_bypass(seller_email):
         """, (seller_email,))
         
         notifications = cursor.fetchall()
-        print(f"📋 Found {len(notifications)} notifications for {seller_email} (bypass mode)")
+        print(f"?? Found {len(notifications)} notifications for {seller_email} (bypass mode)")
         
         # Convert datetime objects to strings for JSON serialization
         for notification in notifications:
@@ -17253,13 +17307,13 @@ def get_notifications_bypass(seller_email):
         })
         
     except Exception as e:
-        print(f"❌ Error fetching notifications for {seller_email} (bypass): {str(e)}")
+        print(f"? Error fetching notifications for {seller_email} (bypass): {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 def send_order_completion_notification(seller_email, order_details, customer_email):
     """Send notification to seller when buyer confirms order receipt"""
     try:
-        print(f"📧 Sending order completion notification to seller: {seller_email}")
+        print(f"?? Sending order completion notification to seller: {seller_email}")
         
         msg = Message(
             'Order Completed - Customer Confirmed Receipt',
@@ -17280,7 +17334,7 @@ ORDER COMPLETED:
 Product: {order_details['name']}
 Quantity: {order_details['quantity']}
 Customer: {customer_email}
-Total: ₱{order_total:.2f}
+Total: ?{order_total:.2f}
 
 The order has been marked as completed and the inventory has been updated.
 
@@ -17291,11 +17345,11 @@ MStyle Team
 """
         
         mail.send(msg)
-        print(f"✅ Order completion notification sent to seller: {seller_email}")
+        print(f"? Order completion notification sent to seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending completion notification to {seller_email}: {str(e)}")
+        print(f"? Error sending completion notification to {seller_email}: {str(e)}")
         return False
 
 def auto_complete_delivered_orders():
@@ -17319,7 +17373,7 @@ def auto_complete_delivered_orders():
         orders_to_complete = cursor.fetchall()
         
         if not orders_to_complete:
-            print("📦 No orders to auto-complete")
+            print("?? No orders to auto-complete")
             return 0
         
         completed_count = 0
@@ -17346,23 +17400,23 @@ def auto_complete_delivered_orders():
                 try:
                     send_auto_completion_notification(order['seller_email'], order, order['customer_email'])
                 except Exception as email_error:
-                    print(f"❌ Failed to send auto-completion notification: {str(email_error)}")
+                    print(f"? Failed to send auto-completion notification: {str(email_error)}")
                 
                 completed_count += 1
-                print(f"✅ Auto-completed order {order['id']}: {order['name']}")
+                print(f"? Auto-completed order {order['id']}: {order['name']}")
                 
             except Exception as order_error:
-                print(f"❌ Failed to auto-complete order {order['id']}: {str(order_error)}")
+                print(f"? Failed to auto-complete order {order['id']}: {str(order_error)}")
                 connection.rollback()
         
         cursor.close()
         connection.close()
         
-        print(f"📦 Auto-completed {completed_count} orders")
+        print(f"?? Auto-completed {completed_count} orders")
         return completed_count
         
     except Exception as e:
-        print(f"❌ Error in auto_complete_delivered_orders: {str(e)}")
+        print(f"? Error in auto_complete_delivered_orders: {str(e)}")
         return 0
 
 def send_auto_completion_notification(seller_email, order_details, customer_email):
@@ -17387,7 +17441,7 @@ ORDER AUTO-COMPLETED:
 Product: {order_details['name']}
 Quantity: {order_details['quantity']}
 Customer: {customer_email}
-Total: ₱{order_total:.2f}
+Total: ?{order_total:.2f}
 
 Since the customer did not report any issues within 7 days of delivery, 
 the order has been automatically completed and the inventory has been updated.
@@ -17399,17 +17453,17 @@ MStyle Team
 """
         
         mail.send(msg)
-        print(f"✅ Auto-completion notification sent to seller: {seller_email}")
+        print(f"? Auto-completion notification sent to seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending auto-completion notification to {seller_email}: {str(e)}")
+        print(f"? Error sending auto-completion notification to {seller_email}: {str(e)}")
         return False
 
 def send_review_notification_email(seller_email, order_details, rating, review_text, customer_email):
     """Send email notification to seller when customer submits a review"""
     try:
-        print(f"📧 Sending review notification email to seller: {seller_email}")
+        print(f"?? Sending review notification email to seller: {seller_email}")
         
         msg = Message(
             f'New {rating}-Star Review Received!',
@@ -17418,7 +17472,7 @@ def send_review_notification_email(seller_email, order_details, rating, review_t
         )
         
         # Create star display
-        stars = "⭐" * int(rating)
+        stars = "?" * int(rating)
         
         msg.body = f"""Hello!
 
@@ -17441,28 +17495,28 @@ MStyle Team
 """
         
         mail.send(msg)
-        print(f"✅ Review notification email sent to seller: {seller_email}")
+        print(f"? Review notification email sent to seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending review notification email to {seller_email}: {str(e)}")
+        print(f"? Error sending review notification email to {seller_email}: {str(e)}")
         return False
 
 def create_review_notification(seller_email, order_details, rating, review_text, customer_email, order_id):
     """Create a notification in the database for seller when customer submits a review"""
     try:
-        print(f"🔔 Creating review notification for seller: {seller_email}")
+        print(f"?? Creating review notification for seller: {seller_email}")
         
         connection = get_db_connection()
         cursor = connection.cursor()
         
         # Create star display for notification
-        stars = "⭐" * int(rating)
+        stars = "?" * int(rating)
         
         # Create notification message - include "review" keyword so it can be detected
         message = f"New {rating}-star review received for '{order_details['name']}' from customer {customer_email}. Review: \"{review_text[:100]}{'...' if len(review_text) > 100 else ''}\""
         
-        print(f"📝 Review notification message: {message}")
+        print(f"?? Review notification message: {message}")
         
         # Insert notification with type
         cursor.execute("""
@@ -17474,16 +17528,16 @@ def create_review_notification(seller_email, order_details, rating, review_text,
         
         # Get the inserted notification ID for confirmation
         notification_id = cursor.lastrowid
-        print(f"💾 Review notification inserted with ID: {notification_id}")
+        print(f"?? Review notification inserted with ID: {notification_id}")
         
         cursor.close()
         connection.close()
         
-        print(f"✅ Review notification created successfully for seller: {seller_email}")
+        print(f"? Review notification created successfully for seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating review notification for {seller_email}: {str(e)}")
+        print(f"? Error creating review notification for {seller_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -17491,7 +17545,7 @@ def create_review_notification(seller_email, order_details, rating, review_text,
 def send_issue_report_email(order_details, report_against, issue_type, issue_description, customer_email, issue_id):
     """Send email notification to admin/customer service when customer reports an issue"""
     try:
-        print(f"📧 Sending issue report email for order {order_details['id']}")
+        print(f"?? Sending issue report email for order {order_details['id']}")
         
         # Send to customer service email (you can change this to your customer service email)
         customer_service_email = 'stylemens2025@gmail.com'  # Change to your customer service email
@@ -17528,7 +17582,7 @@ ISSUE DESCRIPTION:
 ORDER INFORMATION:
 - Order Date: {order_details.get('date', 'N/A')}
 - Order Status: {order_details.get('status', 'N/A')}
-- Total Price: ₱{order_details.get('total_price', 0)}
+- Total Price: ?{order_details.get('total_price', 0)}
 
 PRIORITY LEVEL:
 {
@@ -17548,17 +17602,17 @@ MStyle System
 """
         
         mail.send(msg)
-        print(f"✅ Issue report email sent to customer service: {customer_service_email}")
+        print(f"? Issue report email sent to customer service: {customer_service_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending issue report email: {str(e)}")
+        print(f"? Error sending issue report email: {str(e)}")
         return False
 
 def create_issue_notification(seller_email, order_details, report_against, issue_type, issue_description, customer_email, issue_id):
     """Create a notification in the database for seller when customer reports an issue"""
     try:
-        print(f"🔔 Creating issue notification for seller: {seller_email}")
+        print(f"?? Creating issue notification for seller: {seller_email}")
         
         connection = get_db_connection()
         cursor = connection.cursor()
@@ -17574,7 +17628,7 @@ def create_issue_notification(seller_email, order_details, report_against, issue
         
         message = f"Customer {customer_email} reported an issue {report_against_display} for order #{order_details['id']} ({order_details.get('product_name', order_details.get('name', 'Product'))}). Issue: {issue_type} - {issue_description[:100]}{'...' if len(issue_description) > 100 else ''}"
         
-        print(f"📝 Issue notification message: {message}")
+        print(f"?? Issue notification message: {message}")
         
         # Insert notification with type
         cursor.execute("""
@@ -17586,16 +17640,16 @@ def create_issue_notification(seller_email, order_details, report_against, issue
         
         # Get the inserted notification ID for confirmation
         notification_id = cursor.lastrowid
-        print(f"💾 Issue notification inserted with ID: {notification_id}")
+        print(f"?? Issue notification inserted with ID: {notification_id}")
         
         cursor.close()
         connection.close()
         
-        print(f"✅ Issue notification created successfully for seller: {seller_email}")
+        print(f"? Issue notification created successfully for seller: {seller_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error creating issue notification for {seller_email}: {str(e)}")
+        print(f"? Error creating issue notification for {seller_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -17603,7 +17657,7 @@ def create_issue_notification(seller_email, order_details, report_against, issue
 def send_issue_status_update_email(customer_email, customer_name, issue_id, issue_type, product_name, new_status, admin_response=''):
     """Send email notification to customer when admin updates issue status"""
     try:
-        print(f"📧 Sending issue status update email to customer: {customer_email}")
+        print(f"?? Sending issue status update email to customer: {customer_email}")
         
         # Create status-specific messages
         status_messages = {
@@ -17673,17 +17727,17 @@ MStyle Customer Service Team
 """
         
         mail.send(msg)
-        print(f"✅ Issue status update email sent to customer: {customer_email}")
+        print(f"? Issue status update email sent to customer: {customer_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending issue status update email to {customer_email}: {str(e)}")
+        print(f"? Error sending issue status update email to {customer_email}: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
 
 def create_issue_status_notification(customer_email, issue_id, issue_type, product_name, new_status, admin_response='', order_id=None):
-    """Create in-app notification for user when admin updates issue status — uses Supabase for riders"""
+    """Create in-app notification for user when admin updates issue status � uses Supabase for riders"""
     try:
         status_messages = {
             'pending':     f"Your issue report #{issue_id} for '{product_name}' is pending review.",
@@ -17711,10 +17765,10 @@ def create_issue_status_notification(customer_email, issue_id, issue_type, produ
         else:
             sb_admin.table('buyer_notifications').insert({'buyer_email': customer_email, 'message': message, 'type': 'issue_update', 'is_read': False, 'order_id': order_id}).execute()
 
-        print(f"✅ Issue status notification created for {user_type}: {customer_email}")
+        print(f"? Issue status notification created for {user_type}: {customer_email}")
         return True
     except Exception as e:
-        print(f"❌ Error creating issue status notification for {customer_email}: {e}")
+        print(f"? Error creating issue status notification for {customer_email}: {e}")
         import traceback; traceback.print_exc()
         return False
 
@@ -17877,7 +17931,7 @@ def order_monitoring():
                              next_page=page + 1 if page < total_pages else None)
         
     except Exception as e:
-        print(f"⚠️ MySQL unavailable in order_monitoring: {e}")
+        print(f"?? MySQL unavailable in order_monitoring: {e}")
         import traceback
         traceback.print_exc()
 
@@ -18204,7 +18258,7 @@ def export_orders():
                 order['seller_email'] or 'N/A',
                 order['product_name'] or 'N/A',
                 order['quantity'] or 'N/A',
-                f"₱{float(order['total_amount']):.2f}" if order['total_amount'] else '₱0.00',
+                f"?{float(order['total_amount']):.2f}" if order['total_amount'] else '?0.00',
                 order['payment_method'] or 'N/A',
                 order['order_status'] or 'N/A',
                 order['rider_name'] or 'Not Assigned',
@@ -18457,7 +18511,7 @@ def mark_messages_read():
         affected_rows = cursor.rowcount
         connection.commit()
         
-        print(f"✅ Marked {affected_rows} messages as read for {user_type}: {current_user_email} in conversation: {conv_id}")
+        print(f"? Marked {affected_rows} messages as read for {user_type}: {current_user_email} in conversation: {conv_id}")
         
         cursor.close()
         connection.close()
@@ -18469,7 +18523,7 @@ def mark_messages_read():
         })
         
     except Exception as e:
-        print(f"❌ Error marking messages as read: {e}")
+        print(f"? Error marking messages as read: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -18678,7 +18732,7 @@ def delete_seller_conversation():
             
             total_deleted = cursor.rowcount
             
-            print(f"✅ Deleted seller-rider conversation for order {order_id} with {total_deleted} messages")
+            print(f"? Deleted seller-rider conversation for order {order_id} with {total_deleted} messages")
         else:
             # It's a buyer-seller conversation
             # Verify that this conversation belongs to the seller
@@ -18708,7 +18762,7 @@ def delete_seller_conversation():
                 WHERE conversation_id = %s AND seller_email = %s
             """, (conversation_id, seller_email))
             
-            print(f"✅ Deleted buyer-seller conversation {conversation_id} with {total_deleted} messages")
+            print(f"? Deleted buyer-seller conversation {conversation_id} with {total_deleted} messages")
         
         connection.commit()
         cursor.close()
@@ -18775,7 +18829,7 @@ def delete_all_seller_conversations():
             conversations_deleted = cursor.rowcount
             total_conversations_deleted += conversations_deleted
             
-            print(f"✅ Deleted {conversations_deleted} buyer-seller conversations with {messages_deleted} messages")
+            print(f"? Deleted {conversations_deleted} buyer-seller conversations with {messages_deleted} messages")
         
         # Delete seller-rider messages
         # Get all orders for this seller
@@ -18798,13 +18852,13 @@ def delete_all_seller_conversations():
             total_messages_deleted += rider_messages_deleted
             total_conversations_deleted += len(order_ids)  # Count each order as a conversation
             
-            print(f"✅ Deleted {len(order_ids)} seller-rider conversations with {rider_messages_deleted} messages")
+            print(f"? Deleted {len(order_ids)} seller-rider conversations with {rider_messages_deleted} messages")
         
         connection.commit()
         cursor.close()
         connection.close()
         
-        print(f"✅ Total: Deleted {total_conversations_deleted} conversations with {total_messages_deleted} messages for seller {seller_email}")
+        print(f"? Total: Deleted {total_conversations_deleted} conversations with {total_messages_deleted} messages for seller {seller_email}")
         
         return jsonify({
             'success': True,
@@ -18866,7 +18920,7 @@ def delete_buyer_conversation():
             
             messages_deleted = cursor.rowcount
             
-            print(f"✅ Deleted buyer-rider conversation for order {order_id} with {messages_deleted} messages")
+            print(f"? Deleted buyer-rider conversation for order {order_id} with {messages_deleted} messages")
         else:
             # It's a seller conversation
             # Verify that this conversation belongs to the buyer
@@ -18896,7 +18950,7 @@ def delete_buyer_conversation():
                 WHERE conversation_id = %s AND buyer_email = %s
             """, (conversation_id, buyer_email))
             
-            print(f"✅ Deleted buyer-seller conversation {conversation_id} with {messages_deleted} messages")
+            print(f"? Deleted buyer-seller conversation {conversation_id} with {messages_deleted} messages")
         
         connection.commit()
         cursor.close()
@@ -18959,7 +19013,7 @@ def delete_all_buyer_conversations():
             conversations_deleted = cursor.rowcount
             total_conversations_deleted += conversations_deleted
             
-            print(f"✅ Deleted {conversations_deleted} buyer-seller conversations with {messages_deleted} messages")
+            print(f"? Deleted {conversations_deleted} buyer-seller conversations with {messages_deleted} messages")
         
         # Delete buyer-rider messages
         # Get all orders for this buyer
@@ -18982,13 +19036,13 @@ def delete_all_buyer_conversations():
             total_messages_deleted += rider_messages_deleted
             total_conversations_deleted += len(order_ids)  # Count each order as a conversation
             
-            print(f"✅ Deleted {len(order_ids)} buyer-rider conversations with {rider_messages_deleted} messages")
+            print(f"? Deleted {len(order_ids)} buyer-rider conversations with {rider_messages_deleted} messages")
         
         connection.commit()
         cursor.close()
         connection.close()
         
-        print(f"✅ Total: Deleted {total_conversations_deleted} conversations with {total_messages_deleted} messages for buyer {buyer_email}")
+        print(f"? Total: Deleted {total_conversations_deleted} conversations with {total_messages_deleted} messages for buyer {buyer_email}")
         
         return jsonify({
             'success': True,
@@ -19061,7 +19115,7 @@ def send_seller_reply():
         connection.close()
         
         # Create notification for buyer (optional - you can implement this later)
-        print(f"✅ Seller {seller_name} sent message to buyer {buyer_email}")
+        print(f"? Seller {seller_name} sent message to buyer {buyer_email}")
         
         return jsonify({
             'success': True,
@@ -19609,7 +19663,7 @@ def send_seller_rider_message():
 @app.route('/api/seller/rider-messages/mark-read', methods=['POST'])
 def mark_seller_rider_messages_read():
     """Mark seller-rider messages as read for a specific order for seller"""
-    print("🔔 Mark seller-rider messages as read endpoint called")
+    print("?? Mark seller-rider messages as read endpoint called")
 
     if 'email' not in session:
         return jsonify({'success': False, 'error': 'Please login first'}), 401
@@ -19622,7 +19676,7 @@ def mark_seller_rider_messages_read():
     try:
         res = sb_admin.table('seller_rider_messages').update({'is_read': True}).eq('order_id', order_id).eq('receiver_email', seller_email).eq('is_read', False).execute()
         affected = len(res.data or [])
-        print(f"✅ Marked {affected} seller-rider messages as read for order {order_id}")
+        print(f"? Marked {affected} seller-rider messages as read for order {order_id}")
         return jsonify({'success': True, 'affected_rows': affected})
     except Exception as e:
         print(f"Error marking seller-rider messages as read: {e}")
@@ -19790,7 +19844,7 @@ def debug_session():
         </style>
     </head>
     <body>
-        <h1>🔍 Session Debug Info</h1>
+        <h1>?? Session Debug Info</h1>
         <div class="info">
             <h2>Current Session Data:</h2>
             <p><strong>Email:</strong> {session_data['email']}</p>
@@ -19859,7 +19913,7 @@ def debug_conversations():
             </style>
         </head>
         <body>
-            <h1>🔍 Debug Conversations & Messages</h1>
+            <h1>?? Debug Conversations & Messages</h1>
             
             <h2>Conversations Table</h2>
             <table>
@@ -20005,24 +20059,24 @@ def test_messaging_setup():
         </head>
         <body>
             <div class="container">
-                <h2>📬 Messaging System Status</h2>
+                <h2>?? Messaging System Status</h2>
                 
                 <div class="status">
                     <p><strong>buyer_seller_messages table:</strong> 
                         <span class="{'success' if messages_table else 'error'}">
-                            {'✅ EXISTS' if messages_table else '❌ NOT FOUND'}
+                            {'? EXISTS' if messages_table else '? NOT FOUND'}
                         </span>
                     </p>
                     <p><strong>conversations table:</strong> 
                         <span class="{'success' if conversations_table else 'error'}">
-                            {'✅ EXISTS' if conversations_table else '❌ NOT FOUND'}
+                            {'? EXISTS' if conversations_table else '? NOT FOUND'}
                         </span>
                     </p>
                     <p><strong>Total messages:</strong> {message_count}</p>
                     <p><strong>Total conversations:</strong> {conversation_count}</p>
                 </div>
                 
-                <h3>📋 Instructions:</h3>
+                <h3>?? Instructions:</h3>
                 <ol>
                     <li>If tables don't exist, run: <code>python create_messaging_tables.py</code></li>
                     <li>Make sure you're logged in as a <strong>buyer</strong> to send messages</li>
@@ -20030,7 +20084,7 @@ def test_messaging_setup():
                     <li>Go to a product page and click "Contact Seller" to test</li>
                 </ol>
                 
-                <h3>🔗 Quick Links:</h3>
+                <h3>?? Quick Links:</h3>
                 <ul>
                     <li><a href="/">Homepage</a></li>
                     <li><a href="/login">Login</a></li>
@@ -20078,7 +20132,7 @@ def test_messaging_setup():
         </head>
         <body>
             <div class="container">
-                <h2>❌ Error checking messaging setup</h2>
+                <h2>? Error checking messaging setup</h2>
                 <pre>{error_details}</pre>
                 <p><a href="/">Back to Homepage</a></p>
             </div>
@@ -20086,7 +20140,7 @@ def test_messaging_setup():
         </html>
         """
 
-# ── Admin: Migrate local product images to Supabase Storage ──────────────────
+# -- Admin: Migrate local product images to Supabase Storage ------------------
 @app.route('/admin/migrate-product-images', methods=['GET', 'POST'])
 def migrate_product_images():
     """
@@ -20116,12 +20170,12 @@ def migrate_product_images():
             changed = False
 
             for part in parts:
-                # Already a full URL — skip
+                # Already a full URL � skip
                 if part.startswith('http://') or part.startswith('https://'):
                     new_parts.append(part)
                     continue
 
-                # Plain filename — upload to Supabase Storage
+                # Plain filename � upload to Supabase Storage
                 local_path = os.path.join(app.config['UPLOAD_FOLDER'], part)
                 if not os.path.exists(local_path):
                     results['errors'].append(f"Product {product['id']}: file not found: {part}")
@@ -20130,7 +20184,7 @@ def migrate_product_images():
 
                 if request.method == 'GET':
                     # Preview only
-                    results['migrated'].append(f"Product {product['id']}: {part} → would upload")
+                    results['migrated'].append(f"Product {product['id']}: {part} ? would upload")
                     new_parts.append(part)
                     continue
 
@@ -20149,9 +20203,9 @@ def migrate_product_images():
                     public_url = f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/{storage_path}"
                     new_parts.append(public_url)
                     changed = True
-                    results['migrated'].append(f"Product {product['id']}: {part} → {public_url}")
+                    results['migrated'].append(f"Product {product['id']}: {part} ? {public_url}")
                 except Exception as upload_err:
-                    results['errors'].append(f"Product {product['id']}: {part} → {upload_err}")
+                    results['errors'].append(f"Product {product['id']}: {part} ? {upload_err}")
                     new_parts.append(part)
 
             # Update the image column if any part changed
@@ -20173,19 +20227,55 @@ def migrate_product_images():
     })
 
 if __name__ == '__main__':
-    # Auth is now handled by Supabase — MySQL is optional for products/orders/etc.
+    # Auth is now handled by Supabase � MySQL is optional for products/orders/etc.
     # Try to init MySQL tables but don't block startup if MySQL is unavailable.
     try:
         if check_database_connection():
             initialize_database_tables()
             add_cancellation_columns()
-            print("✅ MySQL connected and tables initialized")
+            print("? MySQL connected and tables initialized")
         else:
-            print("⚠️  MySQL unavailable — running in Supabase-only mode (auth/users via Supabase)")
+            print("??  MySQL unavailable � running in Supabase-only mode (auth/users via Supabase)")
     except Exception as _e:
-        print(f"⚠️  MySQL init skipped: {_e}")
+        print(f"??  MySQL init skipped: {_e}")
 
-    # ── Ensure Supabase Storage bucket for product images exists ─────────────
+    # -- Sync MySQL wishlist ? Supabase on startup -----------------------------
+    def _sync_wishlist_to_supabase():
+        """One-time sync: copy all MySQL wishlist rows into Supabase wishlist table."""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT user_id, product_id FROM wishlist")
+            rows = cursor.fetchall()
+            cursor.close(); conn.close()
+            if not rows:
+                print("? Wishlist sync: MySQL wishlist is empty, nothing to sync")
+                return
+            # Get existing Supabase wishlist rows to avoid duplicates
+            existing_res = sb_admin.table('wishlist').select('user_id, product_id').execute()
+            existing_set = {(r['user_id'], r['product_id']) for r in (existing_res.data or [])}
+            new_records = [
+                {'user_id': r['user_id'], 'product_id': r['product_id']}
+                for r in rows
+                if (r['user_id'], r['product_id']) not in existing_set
+            ]
+            if not new_records:
+                print(f"? Wishlist sync: all {len(rows)} rows already in Supabase")
+                return
+            # Insert in batches of 100
+            for i in range(0, len(new_records), 100):
+                batch = new_records[i:i+100]
+                sb_admin.table('wishlist').insert(batch).execute()
+            print(f"? Wishlist sync: {len(new_records)} new rows synced MySQL ? Supabase")
+        except Exception as _sync_err:
+            print(f"??  Wishlist sync skipped: {_sync_err}")
+    try:
+        _sync_wishlist_to_supabase()
+    except Exception:
+        pass
+    # -------------------------------------------------------------------------
+
+    # -- Ensure Supabase Storage bucket for product images exists -------------
     try:
         buckets = [b.name for b in sb_admin.storage.list_buckets()]
         if 'product-images' not in buckets:
@@ -20193,12 +20283,12 @@ if __name__ == '__main__':
                 'product-images',
                 options={'public': True}
             )
-            print("✅ Created Supabase Storage bucket: product-images (public)")
+            print("? Created Supabase Storage bucket: product-images (public)")
         else:
-            print("✅ Supabase Storage bucket 'product-images' already exists")
+            print("? Supabase Storage bucket 'product-images' already exists")
     except Exception as _bucket_err:
-        print(f"⚠️  Could not verify/create product-images bucket: {_bucket_err}")
-    # ─────────────────────────────────────────────────────────────────────────
+        print(f"??  Could not verify/create product-images bucket: {_bucket_err}")
+    # -------------------------------------------------------------------------
 
     app.run(
         host="0.0.0.0",

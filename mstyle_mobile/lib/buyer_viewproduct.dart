@@ -181,17 +181,18 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
       } catch (_) { /* fall back to product.quantity */ }
 
       // Fetch seller info via admin REST call (bypasses RLS)
-      final sellerEmail = data['seller_email'] as String? ?? '';
+      final sellerEmail = (data['seller_email'] as String? ?? '').trim();
       String sellerDisplayName = sellerEmail;
       String? sellerPicture;
       if (sellerEmail.isNotEmpty) {
         try {
           final rows = await supabaseAdminSelect(
             table: 'users',
-            select: 'business_name,first_name,last_name,profile_picture',
+            select: 'business_name,first_name,last_name',
             filters: {'email': sellerEmail},
             limit: 1,
           );
+          debugPrint('seller rows for $sellerEmail: ${rows.length}');
           if (rows.isNotEmpty) {
             final u = rows[0];
             final biz   = (u['business_name'] as String? ?? '').trim();
@@ -202,8 +203,8 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
                 : '$first $last'.trim().isNotEmpty
                     ? '$first $last'.trim()
                     : sellerEmail;
-            final pic = (u['profile_picture'] as String? ?? '').trim();
-            sellerPicture = pic.isNotEmpty ? pic : null;
+            debugPrint('seller display name: $sellerDisplayName');
+            sellerPicture = null;
           }
         } catch (e) {
           debugPrint('seller info error: $e');
@@ -255,12 +256,24 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
       final pid = int.tryParse(_product!.id) ?? 0;
       if (_inWishlist) {
         await BuyerService.removeFromWishlist(widget.userEmail, pid);
+        if (mounted) setState(() => _inWishlist = false);
       } else {
         await BuyerService.addToWishlist(widget.userEmail, pid);
+        if (mounted) setState(() => _inWishlist = true);
       }
-      setState(() => _inWishlist = !_inWishlist);
     } catch (e) {
       debugPrint('toggleWishlist error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Wishlist error: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+      // Re-verify actual state from server on error
+      await _checkWishlist();
     } finally {
       if (mounted) setState(() => _loadingWishlist = false);
     }
@@ -366,28 +379,31 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
               child: SizedBox(width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))
           : IconButton(
-              icon: Icon(_inWishlist ? Icons.favorite : Icons.favorite_border,
-                color: _inWishlist ? Colors.red.shade400 : Colors.white, size: 22),
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                child: Icon(
+                  _inWishlist ? Icons.favorite : Icons.favorite_border,
+                  key: ValueKey(_inWishlist),
+                  color: _inWishlist ? Colors.red.shade400 : Colors.white,
+                  size: 24,
+                ),
+              ),
               onPressed: () async {
+                if (widget.userEmail.isEmpty) {
+                  _snack('Please log in to add to wishlist');
+                  return;
+                }
+                final wasInWishlist = _inWishlist;
                 await _toggleWishlist();
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(_inWishlist ? 'Added to wishlist' : 'Removed from wishlist'),
-                  backgroundColor: _primary, behavior: SnackBarBehavior.floating,
+                  content: Text(wasInWishlist ? 'Removed from wishlist' : 'Added to wishlist'),
+                  backgroundColor: wasInWishlist ? Colors.red.shade600 : _primary,
+                  behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ));
               },
             ),
-      IconButton(
-        icon: const Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 22),
-        onPressed: () {
-          if (widget.userEmail.isEmpty) {
-            _snack('Please log in to view your cart');
-            return;
-          }
-          Navigator.push(context,
-            MaterialPageRoute(builder: (_) => BuyerCartPage(userEmail: widget.userEmail)));
-        },
-      ),
     ],
   );
 
@@ -801,7 +817,7 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
           maxLines: 1, overflow: TextOverflow.ellipsis),
         const Text('Official Store', style: TextStyle(color: _textLight, fontSize: 11)),
       ])),
-      _outlineBtn(Icons.store_outlined, 'Shop', () {
+      _outlineBtn(Icons.store_outlined, 'View Shop', () {
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => BuyerViewShopPage(
             userEmail: widget.userEmail,

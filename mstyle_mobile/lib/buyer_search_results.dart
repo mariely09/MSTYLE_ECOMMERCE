@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'buyer_header.dart';
 import 'buyer_bottom_navbar.dart';
-import 'buyer_viewproduct.dart';
+import 'product_card.dart';
 import 'supabase_client.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
@@ -45,13 +44,7 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
   List<Map<String, dynamic>> _results = [];
   String _lastQuery = '';
 
-  // Filters
   String _sortBy = 'newest';
-  String _category = 'all';
-
-  static const _categories = [
-    'all', 'Activewear', 'Casual', 'Suits', 'Outerwear', 'Shoes', 'Grooming',
-  ];
 
   @override
   void initState() {
@@ -77,20 +70,14 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
     }
     setState(() { _loading = true; _lastQuery = q; });
     try {
-      var dbQuery = supabase
+      final data = await supabase
           .from('products')
           .select('id, name, price, image, category, seller_email, quantity, sold, rating, variations, sizes')
-          .or('quantity.gt.0,sold.gt.0') // only show products with stock set
-          .ilike('name', '%$q%');
+          .or('quantity.gt.0,sold.gt.0')
+          .ilike('name', '%$q%')
+          .order('id', ascending: false);
 
-      if (_category != 'all') {
-        dbQuery = dbQuery.eq('category', _category);
-      }
-
-      final data = await dbQuery.order('id', ascending: false);
       var list = List<Map<String, dynamic>>.from(data as List);
-
-      // Client-side filter: exclude flagged and inactive
       list = list.where((p) {
         if (p['is_active'] == false) return false;
         final flaggedAt = p['flagged_at'];
@@ -98,7 +85,6 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
         return true;
       }).toList();
 
-      // Client-side sort
       if (_sortBy == 'price_low')  list.sort((a, b) => ((a['price'] as num?) ?? 0).compareTo((b['price'] as num?) ?? 0));
       if (_sortBy == 'price_high') list.sort((a, b) => ((b['price'] as num?) ?? 0).compareTo((a['price'] as num?) ?? 0));
       if (_sortBy == 'rating')     list.sort((a, b) => ((b['rating'] as num?) ?? 0).compareTo((a['rating'] as num?) ?? 0));
@@ -111,21 +97,37 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
 
   void _onSubmit(String value) => _search(value);
 
-  void _onFilterChanged() => _search(_searchCtrl.text);
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      bottomNavigationBar: BuyerBottomNavBar(
-        userEmail: widget.userEmail,
-        currentPage: BuyerPage.search,
-        onSearch: () => _focusNode.requestFocus(),
-      ),
+      bottomNavigationBar: widget.userEmail.isNotEmpty
+          ? BuyerBottomNavBar(
+              userEmail: widget.userEmail,
+              currentPage: BuyerPage.search,
+              onSearch: () => _focusNode.requestFocus(),
+            )
+          : null,
       body: CustomScrollView(slivers: [
-        BuyerAppBar(userEmail: widget.userEmail),
-        SliverToBoxAdapter(child: _searchBar()),
-        SliverToBoxAdapter(child: _filterRow()),
+        SliverAppBar(
+          pinned: true,
+          backgroundColor: _primary,
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          flexibleSpace: FlexibleSpaceBar(
+            background: Container(
+              color: _primary,
+              padding: const EdgeInsets.fromLTRB(48, 0, 12, 8),
+              alignment: Alignment.bottomCenter,
+              child: _searchBar(),
+            ),
+          ),
+          expandedHeight: 72,
+          collapsedHeight: 72,
+        ),
         if (_loading)
           const SliverFillRemaining(
             child: Center(child: CircularProgressIndicator(color: _gold)))
@@ -139,14 +141,17 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
             sliver: SliverGrid(
               delegate: SliverChildBuilderDelegate(
-                (_, i) => _productCard(_results[i]),
+                (_, i) => ProductCard(
+                  product: _results[i],
+                  userEmail: widget.userEmail,
+                ),
                 childCount: _results.length,
               ),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
-                childAspectRatio: 0.72,
+                childAspectRatio: 0.68,
               ),
             ),
           ),
@@ -193,58 +198,6 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
     ),
   );
 
-  Widget _filterRow() => Container(
-    color: Colors.white,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-    child: Row(children: [
-      // Category filter
-      Expanded(child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: _categories.map((c) {
-          final active = _category == c;
-          return GestureDetector(
-            onTap: () { setState(() => _category = c); _onFilterChanged(); },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: active ? _goldGrad : null,
-                color: active ? null : _bg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: active ? _gold : _border),
-              ),
-              child: Text(
-                c == 'all' ? 'All' : c,
-                style: TextStyle(
-                  color: active ? _primary : _textLight,
-                  fontSize: 11,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ),
-          );
-        }).toList()),
-      )),
-      const SizedBox(width: 8),
-      // Sort dropdown
-      DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _sortBy,
-          icon: const Icon(Icons.sort, color: _textLight, size: 16),
-          style: const TextStyle(color: _accent, fontSize: 11, fontWeight: FontWeight.w600),
-          items: const [
-            DropdownMenuItem(value: 'newest',     child: Text('Newest')),
-            DropdownMenuItem(value: 'price_low',  child: Text('Price ↑')),
-            DropdownMenuItem(value: 'price_high', child: Text('Price ↓')),
-            DropdownMenuItem(value: 'rating',     child: Text('Top Rated')),
-          ],
-          onChanged: (v) { setState(() => _sortBy = v ?? 'newest'); _onFilterChanged(); },
-        ),
-      ),
-    ]),
-  );
-
   Widget _resultCount() => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
     child: Text(
@@ -252,60 +205,6 @@ class _BuyerSearchResultsPageState extends State<BuyerSearchResultsPage> {
       style: const TextStyle(color: _textLight, fontSize: 12, fontWeight: FontWeight.w500),
     ),
   );
-
-  Widget _productCard(Map<String, dynamic> p) {
-    final price  = (p['price'] as num?)?.toDouble() ?? 0;
-    final name   = p['name'] as String? ?? '';
-    final rating = (p['rating'] as num?)?.toDouble() ?? 0;
-    final id     = p['id'] as int? ?? 0;
-
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => BuyerViewProductPage(userEmail: widget.userEmail, productId: id))),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 12, offset: const Offset(0, 4))],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Image placeholder
-          Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
-                  colors: [Color(0xFFECEFF1), Color(0xFFE9ECEF)],
-                ),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: const Center(
-                child: Icon(Icons.image_outlined, size: 40, color: Color(0xFFADB5BD))),
-            ),
-          ),
-          // Info
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name,
-                style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 12),
-                maxLines: 2, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 4),
-              Row(children: [
-                const Icon(Icons.star_rounded, color: _gold, size: 12),
-                const SizedBox(width: 3),
-                Text(rating.toStringAsFixed(1),
-                  style: const TextStyle(color: _textLight, fontSize: 10)),
-              ]),
-              const SizedBox(height: 4),
-              Text('₱${price.toStringAsFixed(2)}',
-                style: const TextStyle(color: _accent, fontWeight: FontWeight.w800, fontSize: 14)),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
 
   Widget _emptyPrompt() => Center(
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

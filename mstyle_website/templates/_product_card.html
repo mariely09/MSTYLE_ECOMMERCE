@@ -1,0 +1,116 @@
+{# ── Reusable product card partial — matches mobile ProductCard style ──────
+   Variables expected in caller scope:
+     product            — product dict
+     promotional_products — list (optional, pass [] if none)
+#}
+{% set promo = namespace(has=false, type='', discount=0, code='', final_price=product.price|float) %}
+{% if promotional_products %}
+{% for pp in promotional_products %}
+{% if pp.id == product.id %}
+{% set promo.has = true %}
+{% set promo.type = pp.promotion_type %}
+{% set promo.discount = pp.promotion_discount|float %}
+{% set promo.code = pp.promotion_code %}
+{% if promo.type == 'percentage' and promo.discount > 0 %}
+{% set promo.final_price = [product.price|float * (1 - promo.discount / 100), 0.01]|max %}
+{% elif promo.type == 'fixed' and promo.discount > 0 %}
+{% set promo.final_price = [product.price|float - promo.discount, 0.01]|max %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set oos = (product.quantity|int) <= 0 and (product.sold or 0)|int > 0 %}
+
+<div class="pc-card {% if oos %}pc-out-of-stock{% endif %}"
+     data-category="{{ product.category|upper if product.category else '' }}"
+     data-price="{{ promo.final_price }}"
+     data-name="{{ product.name|lower }}"
+     data-id="{{ product.id }}">
+
+    <div class="pc-image-wrap">
+        {% set images = product.image.split(',') if product.image else [] %}
+        {% if images|length > 1 %}
+        <div class="product-image-slider" data-product-id="{{ product.id }}" data-image-count="{{ images|length }}">
+            {% for image in images %}
+            <img src="{{ image.strip()|product_img }}" alt="{{ product.name }}"
+                 class="product-image {% if loop.first %}active{% endif %}"
+                 data-image-index="{{ loop.index0 }}" loading="lazy">
+            {% endfor %}
+            <div class="image-indicators">
+                {% for image in images %}
+                <span class="indicator {% if loop.first %}active{% endif %}"
+                      onclick="showImage(this, {{ loop.index0 }})"
+                      data-image-index="{{ loop.index0 }}"></span>
+                {% endfor %}
+            </div>
+        </div>
+        {# Nav buttons outside slider — direct children of pc-image-wrap #}
+            <button class="pc-nav pc-prev" onclick="event.stopPropagation(); previousImage(this);" type="button"><i class="fas fa-chevron-left"></i></button>
+            <button class="pc-nav pc-next" onclick="event.stopPropagation(); nextImage(this);" type="button"><i class="fas fa-chevron-right"></i></button>
+        {% elif images and images[0].strip() %}
+        <img src="{{ images[0].strip()|product_img }}" alt="{{ product.name }}" class="product-image active">
+        {% else %}
+        <div class="pc-no-image"><i class="fas fa-image"></i></div>
+        {% endif %}
+
+        {% if oos %}
+        <div class="pc-oos-overlay"><span><i class="fas fa-times-circle"></i> OUT OF STOCK</span></div>
+        {% endif %}
+
+        {% if promo.has and not oos %}
+        <div class="pc-promo-badge">
+            {% if promo.type == 'percentage' %}{{ promo.discount|int }}% OFF
+            {% elif promo.type == 'fixed' %}₱{{ promo.discount|int }} OFF
+            {% elif promo.type == 'buy_one_get_one' %}BOGO
+            {% elif promo.type == 'free_shipping' %}FREE SHIP
+            {% else %}SALE{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="pc-overlay-btns">
+            <a href="{{ url_for('view_product', product_id=product.id) }}" class="pc-btn pc-btn-view" title="View">
+                <i class="fas fa-eye"></i>
+            </a>
+            {% if not oos %}
+            <button class="pc-btn pc-btn-wish {% if wishlist_product_ids is defined and product.id|string in wishlist_product_ids %}active{% endif %}"
+                    onclick="addToWishlist('{{ product.id }}', '{{ product.name }}', '{{ promo.final_price }}', this)"
+                    title="{% if wishlist_product_ids is defined and product.id|string in wishlist_product_ids %}Remove from Wishlist{% else %}Add to Wishlist{% endif %}">
+                <i class="fas fa-heart"></i>
+            </button>
+            <button class="pc-btn pc-btn-cart"
+                    onclick="openColorSizeModal('{{ product.id }}', '{{ product.name }}', '{{ promo.final_price }}', '{{ product.image if product.image else '' }}', '{{ product.variations or '' }}', '{{ product.sizes or '' }}')"
+                    title="Add to Cart">
+                <i class="fas fa-shopping-cart"></i>
+            </button>
+            {% else %}
+            <button class="pc-btn pc-btn-wish" disabled><i class="fas fa-heart"></i></button>
+            <button class="pc-btn pc-btn-cart" disabled><i class="fas fa-shopping-cart"></i></button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="pc-info">
+        <p class="pc-name">{{ product.name }}</p>
+        <div class="pc-meta">
+            <div class="pc-stars">
+                {% set r = product.rating or 0 %}
+                {% for i in range(1, 6) %}
+                {% if i <= r %}<i class="fas fa-star"></i>
+                {% elif i - 0.5 <= r %}<i class="fas fa-star-half-alt"></i>
+                {% else %}<i class="far fa-star"></i>{% endif %}
+                {% endfor %}
+                <span class="pc-rating-val">({{ "%.1f"|format(r) }})</span>
+            </div>
+            <span class="pc-sold">{{ product.sold or 0 }} sold</span>
+        </div>
+        <div class="pc-price-wrap">
+            {% if promo.has and promo.type in ('percentage', 'fixed') and promo.discount > 0 %}
+            <span class="pc-original">₱{{ "%.2f"|format(product.price|float) }}</span>
+            <span class="pc-sale">₱{{ "%.2f"|format(promo.final_price) }}</span>
+            {% else %}
+            <span class="pc-price">₱{{ "%.2f"|format(product.price|float) }}</span>
+            {% endif %}
+        </div>
+    </div>
+</div>

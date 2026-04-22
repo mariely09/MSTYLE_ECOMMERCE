@@ -810,10 +810,25 @@ class _SpecEditSheetState extends State<_SpecEditSheet> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await widget.onSaved(
-        widget.type == 'color' ? _selectedColor : null,
-        widget.type == 'size' ? _selectedSize : null,
-      );
+      final newColor = widget.type == 'color' ? _selectedColor : null;
+      final newSize  = widget.type == 'size'  ? _selectedSize  : null;
+
+      // If color changed, also update the cart image to the color-matched image
+      if (newColor != null && newColor.isNotEmpty) {
+        final imgUrl = _resolveColorImage(newColor);
+        await BuyerService.updateCartSpec(
+          widget.itemId,
+          color: newColor,
+          image: imgUrl,
+        );
+      } else {
+        await BuyerService.updateCartSpec(
+          widget.itemId,
+          size: newSize,
+        );
+      }
+
+      await widget.onSaved(newColor, newSize);
       if (mounted) Navigator.pop(context);
     } catch (_) {
       if (mounted) {

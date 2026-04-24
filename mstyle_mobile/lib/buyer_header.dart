@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'buyer_notifications.dart';
 import 'buyer_cart.dart';
 import 'profile.dart';
+import 'supabase_client.dart';
 
 // ─── Theme constants ──────────────────────────────────────────────────────────
 const Color _primary   = Color(0xFF1a1a1a);
@@ -15,22 +16,57 @@ const _goldGrad = LinearGradient(
 
 // ─── BuyerAppBar ──────────────────────────────────────────────────────────────
 /// Shared pinned SliverAppBar for all main buyer pages.
-/// Shows the MStyle logo + "Style" title, with notification badge,
-/// cart badge, and profile icon in the actions.
-///
-/// Usage inside a CustomScrollView:
-///   BuyerAppBar(userEmail: widget.userEmail, cartCount: _cartCount, notifCount: _notifCount)
-class BuyerAppBar extends StatelessWidget {
+/// Fetches cart count (distinct items) and unread notification count
+/// directly from Supabase so every page always shows live badges.
+class BuyerAppBar extends StatefulWidget {
   final String userEmail;
-  final int cartCount;
-  final int notifCount;
 
   const BuyerAppBar({
     super.key,
     required this.userEmail,
-    this.cartCount = 0,
-    this.notifCount = 0,
   });
+
+  @override
+  State<BuyerAppBar> createState() => _BuyerAppBarState();
+}
+
+class _BuyerAppBarState extends State<BuyerAppBar> {
+  int _cartCount  = 0;
+  int _notifCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCounts();
+  }
+
+  Future<void> _fetchCounts() async {
+    try {
+      // Cart: count distinct rows (not sum of quantity)
+      final cartRes = await supabase
+          .from('cart')
+          .select('id')
+          .eq('email', widget.userEmail);
+      final cartCount = (cartRes as List).length;
+
+      // Notifications: count unread rows
+      final notifRes = await supabase
+          .from('buyer_notifications')
+          .select('id')
+          .eq('buyer_email', widget.userEmail)
+          .eq('is_read', false);
+      final notifCount = (notifRes as List).length;
+
+      if (mounted) {
+        setState(() {
+          _cartCount  = cartCount;
+          _notifCount = notifCount;
+        });
+      }
+    } catch (e) {
+      debugPrint('BuyerAppBar _fetchCounts error: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,24 +109,28 @@ class BuyerAppBar extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.notifications_outlined,
                 color: Colors.white, size: 22),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    BuyerNotificationsPage(userEmail: userEmail),
-              ),
-            ),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      BuyerNotificationsPage(userEmail: widget.userEmail),
+                ),
+              );
+              _fetchCounts(); // refresh after returning
+            },
           ),
-          if (notifCount > 0)
+          if (_notifCount > 0)
             Positioned(
               top: 6, right: 6,
               child: Container(
-                width: 16, height: 16,
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 3),
                 decoration: const BoxDecoration(
                     color: Colors.red, shape: BoxShape.circle),
                 child: Center(
                   child: Text(
-                    '$notifCount',
+                    _notifCount > 99 ? '99+' : '$_notifCount',
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 9,
@@ -105,23 +145,27 @@ class BuyerAppBar extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.shopping_cart_outlined,
                 color: Colors.white, size: 22),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BuyerCartPage(userEmail: userEmail),
-              ),
-            ),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BuyerCartPage(userEmail: widget.userEmail),
+                ),
+              );
+              _fetchCounts(); // refresh after returning
+            },
           ),
-          if (cartCount > 0)
+          if (_cartCount > 0)
             Positioned(
               top: 6, right: 6,
               child: Container(
-                width: 16, height: 16,
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 3),
                 decoration: const BoxDecoration(
                     color: Colors.red, shape: BoxShape.circle),
                 child: Center(
                   child: Text(
-                    '$cartCount',
+                    _cartCount > 99 ? '99+' : '$_cartCount',
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 9,
@@ -138,7 +182,7 @@ class BuyerAppBar extends StatelessWidget {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ProfilePage(userEmail: userEmail),
+              builder: (_) => ProfilePage(userEmail: widget.userEmail),
             ),
           ),
         ),

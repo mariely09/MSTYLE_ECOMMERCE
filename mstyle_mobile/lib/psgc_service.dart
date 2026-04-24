@@ -8,7 +8,7 @@ class PsgcService {
     final res = await http.get(Uri.parse('$_base/regions'));
     if (res.statusCode != 200) return [];
     final List data = jsonDecode(res.body);
-    data.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    data.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
     return data.map<String>((e) => e['name'] as String).toList();
   }
 
@@ -16,7 +16,7 @@ class PsgcService {
     final res = await http.get(Uri.parse('$_base/regions'));
     if (res.statusCode != 200) return [];
     final List data = jsonDecode(res.body);
-    data.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    data.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
     return data.map<Map<String, String>>((e) => {
       'code': e['code'].toString(),
       'name': e['name'] as String,
@@ -27,7 +27,7 @@ class PsgcService {
     final res = await http.get(Uri.parse('$_base/regions/$regionCode/provinces'));
     if (res.statusCode != 200) return [];
     final List data = jsonDecode(res.body);
-    data.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    data.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
     return data.map<Map<String, String>>((e) => {
       'code': e['code'].toString(),
       'name': e['name'] as String,
@@ -38,7 +38,7 @@ class PsgcService {
     final res = await http.get(Uri.parse('$_base/provinces/$provinceCode/cities-municipalities'));
     if (res.statusCode != 200) return [];
     final List data = jsonDecode(res.body);
-    data.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    data.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
     return data.map<Map<String, String>>((e) => {
       'code': e['code'].toString(),
       'name': e['name'] as String,
@@ -49,7 +49,7 @@ class PsgcService {
     final res = await http.get(Uri.parse('$_base/cities-municipalities/$cityCode/barangays'));
     if (res.statusCode != 200) return [];
     final List data = jsonDecode(res.body);
-    data.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    data.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
     return data.map<String>((e) => e['name'] as String).toList();
   }
 }

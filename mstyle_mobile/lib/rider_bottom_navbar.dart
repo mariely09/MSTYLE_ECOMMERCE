@@ -3,7 +3,7 @@ import 'rider_dashboard.dart';
 import 'rider_active_deliveries.dart';
 import 'rider_history_deliveries.dart';
 import 'rider_earnings.dart';
-import 'buyer_messages.dart';
+import 'rider_messages.dart';
 
 // ─── Theme constants (shared) ─────────────────────────────────────────────────
 const Color _primary = Color(0xFF1a1a1a);
@@ -126,7 +126,6 @@ class RiderBottomNavBar extends StatelessWidget {
   }
 
   void _navigateTo(BuildContext context, RiderPage page) {
-    // Don't navigate if already on the current page
     if (page == currentPage) return;
 
     Widget destination;
@@ -144,11 +143,11 @@ class RiderBottomNavBar extends StatelessWidget {
         destination = RiderEarningsPage(riderEmail: riderEmail);
         break;
       case RiderPage.messages:
-        destination = BuyerMessagesPage(userEmail: riderEmail);
+        destination = RiderMessagesPage(riderEmail: riderEmail);
         break;
     }
 
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => destination),
     );

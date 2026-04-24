@@ -1,14 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'home_page.dart';
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'rider_active_deliveries.dart';
-import 'rider_history_deliveries.dart';
-import 'rider_earnings.dart';
 import 'rider_header.dart';
 import 'rider_bottom_navbar.dart';
 import 'supabase_client.dart';
-import 'product_image_carousel.dart' show kFlaskBaseUrl;
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -37,50 +33,73 @@ class RiderDashboardPage extends StatefulWidget {
 class _RiderDashboardPageState extends State<RiderDashboardPage> {
   int    _availableCount = 0;
   int    _activeCount    = 0;
-  double _totalEarnings  = 0;
   bool   _loadingStats   = true;
   List<Map<String, dynamic>> _availableOrders = [];
   bool   _loadingAvailable = true;
+
+  RealtimeChannel? _ordersChannel;
 
   @override
   void initState() {
     super.initState();
     _fetchStats();
     _fetchAvailableOrders();
+    _subscribeRealtime();
+  }
+
+  @override
+  void dispose() {
+    _ordersChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  void _subscribeRealtime() {
+    _ordersChannel = supabase
+        .channel('rider_dashboard_orders')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'orders',
+          callback: (_) {
+            _fetchStats();
+            _fetchAvailableOrders();
+          },
+        )
+        .subscribe();
   }
 
   Future<void> _fetchStats() async {
     try {
-      final available = await supabase
-          .from('orders')
-          .select('id')
-          .inFilter('status', ['Waiting for Pickup'])
-          .isFilter('rider_email', null);
+      // Available: bypass RLS with admin
+      final available = await supabaseAdminSelect(
+        table: 'orders',
+        select: 'id, rider_email',
+        filters: {'status': 'Waiting for Pickup'},
+      );
+      final availableUnassigned = available.where((o) => o['rider_email'] == null).toList();
+      debugPrint('📦 available total: ${available.length}, unassigned: ${availableUnassigned.length}');
 
-      final active = await supabase
-          .from('orders')
-          .select('id')
-          .eq('rider_email', widget.riderEmail)
-          .inFilter('status', ['Heading to Seller', 'Shipped', 'Out for Delivery']);
-
-      final completed = await supabase
-          .from('orders')
-          .select('shipping_fee')
-          .eq('rider_email', widget.riderEmail)
-          .eq('status', 'Completed');
+      // Active: bypass RLS with admin, filter by rider_email then check statuses in Dart
+      final allRiderOrders = await supabaseAdminSelect(
+        table: 'orders',
+        select: 'id, status',
+        filters: {'rider_email': widget.riderEmail},
+        limit: 200,
+      );
+      const activeStatuses = ['For Pickup', 'Heading to Seller', 'In Transit', 'Out for Delivery'];
+      final activeOrders = allRiderOrders.where((o) => activeStatuses.contains(o['status'])).toList();
+      debugPrint('🚚 rider orders total: ${allRiderOrders.length}, active: ${activeOrders.length}');
+      debugPrint('🚚 statuses found: ${allRiderOrders.map((o) => o['status']).toSet()}');
 
       if (!mounted) return;
 
-      final earnings = (completed as List).fold(0.0,
-          (s, o) => s + ((o['shipping_fee'] as num?)?.toDouble() ?? 0));
-
       setState(() {
-        _availableCount = (available as List).length;
-        _activeCount    = (active as List).length;
-        _totalEarnings  = earnings;
+        _availableCount = availableUnassigned.length;
+        _activeCount    = activeOrders.length;
         _loadingStats   = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('_fetchStats error: $e');
       if (mounted) setState(() => _loadingStats = false);
     }
   }
@@ -88,18 +107,26 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
   Future<void> _fetchAvailableOrders() async {
     setState(() => _loadingAvailable = true);
     try {
-      final uri = Uri.parse('$kFlaskBaseUrl/api/mobile/available_deliveries');
-      final res = await http.get(uri).timeout(const Duration(seconds: 15));
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final data = await supabaseAdminSelect(
+        table: 'orders',
+        select: 'id, name, email, address, date, shipping_fee, product_id, rider_email, status',
+        filters: {'status': 'Waiting for Pickup'},
+        limit: 10,
+      );
+
+      // Filter out already-assigned orders
+      final unassigned = data.where((o) => o['rider_email'] == null).take(3).toList();
+
+      debugPrint('_fetchAvailableOrders: found ${data.length} total, ${unassigned.length} unassigned');
+
       if (mounted) {
         setState(() {
-          _availableOrders = body['success'] == true
-              ? (List<Map<String, dynamic>>.from(body['orders'] as List)).take(3).toList()
-              : [];
+          _availableOrders = unassigned;
           _loadingAvailable = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('_fetchAvailableOrders error: $e');
       if (mounted) setState(() => _loadingAvailable = false);
     }
   }
@@ -149,8 +176,6 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
           Expanded(child: _statCard('$_availableCount', 'Available\nDeliveries', Icons.list_alt_outlined, Colors.blue)),
           const SizedBox(width: 12),
           Expanded(child: _statCard('$_activeCount', 'Active\nDeliveries', Icons.local_shipping_outlined, Colors.orange)),
-          const SizedBox(width: 12),
-          Expanded(child: _statCard('₱${_totalEarnings.toStringAsFixed(0)}', 'Total\nEarnings', Icons.currency_exchange, Colors.green)),
         ]),
   );
 
@@ -333,15 +358,15 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
-                    gradient: _goldGrad,
+                    gradient: _premiumGrad,
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: _gold.withOpacity(0.35), blurRadius: 8, offset: const Offset(0, 3))],
+                    boxShadow: [BoxShadow(color: _primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))],
                   ),
                   child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.check_circle_outline, size: 16, color: _primary),
+                    Icon(Icons.check_circle_outline, size: 16, color: _gold),
                     SizedBox(width: 7),
                     Text('Accept Delivery',
-                      style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 13)),
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
                   ]),
                 ),
               ),
@@ -421,31 +446,23 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
     if (confirm != true) return;
 
     try {
-      final uri = Uri.parse('$kFlaskBaseUrl/api/mobile/accept_delivery');
-      final res = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'order_id': order['id'], 'rider_email': widget.riderEmail}),
-      ).timeout(const Duration(seconds: 15));
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      await supabase
+          .from('orders')
+          .update({
+            'rider_email': widget.riderEmail,
+            'status': 'Heading to Seller',
+          })
+          .eq('id', order['id']);
+
       if (!mounted) return;
-      if (body['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Order #${order['id']} accepted!'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ));
-        Navigator.pushReplacement(context, MaterialPageRoute(
-          builder: (_) => RiderActiveDeliveriesPage(riderEmail: widget.riderEmail)));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(body['error'] ?? 'Failed to accept delivery.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Order #${order['id']} accepted!'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      Navigator.pushReplacement(context, MaterialPageRoute(
+        builder: (_) => RiderActiveDeliveriesPage(riderEmail: widget.riderEmail)));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

@@ -907,177 +907,104 @@
 
 
 
-        // Address handling
+        // Address handling — use gitlab API (cleaner UTF-8 than psgc.cloud)
         const PHILIPPINES_API = 'https://psgc.gitlab.io/api';
-        const addressCache = {
-            regions: [],
-            provinces: {},
-            municipalities: {},
-            barangays: {}
-        };
+        const addressCache = { regions: [], provinces: {}, municipalities: {}, barangays: {} };
 
-        // Load all regions
-        async function loadRegions(userType = '') {
-            try {
-                const response = await fetch(`${PHILIPPINES_API}/regions`);
-                const regions = await response.json();
-                addressCache.regions = regions;
+        function sortByName(arr) { return arr.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })); }
 
-                const regionSelectId = userType ? `region_${userType}` : 'region';
-                const regionSelect = document.getElementById(regionSelectId);
-
-                if (!regionSelect) return;
-
-                regionSelect.innerHTML = '<option value="">Select Region</option>';
-
-                regions.forEach(region => {
-                    const option = document.createElement('option');
-                    option.value = region.name;
-                    option.setAttribute('data-code', region.code);
-                    option.textContent = region.name;
-                    regionSelect.appendChild(option);
-                });
-
-                // Enable region select
-                regionSelect.disabled = false;
-            } catch (error) {
-                console.error('Error loading regions:', error);
-            }
+        // Fetch JSON with explicit UTF-8 decoding to fix ñ/special chars
+        async function fetchJson(url) {
+            const res = await fetch(url);
+            const buf = await res.arrayBuffer();
+            const text = new TextDecoder('utf-8').decode(buf);
+            return JSON.parse(text);
         }
 
-        // Update provinces based on selected region
+        async function loadRegions(userType = '') {
+            try {
+                const regionSelectId = userType ? `region_${userType}` : 'region';
+                const regionSelect = document.getElementById(regionSelectId);
+                if (!regionSelect) return;
+                const data = addressCache.regions.length
+                    ? addressCache.regions
+                    : await fetchJson(`${PHILIPPINES_API}/regions`);
+                addressCache.regions = data;
+                const sorted = sortByName(data);
+                regionSelect.innerHTML = '<option value="">Select Region</option>';
+                sorted.forEach(r => {
+                    const o = document.createElement('option');
+                    o.value = r.name; o.setAttribute('data-code', r.code); o.textContent = r.name;
+                    regionSelect.appendChild(o);
+                });
+                regionSelect.disabled = false;
+            } catch (e) { console.error('Error loading regions:', e); }
+        }
+
         async function updateProvinces(userType = '') {
             const suffix = userType ? `_${userType}` : '';
             const regionSelect = document.getElementById(`region${suffix}`);
             const provinceSelect = document.getElementById(`province${suffix}`);
             const municipalitySelect = document.getElementById(`municipality${suffix}`);
             const barangaySelect = document.getElementById(`barangay${suffix}`);
-
-            const regionCode = regionSelect.selectedOptions[0]?.getAttribute('data-code') || regionSelect.value;
-
-            // Reset dependent selects
+            const code = regionSelect.selectedOptions[0]?.getAttribute('data-code');
             provinceSelect.innerHTML = '<option value="">Select Province</option>';
-            municipalitySelect.innerHTML = '<option value="">Select Municipality/City</option>';
+            municipalitySelect.innerHTML = '<option value="">Select City/Municipality</option>';
             barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
-
-            if (!regionCode) {
-                provinceSelect.disabled = true;
-                municipalitySelect.disabled = true;
-                barangaySelect.disabled = true;
-                return;
-            }
-
+            if (!code) { provinceSelect.disabled = municipalitySelect.disabled = barangaySelect.disabled = true; return; }
             try {
-                let provinces = [];
-
-                if (addressCache.provinces[regionCode]) {
-                    provinces = addressCache.provinces[regionCode];
-                } else {
-                    const response = await fetch(`${PHILIPPINES_API}/regions/${regionCode}/provinces`);
-                    provinces = await response.json();
-                    addressCache.provinces[regionCode] = provinces;
-                }
-
-                provinces.forEach(province => {
-                    const option = document.createElement('option');
-                    option.value = province.name;
-                    option.setAttribute('data-code', province.code);
-                    option.textContent = province.name;
-                    provinceSelect.appendChild(option);
+                const data = addressCache.provinces[code]
+                    || await fetchJson(`${PHILIPPINES_API}/regions/${code}/provinces`);
+                addressCache.provinces[code] = data;
+                sortByName(data).forEach(p => {
+                    const o = document.createElement('option');
+                    o.value = p.name; o.setAttribute('data-code', p.code); o.textContent = p.name;
+                    provinceSelect.appendChild(o);
                 });
-
-                provinceSelect.disabled = false;
-                municipalitySelect.disabled = true;
-                barangaySelect.disabled = true;
-            } catch (error) {
-                console.error('Error loading provinces:', error);
-            }
+                provinceSelect.disabled = false; municipalitySelect.disabled = barangaySelect.disabled = true;
+            } catch (e) { console.error('Error loading provinces:', e); }
         }
 
-        // Update municipalities based on selected province
         async function updateMunicipalities(userType = '') {
             const suffix = userType ? `_${userType}` : '';
             const provinceSelect = document.getElementById(`province${suffix}`);
             const municipalitySelect = document.getElementById(`municipality${suffix}`);
             const barangaySelect = document.getElementById(`barangay${suffix}`);
-
-            const provinceCode = provinceSelect.selectedOptions[0]?.getAttribute('data-code') || provinceSelect.value;
-
-            // Reset dependent selects
-            municipalitySelect.innerHTML = '<option value="">Select Municipality/City</option>';
+            const code = provinceSelect.selectedOptions[0]?.getAttribute('data-code');
+            municipalitySelect.innerHTML = '<option value="">Select City/Municipality</option>';
             barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
-
-            if (!provinceCode) {
-                municipalitySelect.disabled = true;
-                barangaySelect.disabled = true;
-                return;
-            }
-
+            if (!code) { municipalitySelect.disabled = barangaySelect.disabled = true; return; }
             try {
-                let municipalities = [];
-
-                if (addressCache.municipalities[provinceCode]) {
-                    municipalities = addressCache.municipalities[provinceCode];
-                } else {
-                    const response = await fetch(`${PHILIPPINES_API}/provinces/${provinceCode}/cities-municipalities`);
-                    municipalities = await response.json();
-                    addressCache.municipalities[provinceCode] = municipalities;
-                }
-
-                municipalities.forEach(municipality => {
-                    const option = document.createElement('option');
-                    option.value = municipality.name;
-                    option.setAttribute('data-code', municipality.code);
-                    option.textContent = municipality.name;
-                    municipalitySelect.appendChild(option);
+                const data = addressCache.municipalities[code]
+                    || await fetchJson(`${PHILIPPINES_API}/provinces/${code}/cities-municipalities`);
+                addressCache.municipalities[code] = data;
+                sortByName(data).forEach(m => {
+                    const o = document.createElement('option');
+                    o.value = m.name; o.setAttribute('data-code', m.code); o.textContent = m.name;
+                    municipalitySelect.appendChild(o);
                 });
-
-                municipalitySelect.disabled = false;
-                barangaySelect.disabled = true;
-            } catch (error) {
-                console.error('Error loading municipalities:', error);
-            }
+                municipalitySelect.disabled = false; barangaySelect.disabled = true;
+            } catch (e) { console.error('Error loading municipalities:', e); }
         }
 
-        // Update barangays based on selected municipality
         async function updateBarangays(userType = '') {
             const suffix = userType ? `_${userType}` : '';
             const municipalitySelect = document.getElementById(`municipality${suffix}`);
             const barangaySelect = document.getElementById(`barangay${suffix}`);
-
-            const municipalityCode = municipalitySelect.selectedOptions[0]?.getAttribute('data-code') || municipalitySelect.value;
-
-            // Reset barangay select
+            const code = municipalitySelect.selectedOptions[0]?.getAttribute('data-code');
             barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
-
-            if (!municipalityCode) {
-                barangaySelect.disabled = true;
-                return;
-            }
-
+            if (!code) { barangaySelect.disabled = true; return; }
             try {
-                let barangays = [];
-
-                if (addressCache.barangays[municipalityCode]) {
-                    barangays = addressCache.barangays[municipalityCode];
-                } else {
-                    const response = await fetch(`${PHILIPPINES_API}/cities-municipalities/${municipalityCode}/barangays`);
-                    barangays = await response.json();
-                    addressCache.barangays[municipalityCode] = barangays;
-                }
-
-                barangays.forEach(barangay => {
-                    const option = document.createElement('option');
-                    option.value = barangay.name;
-                    option.setAttribute('data-code', barangay.code);
-                    option.textContent = barangay.name;
-                    barangaySelect.appendChild(option);
+                const data = addressCache.barangays[code]
+                    || await fetchJson(`${PHILIPPINES_API}/cities-municipalities/${code}/barangays`);
+                addressCache.barangays[code] = data;
+                sortByName(data).forEach(b => {
+                    const o = document.createElement('option');
+                    o.value = b.name; o.setAttribute('data-code', b.code); o.textContent = b.name;
+                    barangaySelect.appendChild(o);
                 });
-
                 barangaySelect.disabled = false;
-            } catch (error) {
-                console.error('Error loading barangays:', error);
-            }
+            } catch (e) { console.error('Error loading barangays:', e); }
         }
 
         // Validation functions

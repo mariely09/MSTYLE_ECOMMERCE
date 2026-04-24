@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_client.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
@@ -26,10 +27,41 @@ class _RiderNotificationsPageState extends State<RiderNotificationsPage> {
   bool _loading = true;
   List<Map<String, dynamic>> _notifs = [];
 
+  RealtimeChannel? _notifsChannel;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _subscribeRealtime();
+  }
+
+  @override
+  void dispose() {
+    _notifsChannel?.unsubscribe();
+    super.dispose();
+  }
+
+  void _subscribeRealtime() {
+    _notifsChannel = supabase
+        .channel('rider_notifications_${widget.riderEmail}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'rider_notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'rider_email',
+            value: widget.riderEmail,
+          ),
+          callback: (payload) {
+            final newRow = payload.newRecord;
+            if (mounted && newRow.isNotEmpty) {
+              setState(() => _notifs.insert(0, Map<String, dynamic>.from(newRow)));
+            }
+          },
+        )
+        .subscribe();
   }
 
   Future<void> _load() async {

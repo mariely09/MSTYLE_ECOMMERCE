@@ -39,7 +39,33 @@ Future<List<Map<String, dynamic>>> supabaseAdminSelect({
   return [];
 }
 
-/// Admin upsert — inserts or updates a row, bypassing RLS.
+/// Admin select with IN filter — fetches rows where column is in a list of values, bypassing RLS.
+Future<List<Map<String, dynamic>>> supabaseAdminSelectIn({
+  required String table,
+  required String select,
+  required String column,
+  required List<String> values,
+}) async {
+  if (values.isEmpty) return [];
+  // Do NOT Uri-encode the values — PostgREST parses in.(a,b,c) as raw strings
+  final inList = values.join(',');
+  final baseUri = Uri.parse('$supabaseUrl/rest/v1/$table');
+  // Build query string manually so the in.(...) filter is not double-encoded
+  final queryString = 'select=${Uri.encodeComponent(select)}&$column=in.($inList)';
+  final uri = Uri.parse('${baseUri.toString()}?$queryString');
+  final resp = await http.get(uri, headers: {
+    'apikey':        supabaseServiceRole,
+    'Authorization': 'Bearer $supabaseServiceRole',
+    'Accept':        'application/json',
+  });
+  if (resp.statusCode != 200) {
+    throw Exception('supabaseAdminSelectIn $table: ${resp.statusCode} ${resp.body}');
+  }
+  final decoded = jsonDecode(resp.body);
+  return decoded is List ? List<Map<String, dynamic>>.from(decoded) : [];
+}
+
+
 Future<void> supabaseAdminUpsert({
   required String table,
   required Map<String, dynamic> data,

@@ -119,23 +119,32 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
       backgroundColor: _bg,
       body: _loading
         ? const Center(child: CircularProgressIndicator(color: _gold))
-        : CustomScrollView(
-            slivers: [
-              _appBar(),
-              if (_items.isEmpty)
-                SliverFillRemaining(child: _emptyCart())
-              else ...[
-                SliverToBoxAdapter(child: _controls()),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (_, i) => _cartItemTile(_items[i]),
-                    childCount: _items.length,
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-              ],
-              SliverToBoxAdapter(child: _orderSummary()),
-              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+        : Stack(
+            children: [
+              CustomScrollView(
+                slivers: [
+                  _appBar(),
+                  if (_items.isEmpty)
+                    SliverFillRemaining(child: _emptyCart())
+                  else ...[
+                    SliverToBoxAdapter(child: _controls()),
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) => _cartItemTile(_items[i]),
+                        childCount: _items.length,
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                  ],
+                  SliverToBoxAdapter(child: _orderSummary()),
+                  // padding so content isn't hidden behind the pinned button
+                  const SliverToBoxAdapter(child: SizedBox(height: 88)),
+                ],
+              ),
+              Positioned(
+                left: 0, right: 0, bottom: 0,
+                child: _checkoutButton(),
+              ),
             ],
           ),
     );
@@ -459,9 +468,33 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
       _summaryRow('Total Items:', '$_totalItems'),
       const Divider(height: 20),
       _summaryRow('Total Amount:', '₱${_totalAmount.toStringAsFixed(2)}', highlight: true),
-      const SizedBox(height: 20),
-      GestureDetector(
-        onTap: _selectedItems.isEmpty ? null : () {
+    ]),
+  );
+
+  Widget _summaryRow(String label, String value, {bool highlight = false}) => Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Text(label, style: const TextStyle(color: _textLight, fontSize: 14)),
+      Text(value, style: TextStyle(
+        color: highlight ? _accent : _accent,
+        fontWeight: highlight ? FontWeight.w800 : FontWeight.w600,
+        fontSize: highlight ? 17 : 14,
+      )),
+    ],
+  );
+
+  // ─── Checkout Button ──────────────────────────────────────────────────────
+  Widget _checkoutButton() {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final enabled = _selectedItems.isNotEmpty;
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomPad),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: _border)),
+      ),
+      child: GestureDetector(
+        onTap: enabled ? () {
           final checkoutItems = _selectedItems.map((item) => CheckoutItem(
             id:        '${item['id']}',
             name:      item['name'] as String? ?? '',
@@ -477,16 +510,17 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => BuyerCheckoutPage(userEmail: widget.userEmail, items: checkoutItems),
           ));
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+        } : null,
+        child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            gradient: _selectedItems.isEmpty ? null : _premiumGrad,
-            color: _selectedItems.isEmpty ? const Color(0xFFCED4DA) : null,
+            gradient: enabled ? _premiumGrad : null,
+            color: enabled ? null : const Color(0xFFCED4DA),
             borderRadius: BorderRadius.circular(14),
-            boxShadow: _selectedItems.isEmpty ? [] : [BoxShadow(color: _primary.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))],
+            boxShadow: enabled
+                ? [BoxShadow(color: _primary.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))]
+                : [],
           ),
           child: const Center(
             child: Text('Proceed to Checkout',
@@ -494,20 +528,8 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
           ),
         ),
       ),
-    ]),
-  );
-
-  Widget _summaryRow(String label, String value, {bool highlight = false}) => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      Text(label, style: const TextStyle(color: _textLight, fontSize: 14)),
-      Text(value, style: TextStyle(
-        color: highlight ? _accent : _accent,
-        fontWeight: highlight ? FontWeight.w800 : FontWeight.w600,
-        fontSize: highlight ? 17 : 14,
-      )),
-    ],
-  );
+    );
+  }
 
   void _showProfile() {
     showModalBottomSheet(

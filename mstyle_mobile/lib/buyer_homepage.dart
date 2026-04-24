@@ -70,8 +70,6 @@ class _BuyerHomePageState extends State<BuyerHomePage> with TickerProviderStateM
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   int _heroSlide = 0;
-  int _cartCount = 0;
-  int _notifCount = 0;
   int _navIndex = 0;
   Timer? _heroTimer;
   bool _navVisible = true;
@@ -141,8 +139,6 @@ class _BuyerHomePageState extends State<BuyerHomePage> with TickerProviderStateM
               slivers: [
                 BuyerAppBar(
                   userEmail: widget.userEmail,
-                  cartCount: _cartCount,
-                  notifCount: _notifCount,
                 ),
                 SliverToBoxAdapter(child: _heroSection()),
                 SliverToBoxAdapter(child: _featuresStrip()),

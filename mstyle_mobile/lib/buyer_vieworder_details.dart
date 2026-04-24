@@ -26,6 +26,7 @@ class BuyerViewOrderDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status     = order['status'] as String? ?? 'Pending';
+    debugPrint('🔍 BuyerViewOrderDetails status: "$status"');
     final name       = order['name'] as String? ?? '';
     final totalPrice = double.tryParse(order['total_price']?.toString() ?? '0') ?? 0;
     final date       = order['date'] as String? ?? '';
@@ -62,6 +63,34 @@ class BuyerViewOrderDetails extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+                // ── Order Status Timeline ────────────────────────────────
+                _sectionTitle('Order Status'),
+                _statusTimeline(status),
+
+                const SizedBox(height: 14),
+
+                // ── Delivery Address ─────────────────────────────────────
+                _sectionTitle('Delivery Address'),
+                _card(children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _gold.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.location_on_outlined, color: _gold, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(
+                      address.isNotEmpty ? address : 'No address provided',
+                      style: const TextStyle(color: _textLight, fontSize: 12, height: 1.5),
+                    )),
+                  ]),
+                ]),
+
+                const SizedBox(height: 14),
 
                 // ── Product Details ──────────────────────────────────────
                 _sectionTitle('Product Details'),
@@ -100,34 +129,6 @@ class BuyerViewOrderDetails extends StatelessWidget {
                   _priceRow('Total', '₱${(totalPrice + shipping).toStringAsFixed(2)}',
                     highlight: true),
                 ]),
-
-                const SizedBox(height: 14),
-
-                // ── Delivery Address ─────────────────────────────────────
-                _sectionTitle('Delivery Address'),
-                _card(children: [
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: _gold.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.location_on_outlined, color: _gold, size: 18),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(
-                      address.isNotEmpty ? address : 'No address provided',
-                      style: const TextStyle(color: _textLight, fontSize: 12, height: 1.5),
-                    )),
-                  ]),
-                ]),
-
-                const SizedBox(height: 14),
-
-                // ── Order Status Timeline ────────────────────────────────
-                _sectionTitle('Order Status'),
-                _card(children: [_statusTimeline(status)]),
 
                 const SizedBox(height: 14),
 
@@ -245,52 +246,84 @@ class BuyerViewOrderDetails extends StatelessWidget {
   );
 
   Widget _statusTimeline(String currentStatus) {
+    // Keys must exactly match the status values stored in the database
     final steps = [
-      ('Pending',   Icons.hourglass_empty,       'Order placed'),
-      ('Confirmed', Icons.check_circle_outline,   'Order confirmed'),
-      ('Preparing', Icons.construction_outlined,  'Being prepared'),
-      ('Waiting for Pickup', Icons.inventory_2_outlined,  'Ready for pickup'),
-      ('Shipped',   Icons.local_shipping_outlined,'On the way'),
-      ('Delivered', Icons.check_circle,           'Delivered'),
-      ('Completed', Icons.verified_outlined,      'Completed'),
+      ('Pending',           Icons.hourglass_empty,         'Placed'),
+      ('Confirmed',         Icons.check_circle_outline,    'Confirmed'),
+      ('For Pickup',        Icons.inventory_2_outlined,    'For Pickup'),
+      ('Heading to Seller', Icons.directions_bike_outlined,'Heading'),
+      ('In Transit',        Icons.local_shipping_outlined, 'In Transit'),
+      ('Out for Delivery',  Icons.local_shipping,          'Out for\nDelivery'),
+      ('Delivered',         Icons.check_circle,            'Delivered'),
+      ('Completed',         Icons.verified_outlined,       'Done'),
     ];
 
-    final statusOrder = steps.map((s) => s.$1.toLowerCase()).toList();
-    final currentIdx  = statusOrder.indexOf(currentStatus.toLowerCase());
+    final currentLower = currentStatus.trim().toLowerCase();
+    final statusOrder  = steps.map((s) => s.$1.toLowerCase()).toList();
+    int currentIdx     = statusOrder.indexOf(currentLower);
+    // Fallback: partial match (e.g. 'shipped' → 'in transit')
+    if (currentIdx == -1) {
+      currentIdx = statusOrder.indexWhere((s) => s.contains(currentLower) || currentLower.contains(s));
+    }
 
-    return Column(children: List.generate(steps.length, (i) {
-      final (label, icon, sub) = steps[i];
-      final done   = i <= currentIdx;
-      final active = i == currentIdx;
-      final color  = active ? _gold : (done ? Colors.green : _border);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: List.generate(steps.length, (i) {
+            final (label, icon, sub) = steps[i];
+            final done   = currentIdx >= 0 && i <= currentIdx;
+            final active = i == currentIdx;
 
-      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Column(children: [
-          Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: active ? _gold : (done ? Colors.green.withOpacity(0.15) : _bg),
-              border: Border.all(color: color, width: active ? 2 : 1.5),
-            ),
-            child: Icon(icon, size: 15, color: active ? Colors.white : color),
-          ),
-          if (i < steps.length - 1)
-            Container(width: 2, height: 28,
-              color: i < currentIdx ? Colors.green.withOpacity(0.4) : _border),
-        ]),
-        const SizedBox(width: 12),
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: TextStyle(
-              color: active ? _gold : (done ? _accent : _textLight),
-              fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500)),
-            Text(sub, style: const TextStyle(color: _textLight, fontSize: 11)),
-          ]),
+            final bgColor     = active ? _gold : (done ? Colors.green : Colors.white);
+            final borderColor = active ? _gold : (done ? Colors.green : _border);
+            final iconColor   = done ? Colors.white : _border;
+            final labelColor  = active ? _gold : (done ? Colors.green : _textLight);
+
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(
+                width: 52,
+                child: Column(children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: bgColor,
+                      border: Border.all(color: borderColor, width: active ? 2.5 : 1.5),
+                      boxShadow: done
+                        ? [BoxShadow(color: bgColor.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2))]
+                        : [],
+                    ),
+                    child: Icon(icon, size: 16, color: iconColor),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(sub,
+                    style: TextStyle(
+                      color: labelColor,
+                      fontSize: 9,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      height: 1.2,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ]),
+              ),
+              // Connector line between steps
+              if (i < steps.length - 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 17),
+                  child: Container(
+                    width: 16, height: 2,
+                    color: (currentIdx >= 0 && i < currentIdx) ? Colors.green : _border,
+                  ),
+                ),
+            ]);
+          }),
         ),
-      ]);
-    }));
+      ),
+    );
   }
 
   Color _statusColor(String status) {

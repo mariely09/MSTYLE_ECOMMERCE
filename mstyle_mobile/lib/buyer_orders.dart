@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
-import 'login.dart';
 import 'buyer_homepage.dart';
-import 'buyer_cart.dart';
-import 'buyer_wishlist.dart';
-import 'profile.dart';
-import 'buyer_notifications.dart';
 import 'buyer_service.dart';
-import 'buyer_header.dart';
-import 'buyer_bottom_navbar.dart';
 import 'product_image_carousel.dart' show buildImageUrl;
 import 'supabase_client.dart' show supabase;
 import 'buyer_vieworder_details.dart';
@@ -144,13 +137,22 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      bottomNavigationBar: BuyerBottomNavBar(userEmail: widget.userEmail, currentPage: BuyerPage.orders),
       body: _loading
         ? const Center(child: CircularProgressIndicator(color: _gold))
         : CustomScrollView(
             slivers: [
-              BuyerAppBar(userEmail: widget.userEmail),
-              SliverToBoxAdapter(child: _header()),
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: _primary,
+                elevation: 6,
+                titleSpacing: 16,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: const Text('My Orders',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
               SliverToBoxAdapter(child: _filterTabs()),
               if (_filtered.isEmpty)
                 SliverFillRemaining(child: _emptyState())
@@ -166,30 +168,6 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
           ),
     );
   }
-
-  // ─── App Bar ──────────────────────────────────────────────────────────────
-  // ─── Header ───────────────────────────────────────────────────────────────
-  Widget _header() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
-    decoration: const BoxDecoration(gradient: _premiumGrad),
-    child: Column(children: [
-      Container(
-        width: 64, height: 64,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle, gradient: _goldGrad,
-          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 16)],
-        ),
-        child: const Icon(Icons.shopping_bag, color: _primary, size: 30),
-      ),
-      const SizedBox(height: 14),
-      const Text('My Orders',
-        style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-      const SizedBox(height: 6),
-      Text('Track and manage your orders',
-        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)),
-    ]),
-  );
 
   // ─── Filter Tabs ──────────────────────────────────────────────────────────
   Widget _filterTabs() => Container(
@@ -632,41 +610,4 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
     ]),
   );
 
-  // ─── Bottom Nav ───────────────────────────────────────────────────────────
-  void _showProfile() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 20),
-          Container(width: 64, height: 64, decoration: const BoxDecoration(gradient: _premiumGrad, shape: BoxShape.circle),
-            child: const Icon(Icons.person, color: Colors.white, size: 32)),
-          const SizedBox(height: 12),
-          Text(widget.userEmail, style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 20),
-          ListTile(leading: const Icon(Icons.person_outline, color: _accent, size: 20),
-            title: const Text('My Profile', style: TextStyle(color: _accent, fontWeight: FontWeight.w600, fontSize: 14)),
-            trailing: const Icon(Icons.chevron_right, color: _textLight, size: 18),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4), onTap: () => Navigator.pop(context)),
-          ListTile(leading: const Icon(Icons.favorite_border, color: _accent, size: 20),
-            title: const Text('Wishlist', style: TextStyle(color: _accent, fontWeight: FontWeight.w600, fontSize: 14)),
-            trailing: const Icon(Icons.chevron_right, color: _textLight, size: 18),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4), onTap: () => Navigator.pop(context)),
-          const Divider(height: 24),
-          ListTile(leading: Icon(Icons.logout, color: Colors.red.shade400, size: 20),
-            title: Text('Logout', style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.w600, fontSize: 14)),
-            trailing: Icon(Icons.chevron_right, color: Colors.red.shade300, size: 18),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginPage()), (_) => false);
-            }),
-        ]),
-      ),
-    );
-  }
 }

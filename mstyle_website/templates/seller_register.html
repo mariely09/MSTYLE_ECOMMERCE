@@ -165,34 +165,36 @@
                         <label for="house_no_street">House No. &amp; Street Name</label>
                     </div>
 
+                    <!-- Region — full width -->
+                    <div class="input-group has-icon">
+                        <span class="ig-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+                        <select id="region" name="region" required class="address-select" onchange="updateProvinces()">
+                            <option value="">Select Region</option>
+                        </select>
+                    </div>
+
+                    <!-- Province + City/Municipality row -->
                     <div class="form-row">
-                        <div class="input-group has-icon">
-                            <span class="ig-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
-                            <select id="region" name="region" required class="address-select" onchange="updateProvinces()">
-                                <option value="">Select Region</option>
-                            </select>
-                        </div>
                         <div class="input-group has-icon">
                             <span class="ig-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                             <select id="province" name="province" required class="address-select" onchange="updateMunicipalities()" disabled>
                                 <option value="">Select Province</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="form-row">
                         <div class="input-group has-icon">
                             <span class="ig-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
                             <select id="municipality" name="municipality" required class="address-select" onchange="updateBarangays()" disabled>
                                 <option value="">Select City/Municipality</option>
                             </select>
                         </div>
-                        <div class="input-group has-icon">
-                            <span class="ig-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
-                            <select id="barangay" name="barangay" required class="address-select" disabled>
-                                <option value="">Select Barangay</option>
-                            </select>
-                        </div>
+                    </div>
+
+                    <!-- Barangay — full width -->
+                    <div class="input-group has-icon">
+                        <span class="ig-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+                        <select id="barangay" name="barangay" required class="address-select" disabled>
+                            <option value="">Select Barangay</option>
+                        </select>
                     </div>
 
                     <div class="input-group has-icon">
@@ -413,18 +415,30 @@
             document.getElementById('business-documents').style.display   = bt === 'business'   ? 'block' : 'none';
         }
 
-        // ── Address API ───────────────────────────────────────────────────
+        // ── Address API — use gitlab API (cleaner UTF-8 than psgc.cloud) ──────────────────────────────────────────────
         const PHILIPPINES_API = 'https://psgc.gitlab.io/api';
         const addressCache = { regions: [], provinces: {}, municipalities: {}, barangays: {} };
 
+        function sortByName(arr) { return arr.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })); }
+
+        // Fetch JSON with explicit UTF-8 decoding to fix ñ/special chars
+        async function fetchJson(url) {
+            const res = await fetch(url);
+            const buf = await res.arrayBuffer();
+            const text = new TextDecoder('utf-8').decode(buf);
+            return JSON.parse(text);
+        }
+
         async function loadRegions() {
             try {
-                const regions = await (await fetch(`${PHILIPPINES_API}/regions`)).json();
+                const data = addressCache.regions.length
+                    ? addressCache.regions
+                    : await fetchJson(`${PHILIPPINES_API}/regions`);
+                addressCache.regions = data;
                 const sel = document.getElementById('region');
                 sel.innerHTML = '<option value="">Select Region</option>';
-                regions.forEach(r => { const o = document.createElement('option'); o.value = r.name; o.setAttribute('data-code', r.code); o.textContent = r.name; sel.appendChild(o); });
+                sortByName(data).forEach(r => { const o = document.createElement('option'); o.value = r.name; o.setAttribute('data-code', r.code); o.textContent = r.name; sel.appendChild(o); });
                 sel.disabled = false;
-                addressCache.regions = regions;
             } catch(e) { console.error(e); }
         }
 
@@ -439,9 +453,9 @@
             bSel.innerHTML = '<option value="">Select Barangay</option>';
             if (!code) { pSel.disabled = mSel.disabled = bSel.disabled = true; return; }
             try {
-                const data = addressCache.provinces[code] || await (await fetch(`${PHILIPPINES_API}/regions/${code}/provinces`)).json();
+                const data = addressCache.provinces[code] || await fetchJson(`${PHILIPPINES_API}/regions/${code}/provinces`);
                 addressCache.provinces[code] = data;
-                data.forEach(p => { const o = document.createElement('option'); o.value = p.name; o.setAttribute('data-code', p.code); o.textContent = p.name; pSel.appendChild(o); });
+                sortByName(data).forEach(p => { const o = document.createElement('option'); o.value = p.name; o.setAttribute('data-code', p.code); o.textContent = p.name; pSel.appendChild(o); });
                 pSel.disabled = false; mSel.disabled = bSel.disabled = true;
             } catch(e) { console.error(e); }
         }
@@ -455,9 +469,9 @@
             bSel.innerHTML = '<option value="">Select Barangay</option>';
             if (!code) { mSel.disabled = bSel.disabled = true; return; }
             try {
-                const data = addressCache.municipalities[code] || await (await fetch(`${PHILIPPINES_API}/provinces/${code}/cities-municipalities`)).json();
+                const data = addressCache.municipalities[code] || await fetchJson(`${PHILIPPINES_API}/provinces/${code}/cities-municipalities`);
                 addressCache.municipalities[code] = data;
-                data.forEach(m => { const o = document.createElement('option'); o.value = m.name; o.setAttribute('data-code', m.code); o.textContent = m.name; mSel.appendChild(o); });
+                sortByName(data).forEach(m => { const o = document.createElement('option'); o.value = m.name; o.setAttribute('data-code', m.code); o.textContent = m.name; mSel.appendChild(o); });
                 mSel.disabled = false; bSel.disabled = true;
             } catch(e) { console.error(e); }
         }
@@ -469,9 +483,9 @@
             bSel.innerHTML = '<option value="">Select Barangay</option>';
             if (!code) { bSel.disabled = true; return; }
             try {
-                const data = addressCache.barangays[code] || await (await fetch(`${PHILIPPINES_API}/cities-municipalities/${code}/barangays`)).json();
+                const data = addressCache.barangays[code] || await fetchJson(`${PHILIPPINES_API}/cities-municipalities/${code}/barangays`);
                 addressCache.barangays[code] = data;
-                data.forEach(b => { const o = document.createElement('option'); o.value = b.name; o.setAttribute('data-code', b.code); o.textContent = b.name; bSel.appendChild(o); });
+                sortByName(data).forEach(b => { const o = document.createElement('option'); o.value = b.name; o.setAttribute('data-code', b.code); o.textContent = b.name; bSel.appendChild(o); });
                 bSel.disabled = false;
             } catch(e) { console.error(e); }
         }

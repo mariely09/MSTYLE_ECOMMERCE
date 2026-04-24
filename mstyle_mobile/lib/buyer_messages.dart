@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'buyer_header.dart';
-import 'buyer_bottom_navbar.dart';
 import 'supabase_client.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
@@ -68,13 +66,19 @@ class _BuyerMessagesPageState extends State<BuyerMessagesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      bottomNavigationBar: BuyerBottomNavBar(
-        userEmail: widget.userEmail,
-        currentPage: BuyerPage.messages,
-      ),
       body: CustomScrollView(slivers: [
-        BuyerAppBar(userEmail: widget.userEmail),
-        SliverToBoxAdapter(child: _pageHeader()),
+        SliverAppBar(
+          pinned: true,
+          backgroundColor: _primary,
+          elevation: 6,
+          titleSpacing: 16,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const Text('Messages',
+            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+        ),
         if (_loading)
           const SliverFillRemaining(
             child: Center(child: CircularProgressIndicator(color: _gold)))
@@ -90,37 +94,6 @@ class _BuyerMessagesPageState extends State<BuyerMessagesPage> {
       ]),
     );
   }
-
-  Widget _pageHeader() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-    decoration: const BoxDecoration(gradient: _premiumGrad),
-    child: Row(children: [
-      Container(
-        width: 52, height: 52,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle, gradient: _goldGrad,
-          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 12)],
-        ),
-        child: const Icon(Icons.chat_bubble_outline, color: _primary, size: 26),
-      ),
-      const SizedBox(width: 14),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Messages',
-          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 3),
-        Text(
-          _conversations.isEmpty
-            ? 'No conversations yet'
-            : '${_conversations.length} conversation${_conversations.length == 1 ? '' : 's'}',
-          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
-      ])),
-      IconButton(
-        icon: const Icon(Icons.refresh, color: Colors.white70, size: 20),
-        onPressed: _fetchConversations,
-      ),
-    ]),
-  );
 
   Widget _conversationTile(Map<String, dynamic> conv) {
     final seller  = conv['seller_email'] as String? ?? '';

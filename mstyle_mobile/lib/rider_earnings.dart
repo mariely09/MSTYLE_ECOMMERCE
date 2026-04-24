@@ -1,9 +1,4 @@
 import 'package:flutter/material.dart';
-import 'rider_dashboard.dart';
-import 'rider_active_deliveries.dart';
-import 'rider_history_deliveries.dart';
-import 'rider_header.dart';
-import 'rider_bottom_navbar.dart';
 import 'supabase_client.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
@@ -80,11 +75,20 @@ class _RiderEarningsPageState extends State<RiderEarningsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      bottomNavigationBar: RiderBottomNavBar(riderEmail: widget.riderEmail, currentPage: RiderPage.earnings),
       body: _loading
         ? const Center(child: CircularProgressIndicator(color: _gold))
         : CustomScrollView(slivers: [
-            _appBar(),
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: _primary,
+              elevation: 6,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: const Text('Earnings',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+            ),
             SliverToBoxAdapter(child: _totalCard()),
             SliverToBoxAdapter(child: _periodCards()),
             SliverToBoxAdapter(child: _breakdownSection()),
@@ -92,26 +96,6 @@ class _RiderEarningsPageState extends State<RiderEarningsPage> {
           ]),
     );
   }
-
-  Widget _appBar() => RiderAppBar(riderEmail: widget.riderEmail);
-
-  Widget _pageHeader() => Container(
-    width: double.infinity, padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-    decoration: const BoxDecoration(gradient: _premiumGrad),
-    child: Row(children: [
-      Container(width: 52, height: 52,
-        decoration: BoxDecoration(shape: BoxShape.circle, gradient: _goldGrad,
-          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 12)]),
-        child: const Icon(Icons.currency_exchange, color: _primary, size: 26)),
-      const SizedBox(width: 14),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Earnings', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 3),
-        Text('${_earnings.length} completed deliveries',
-          style: const TextStyle(color: Colors.white60, fontSize: 12)),
-      ])),
-    ]),
-  );
 
   Widget _totalCard() => Container(
     margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),

@@ -6197,6 +6197,62 @@ def submit_order_issue():
         return jsonify({'success': False, 'message': 'An error occurred while submitting the report'}), 500
 
 
+# ===========================================
+# ADMIN ROUTES
+# ===========================================
+
+@app.route('/admin_dashboard')
+def admin_dashboard():
+    """Admin dashboard — shows summary stats."""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('login'))
+    try:
+        users_res   = sb_admin.table('users').select('id', count='exact').execute()
+        orders_res  = sb_admin.table('orders').select('id', count='exact').execute()
+        products_res = sb_admin.table('products').select('id', count='exact').execute()
+        pending_res = sb_admin.table('pending_users').select('id', count='exact').eq('status', 'pending').execute()
+        pending_sellers_res = sb_admin.table('pending_sellers').select('id', count='exact').eq('status', 'pending').execute()
+        total_users    = users_res.count or 0
+        total_orders   = orders_res.count or 0
+        total_products = products_res.count or 0
+        pending_users_count   = pending_res.count or 0
+        pending_sellers_count = pending_sellers_res.count or 0
+    except Exception as e:
+        print(f"admin_dashboard error: {e}")
+        total_users = total_orders = total_products = pending_users_count = pending_sellers_count = 0
+    return render_template('admin_dashboard.html',
+                           total_users=total_users,
+                           total_orders=total_orders,
+                           total_products=total_products,
+                           pending_users=pending_users_count,
+                           pending_sellers=pending_sellers_count)
+
+
+@app.route('/admin_users')
+def admin_users():
+    """Admin user management page."""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('login'))
+    try:
+        users_res = sb_admin.table('users').select('*').order('id').execute()
+        users = users_res.data or []
+    except Exception as e:
+        print(f"admin_users error: {e}")
+        users = []
+    return render_template('admin_users.html', users=users)
+
+
+@app.route('/order_monitoring')
+def order_monitoring():
+    """Admin: redirect to pending_users for now."""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('login'))
+    return redirect(url_for('pending_users'))
+
+
 @app.route('/pending_users')
 def pending_users():
     if 'user_id' not in session or session.get('user_type') != 'Admin':

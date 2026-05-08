@@ -6235,13 +6235,68 @@ def admin_users():
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('login'))
+
+    search      = request.args.get('search', '').strip().lower()
+    sort_type   = request.args.get('sort', 'all').strip().lower()
+    status_filter = request.args.get('status', '').strip().lower()
+
     try:
         users_res = sb_admin.table('users').select('*').order('id').execute()
-        users = users_res.data or []
+        raw_users = users_res.data or []
+
+        # Normalize Supabase field names to match what the template expects
+        users = []
+        for u in raw_users:
+            # Build address from parts
+            addr = u.get('address') or ', '.join(filter(None, [
+                u.get('house_street',''), u.get('barangay',''),
+                u.get('city',''), u.get('province',''),
+                u.get('region',''), u.get('zip_code',''),
+            ]))
+            normalized = {
+                'id':           u.get('id'),
+                'first_name':   u.get('first_name', ''),
+                'last_name':    u.get('last_name', ''),
+                'email':        u.get('email', ''),
+                'phone_number': u.get('phone') or u.get('phone_number', ''),
+                'address':      addr,
+                'user_type':    (u.get('role') or u.get('user_type') or 'buyer').capitalize(),
+                'status':       u.get('status', 'active'),
+                'created_at':   u.get('created_at'),
+                'profile_picture': u.get('profile_picture'),
+                'business_name': u.get('business_name', ''),
+            }
+            users.append(normalized)
+
+        # Apply filters
+        if search:
+            users = [u for u in users if
+                search in (u['first_name'] + ' ' + u['last_name']).lower() or
+                search in u['email'].lower() or
+                search in (u['phone_number'] or '').lower() or
+                search in (u['address'] or '').lower()]
+        if sort_type and sort_type != 'all':
+            users = [u for u in users if u['user_type'].lower() == sort_type]
+        if status_filter:
+            users = [u for u in users if (u.get('status') or 'active').lower() == status_filter]
+
+        # Compute counts
+        total_users   = len(users)
+        buyer_count   = sum(1 for u in users if u['user_type'].lower() == 'buyer')
+        seller_count  = sum(1 for u in users if u['user_type'].lower() == 'seller')
+        rider_count   = sum(1 for u in users if u['user_type'].lower() == 'rider')
+
     except Exception as e:
         print(f"admin_users error: {e}")
+        import traceback; traceback.print_exc()
         users = []
-    return render_template('admin_users.html', users=users)
+        total_users = buyer_count = seller_count = rider_count = 0
+
+    return render_template('admin_users.html', users=users,
+                           total_users=total_users,
+                           buyer_count=buyer_count,
+                           seller_count=seller_count,
+                           rider_count=rider_count)
 
 
 @app.route('/order_monitoring')

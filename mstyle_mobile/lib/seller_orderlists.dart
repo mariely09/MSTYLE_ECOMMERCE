@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'seller_dashboard.dart';
 import 'seller_products.dart';
 import 'seller_analytics.dart';
@@ -84,12 +85,54 @@ class _SellerOrderListsPageState extends State<SellerOrderListsPage> {
   List<SellerOrder> _orders = [];
   bool _loadingOrders = true;
   final _searchCtrl = TextEditingController();
+  StreamSubscription<List<Map<String, dynamic>>>? _ordersSub;
 
   @override
   void initState() {
     super.initState();
     _fetchBusinessName();
     _fetchOrders();
+    _subscribeToOrders();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _ordersSub?.cancel();
+    super.dispose();
+  }
+
+  // ── Supabase Realtime subscription ────────────────────────────────────────
+  void _subscribeToOrders() {
+    _ordersSub = supabase
+        .from('orders')
+        .stream(primaryKey: ['id'])
+        .eq('seller_email', widget.sellerEmail)
+        .order('date', ascending: false)
+        .listen((rows) {
+          if (!mounted) return;
+          setState(() {
+            _orders = rows.map((o) => SellerOrder(
+              id:            (o['id'] as num).toInt(),
+              customerName:  o['email'] as String? ?? '',
+              customerEmail: o['email'] as String? ?? '',
+              address:       o['address'] as String? ?? '',
+              productName:   o['name'] as String? ?? '',
+              variation:     o['variations'] as String?,
+              size:          o['size'] as String?,
+              quantity:      (o['quantity'] as num?)?.toInt() ?? 1,
+              originalPrice: (o['total_price'] as num?)?.toDouble() ?? 0,
+              totalPrice:    (o['total_price'] as num?)?.toDouble() ?? 0,
+              date:          o['date'] != null
+                  ? DateTime.parse(o['date']).toLocal().toString().split(' ')[0]
+                  : '',
+              status:        o['status'] as String? ?? 'Pending',
+            )).toList();
+            _loadingOrders = false;
+          });
+        }, onError: (e) {
+          debugPrint('seller orders stream error: $e');
+        });
   }
 
   Future<void> _fetchBusinessName() async {
@@ -158,8 +201,7 @@ class _SellerOrderListsPageState extends State<SellerOrderListsPage> {
     return list;
   }
 
-  @override
-  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+  // _fetchOrders is kept as a fallback for the initial load before the stream fires
 
   @override
   Widget build(BuildContext context) {

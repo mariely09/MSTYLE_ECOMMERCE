@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/MStyle Logos/MStyle_logo1.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shopping Cart</title>
@@ -52,8 +53,8 @@
                             alt="{{ item.name }}" class="item-image" id="item-image-{{ item.id }}"
                             data-all-images="{{ item.all_images or '' }}"
                             data-selected-color="{{ item.variations or '' }}">
-                        {% elif item.first_image %}
-                        <img src="{{ item.first_image|product_img }}"
+                        {% elif item.image %}
+                        <img src="{{ item.image | product_img }}"
                             alt="{{ item.name }}" class="item-image" id="item-image-{{ item.id }}"
                             data-all-images="{{ item.all_images or '' }}"
                             data-selected-color="{{ item.variations or '' }}">

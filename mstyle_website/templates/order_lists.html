@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/MStyle Logos/MStyle_logo1.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order List</title>
@@ -128,7 +129,7 @@
                         <tbody>
                             {% if orders %}
                             {% for order in orders %}
-                            <tr>
+                            <tr data-order-id="{{ order.id }}" data-status="{{ order.status|lower }}">
                                 <td>
                                     <span class="sequence-badge">{{ loop.index }}</span>
                                 </td>

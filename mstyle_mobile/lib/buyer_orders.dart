@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'buyer_homepage.dart';
 import 'buyer_service.dart';
 import 'product_image_carousel.dart' show buildImageUrl;
@@ -67,11 +68,51 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
   OrderStatus _filter = OrderStatus.all;
   bool _loading = true;
   List<Map<String, dynamic>> _orders = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _ordersSub;
 
   @override
   void initState() {
     super.initState();
     _loadOrders();
+    _subscribeToOrders();
+  }
+
+  @override
+  void dispose() {
+    _ordersSub?.cancel();
+    super.dispose();
+  }
+
+  // ── Supabase Realtime subscription ────────────────────────────────────────
+  void _subscribeToOrders() {
+    _ordersSub = supabase
+        .from('orders')
+        .stream(primaryKey: ['id'])
+        .eq('email', widget.userEmail)
+        .order('date', ascending: false)
+        .listen((rows) {
+          if (!mounted) return;
+          // Merge incoming status updates into existing _orders list
+          // (preserves enriched image/price data already loaded)
+          final updated = List<Map<String, dynamic>>.from(rows);
+          setState(() {
+            // Update status of existing orders in-place; add new ones
+            for (final incoming in updated) {
+              final idx = _orders.indexWhere((o) => o['id'] == incoming['id']);
+              if (idx != -1) {
+                // Only update mutable fields from realtime — keep enriched data
+                _orders[idx] = {..._orders[idx], ...incoming};
+              } else {
+                _orders.insert(0, incoming);
+              }
+            }
+            // Remove orders that no longer exist
+            final incomingIds = updated.map((o) => o['id']).toSet();
+            _orders.removeWhere((o) => !incomingIds.contains(o['id']));
+          });
+        }, onError: (e) {
+          debugPrint('buyer orders stream error: $e');
+        });
   }
 
   Future<void> _loadOrders() async {
@@ -346,28 +387,59 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
                   style: const TextStyle(color: _accent, fontWeight: FontWeight.w800, fontSize: 16)),
               ]),
               const Spacer(),
-              // Cancel button (Pending only) or arrow
+              // Action buttons
               if (status == 'Pending')
                 GestureDetector(
-                  onTap: () {
-                    // stop tap from triggering card navigation
-                  },
                   behavior: HitTestBehavior.opaque,
-                  child: GestureDetector(
-                    onTap: () => _showCancelDialog(orderId),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
-                      ),
-                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.cancel_outlined, size: 13, color: Colors.red),
-                        SizedBox(width: 5),
-                        Text('Cancel', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w700)),
-                      ]),
+                  onTap: () => _showCancelDialog(orderId),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.red.withOpacity(0.3)),
                     ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.cancel_outlined, size: 13, color: Colors.red),
+                      SizedBox(width: 5),
+                      Text('Cancel', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                )
+              else if (status == 'Delivered')
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showConfirmDialog(order),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.green.withOpacity(0.3)),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.check_circle_outline, size: 13, color: Colors.green),
+                      SizedBox(width: 5),
+                      Text('Confirm Receipt', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                )
+              else if (status == 'Completed')
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showReviewDialog(order),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _gold.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _gold.withOpacity(0.3)),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.star_outline, size: 13, color: _gold),
+                      SizedBox(width: 5),
+                      Text('Leave Review', style: TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ]),
                   ),
                 )
               else
@@ -446,12 +518,6 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
           () => _showCancelDialog(orderId)),
       if (status == 'Shipped')
         _actionBtn('Contact Rider', Icons.chat_outlined, Colors.blue, () {}),
-      if (status == 'Delivered')
-        _actionBtn('Confirm Receipt', Icons.check_circle_outline, Colors.green,
-          () => _showConfirmDialog(orderId)),
-      if (status == 'Completed')
-        _actionBtn('Leave Review', Icons.star_outline, _gold,
-          () => _showReviewDialog(orderId, orderName)),
       if (status == 'Delivered' || status == 'Completed')
         _actionBtn('Report Issue', Icons.flag_outlined, Colors.orange, () {}),
       _actionBtn('Contact Seller', Icons.chat_bubble_outline, _accent, () {}),
@@ -519,7 +585,8 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
     );
   }
 
-  void _showConfirmDialog(int orderId) {
+  void _showConfirmDialog(Map<String, dynamic> order) {
+    final orderId = order['id'] as int;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -537,9 +604,12 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
               Navigator.pop(context);
               await BuyerService.confirmReceipt(orderId);
               await _loadOrders();
-              _showSuccessSnack('Receipt confirmed. You can now leave a review.');
+              _showSuccessSnack('Receipt confirmed!');
+              // Auto-open review dialog after confirming
+              if (mounted) _showReviewDialog(order);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             child: const Text('Confirm'),
           ),
         ],
@@ -547,9 +617,15 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
     );
   }
 
-  void _showReviewDialog(int orderId, String orderName) {
+  void _showReviewDialog(Map<String, dynamic> order) {
+    final orderId     = order['id'] as int? ?? 0;
+    final productId   = order['product_id'] as int? ?? 0;
+    final orderName   = order['name'] as String? ?? 'Product';
+    final sellerEmail = order['seller_email'] as String? ?? '';
     int rating = 0;
     final reviewCtrl = TextEditingController();
+    bool _submitting = false;
+
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
@@ -563,37 +639,78 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(orderName, style: const TextStyle(color: _accent, fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 12),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(5, (i) => GestureDetector(
-              onTap: () => setS(() => rating = i + 1),
-              child: Icon(i < rating ? Icons.star : Icons.star_border, color: _gold, size: 32),
-            ))),
+            // Star rating
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(5, (i) =>
+              GestureDetector(
+                onTap: () => setS(() => rating = i + 1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Icon(i < rating ? Icons.star : Icons.star_border, color: _gold, size: 34),
+                ),
+              ),
+            )),
+            const SizedBox(height: 4),
+            Text(rating == 0 ? 'Tap to rate' : _ratingLabel(rating),
+              style: TextStyle(color: rating == 0 ? _textLight : _gold, fontSize: 12, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             TextField(
               controller: reviewCtrl,
               maxLines: 3,
               decoration: InputDecoration(
-                hintText: 'Share your thoughts...',
+                hintText: 'Share your experience...',
                 hintStyle: const TextStyle(color: _textLight, fontSize: 13),
                 filled: true, fillColor: _bg,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _border)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _primary, width: 2)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _gold, width: 2)),
               ),
             ),
           ]),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Skip', style: TextStyle(color: _textLight))),
             ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                _showSuccessSnack('Review submitted successfully.');
+              onPressed: _submitting || rating == 0 ? null : () async {
+                setS(() => _submitting = true);
+                try {
+                  await BuyerService.submitReview(
+                    orderId:       orderId,
+                    productId:     productId,
+                    customerEmail: widget.userEmail,
+                    sellerEmail:   sellerEmail,
+                    rating:        rating,
+                    reviewText:    reviewCtrl.text.trim(),
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  _showSuccessSnack('Review submitted! Thank you.');
+                } catch (e) {
+                  setS(() => _submitting = false);
+                  _showSuccessSnack('Failed to submit review. Please try again.');
+                }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: _primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-              child: const Text('Submit Review'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: rating == 0 ? Colors.grey : _primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: _submitting
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Submit Review'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _ratingLabel(int rating) {
+    switch (rating) {
+      case 1: return 'Poor';
+      case 2: return 'Fair';
+      case 3: return 'Good';
+      case 4: return 'Very Good';
+      case 5: return 'Excellent!';
+      default: return '';
+    }
   }
 
   void _showSuccessSnack(String msg) {

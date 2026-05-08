@@ -454,41 +454,23 @@
     }
 
     function deleteAllNotifications() {
-        // Show confirmation dialog
         if (!confirm('Are you sure you want to delete all notifications? This action cannot be undone.')) {
             return;
         }
 
-        console.log('🗑️ Deleting all buyer notifications...');
-
         fetch('/api/buyer/notifications/delete-all', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+            headers: { 'Content-Type': 'application/json' }
         })
-            .then(response => {
-                console.log('Delete all response status:', response.status);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                return response.json();
-            })
+            .then(response => response.json())
             .then(data => {
-                console.log('Delete all response data:', data);
                 if (data.success) {
-                    console.log(`✅ ${data.deleted_count || 'All'} buyer notifications deleted successfully`);
-                    loadBuyerNotifications(); // Refresh notifications
-                    alert(`Successfully deleted ${data.deleted_count || 'all'} notifications`);
+                    loadBuyerNotifications();
                 } else {
-                    console.error('Failed to delete all buyer notifications:', data.error);
-                    alert(`Failed to delete all notifications: ${data.error}`);
+                    console.error('Failed to delete all notifications:', data.error);
                 }
             })
-            .catch(error => {
-                console.error('Error deleting all buyer notifications:', error);
-                alert(`Error deleting all notifications: ${error.message}`);
-            });
+            .catch(error => console.error('Error deleting all notifications:', error));
     }
 
     // Load buyer messages

@@ -460,7 +460,7 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
         },
         body: jsonEncode({
           'rider_email': widget.riderEmail,
-          'status':      'Heading to Seller',
+          'status':      'For Pickup',
         }),
       );
       debugPrint('✅ order update: ${updateResp.statusCode} ${updateResp.body}');
@@ -489,7 +489,7 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
             },
             body: jsonEncode({
               'seller_email': sellerEmail,
-              'message':      'A rider has accepted Order #${order['id']} and is heading to pick it up.',
+              'message':      'A rider has accepted Order #${order['id']} and will head to pick it up soon.',
               'type':         'rider_assigned',
               'is_read':      false,
               'order_id':     order['id'],

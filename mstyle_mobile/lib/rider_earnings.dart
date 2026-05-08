@@ -90,7 +90,6 @@ class _RiderEarningsPageState extends State<RiderEarningsPage> {
                 style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
             ),
             SliverToBoxAdapter(child: _totalCard()),
-            SliverToBoxAdapter(child: _periodCards()),
             SliverToBoxAdapter(child: _breakdownSection()),
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ]),

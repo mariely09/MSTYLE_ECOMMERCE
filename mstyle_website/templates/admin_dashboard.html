@@ -14,47 +14,69 @@
 
     <!-- Stats Grid -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <a href="/order_monitoring" class="stat-card stat-card-link">
             <div class="stat-icon">
                 <i class="fas fa-shopping-cart"></i>
             </div>
             <div class="stat-value">{{ total_orders or 0 }}</div>
             <div class="stat-label">Total Orders</div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        <a href="/product_management" class="stat-card stat-card-link">
             <div class="stat-icon">
                 <i class="fas fa-box"></i>
             </div>
             <div class="stat-value">{{ total_products or 0 }}</div>
             <div class="stat-label">Total Products</div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        <a href="/admin_users" class="stat-card stat-card-link">
             <div class="stat-icon">
                 <i class="fas fa-users"></i>
             </div>
             <div class="stat-value">{{ total_users or 0 }}</div>
             <div class="stat-label">Total Users</div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        <a href="/admin_issue_reports" class="stat-card stat-card-link">
             <div class="stat-icon">
                 <i class="fas fa-exclamation-triangle"></i>
             </div>
             <div class="stat-value">{{ total_issues or 0 }}</div>
             <div class="stat-label">Total Issues</div>
-        </div>
+        </a>
 
-        <div class="stat-card">
+        <a href="/admin_users?filter=pending" class="stat-card stat-card-link">
             <div class="stat-icon">
                 <i class="fas fa-clock"></i>
             </div>
             <div class="stat-value">{{ pending_approvals or 0 }}</div>
             <div class="stat-label">Pending Approvals</div>
-        </div>
+        </a>
     </div>
 </div>
+
+<style>
+.stat-card-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.stat-card-link:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.13);
+    text-decoration: none;
+    color: inherit;
+}
+.stat-card-link:hover .stat-icon {
+    background: linear-gradient(135deg, #d4af37, #f4d03f);
+}
+.stat-card-link:hover .stat-icon i {
+    color: #1a1a1a;
+}
+</style>
 
 <!-- Charts Section -->
 <div class="charts-section">

@@ -278,42 +278,27 @@ function showOrderDetailsModal(order) {
     statusElement.className = 'value status-value status-' + order.status.toLowerCase().replace(/\s+/g, '-');
     
     // Populate product information
-    document.getElementById('modal-product-image').src = '/static/images/uploads/' + order.image;
+    document.getElementById('modal-product-image').src = order.image || '/static/images/placeholder.png';
     document.getElementById('modal-product-image').alt = order.name;
     document.getElementById('modal-product-name').textContent = order.name;
     document.getElementById('modal-product-variation').textContent = order.variations || 'No variation specified';
     document.getElementById('modal-product-size').textContent = order.size || 'One Size';
     
     // Calculate pricing
-    const unitPrice = parseFloat(order.total_price) || 0;
-    const quantity = parseInt(order.quantity) || 0;
-    const itemSubtotal = unitPrice * quantity;
-    
-    // Calculate shipping fee
-    let shippingFee = 0;
-    let shippingText = '';
-    
-    if (order.promotion_type === 'free_shipping') {
-        shippingText = '₱0.00 (Free Shipping)';
-    } else {
-        const baseShipping = 50.0;
-        if (itemSubtotal > 0) {
-            const additionalShipping = Math.min(150.0, Math.floor(itemSubtotal / 500) * 10);
-            shippingFee = baseShipping + additionalShipping;
-        } else {
-            shippingFee = baseShipping;
-        }
-        shippingText = '₱' + shippingFee.toFixed(2);
-    }
-    
-    const finalTotal = itemSubtotal + shippingFee;
-    
+    const totalPrice = parseFloat(order.total_price) || 0;
+    const shippingFee = parseFloat(order.shipping_fee) || 50;
+    const quantity = parseInt(order.quantity) || 1;
+    const subtotal = totalPrice - shippingFee;
+    const unitPrice = quantity > 0 ? subtotal / quantity : subtotal;
+
+    const shippingText = shippingFee === 0 ? '₱0.00 (Free Shipping)' : '₱' + shippingFee.toFixed(2);
+
     // Populate pricing information
     document.getElementById('modal-unit-price').textContent = '₱' + unitPrice.toFixed(2);
     document.getElementById('modal-quantity').textContent = quantity;
-    document.getElementById('modal-subtotal').textContent = '₱' + itemSubtotal.toFixed(2);
+    document.getElementById('modal-subtotal').textContent = '₱' + subtotal.toFixed(2);
     document.getElementById('modal-shipping-fee').textContent = shippingText;
-    document.getElementById('modal-total-price').textContent = '₱' + finalTotal.toFixed(2);
+    document.getElementById('modal-total-price').textContent = '₱' + totalPrice.toFixed(2);
     
     // Show modal
     const modal = document.getElementById('orderDetailsModal');

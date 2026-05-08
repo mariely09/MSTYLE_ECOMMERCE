@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/MStyle Logos/MStyle_logo1.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reviews & Ratings</title>
@@ -127,9 +128,22 @@
                     </div>
 
                     <div class="product-info">
-                        <img src="{{ url_for('static', filename='images/uploads/' + review.product_image.split(',')[0]) }}" 
-                             alt="{{ review.product_name }}" 
-                             class="product-image">
+                        {% set img_raw = review.product_image.split(',')[0].strip() if review.product_image else '' %}
+                        {% if img_raw.startswith('http://') or img_raw.startswith('https://') %}
+                            <img src="{{ img_raw }}"
+                                 alt="{{ review.product_name }}"
+                                 class="product-image"
+                                 onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                        {% elif img_raw %}
+                            <img src="{{ url_for('static', filename='images/uploads/' + img_raw) }}"
+                                 alt="{{ review.product_name }}"
+                                 class="product-image"
+                                 onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                        {% else %}
+                            <div class="product-image" style="background:#f0f0f0;display:flex;align-items:center;justify-content:center;">
+                                <i class="bi bi-image" style="font-size:1.5rem;color:#aaa;"></i>
+                            </div>
+                        {% endif %}
                         <div class="product-details">
                             <h5>{{ review.product_name }}</h5>
                             <span class="price">₱{{ "%.2f"|format(review.product_price|float) }}</span>

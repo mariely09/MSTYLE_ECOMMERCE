@@ -1,5 +1,4 @@
-﻿import mysql.connector
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+﻿from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask import Flask, render_template, send_from_directory, jsonify
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -23,10 +22,10 @@ import atexit
 from supabase_config import supabase as sb
 from supabase_config import supabase_admin as sb_admin  # service-role client (bypasses RLS)
 from supabase_config import SUPABASE_URL
-from gotrue.errors import AuthApiError
+from gotrue.errors import AuthApiError, AuthRetryableError
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this to a secure secret key
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)
 
 # Add min and max functions to Jinja2 environment
@@ -37,6 +36,7 @@ def product_image_url(image_value):
     """
     Convert a stored image value to a web-accessible URL.
     - Full URL (http/https): return as-is  [Supabase Storage]
+    - Already a /static/ path: return as-is
     - Plain filename: prepend /static/images/uploads/  [legacy local files]
     - Empty/None: return empty string
     """
@@ -45,6 +45,8 @@ def product_image_url(image_value):
     s = str(image_value).strip()
     if s.startswith('http://') or s.startswith('https://'):
         return s
+    if s.startswith('/'):
+        return s  # already a rooted path like /static/images/uploads/...
     return f'/static/images/uploads/{s}'
 
 app.jinja_env.filters['product_img'] = product_image_url
@@ -162,25 +164,8 @@ mail = Mail(app)
 
 
 
-# MySQL connection settings
-def get_db_connection():
-    try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="mstyle",
-            autocommit=False,
-            connection_timeout=5,   # shorter timeout so it fails fast
-            buffered=True,
-            use_pure=True
-        )
-        cursor = connection.cursor()
-        cursor.execute("SET time_zone = '+08:00'")
-        cursor.close()
-        return connection
-    except mysql.connector.Error as err:
-        raise  # let callers handle it
+# MySQL connection settings — REMOVED (Supabase only)
+# All database operations now use sb_admin (Supabase service-role client)
 
 # -- Cart image helper ---------------------------------------------------------
 def _find_color_image(selected_color, image_colors_str, all_images_str):
@@ -310,430 +295,22 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def add_cancellation_columns():
-    """Add cancellation-related columns to orders table if they don't exist"""
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Check if cancellation_reason column exists
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = 'mstyle' 
-            AND TABLE_NAME = 'orders' 
-            AND COLUMN_NAME = 'cancellation_reason'
-        """)
-        
-        result = cursor.fetchone()
-        if result and result[0] == 0:
-            # Add cancellation_reason column
-            cursor.execute("""
-                ALTER TABLE orders 
-                ADD COLUMN cancellation_reason TEXT NULL AFTER status
-            """)
-            print("? Added cancellation_reason column to orders table")
-        
-        # Check if cancelled_at column exists
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = 'mstyle' 
-            AND TABLE_NAME = 'orders' 
-            AND COLUMN_NAME = 'cancelled_at'
-        """)
-        
-        result = cursor.fetchone()
-        if result and result[0] == 0:
-            # Add cancelled_at column
-            cursor.execute("""
-                ALTER TABLE orders 
-                ADD COLUMN cancelled_at TIMESTAMP NULL AFTER cancellation_reason
-            """)
-            print("? Added cancelled_at column to orders table")
-        
-        connection.commit()
-        
-    except Exception as e:
-        print(f"? Error adding cancellation columns: {str(e)}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals():
-            connection.close()
+    """No-op: orders table in Supabase already has cancellation_reason and cancelled_at columns."""
+    pass
 
 def initialize_database_tables():
-    """Initialize required database tables if they don't exist"""
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Create reviews table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS reviews (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                order_id INT NOT NULL,
-                product_id INT NOT NULL,
-                customer_email VARCHAR(255) NOT NULL,
-                seller_email VARCHAR(255) NOT NULL,
-                rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
-                review_text TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_order_customer (order_id, customer_email),
-                INDEX idx_product_id (product_id),
-                INDEX idx_seller_email (seller_email),
-                INDEX idx_rating (rating),
-                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-            )
-        """)
-        
-        # Create notifications table if it doesn't exist
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                seller_email VARCHAR(255) NOT NULL,
-                message TEXT NOT NULL,
-                type VARCHAR(50) DEFAULT 'order',
-                is_read BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_seller_email (seller_email),
-                INDEX idx_is_read (is_read),
-                INDEX idx_type (type)
-            )
-        """)
-        
-        # Add type column to existing notifications table if it doesn't exist
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_SCHEMA = 'mstyle' 
-                AND TABLE_NAME = 'notifications' 
-                AND COLUMN_NAME = 'type'
-            """)
-            result = cursor.fetchone()
-            if result and result[0] == 0:
-                cursor.execute("""
-                    ALTER TABLE notifications 
-                    ADD COLUMN type VARCHAR(50) DEFAULT 'order' AFTER message,
-                    ADD INDEX idx_type (type)
-                """)
-                print("? Added type column to notifications table")
-        except Exception as e:
-            print(f"Note: Could not add type column to notifications: {e}")
-        
-        # Create buyer_notifications table if it doesn't exist
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS buyer_notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                buyer_email VARCHAR(255) NOT NULL,
-                message TEXT NOT NULL,
-                type VARCHAR(50) DEFAULT 'status_update',
-                is_read BOOLEAN DEFAULT FALSE,
-                order_id INT DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_buyer_email (buyer_email),
-                INDEX idx_is_read (is_read),
-                INDEX idx_order_id (order_id),
-                INDEX idx_type (type)
-            )
-        """)
-        
-        # Add missing columns to existing buyer_notifications table if they don't exist
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_SCHEMA = 'mstyle' 
-                AND TABLE_NAME = 'buyer_notifications' 
-                AND COLUMN_NAME = 'type'
-            """)
-            result = cursor.fetchone()
-            if result and result[0] == 0:
-                cursor.execute("""
-                    ALTER TABLE buyer_notifications 
-                    ADD COLUMN type VARCHAR(50) DEFAULT 'status_update' AFTER message,
-                    ADD INDEX idx_type (type)
-                """)
-                print("? Added type column to buyer_notifications table")
-        except Exception as e:
-            print(f"Note: Could not add type column: {e}")
-        
-        try:
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_SCHEMA = 'mstyle' 
-                AND TABLE_NAME = 'buyer_notifications' 
-                AND COLUMN_NAME = 'order_id'
-            """)
-            result = cursor.fetchone()
-            if result and result[0] == 0:
-                cursor.execute("""
-                    ALTER TABLE buyer_notifications 
-                    ADD COLUMN order_id INT DEFAULT NULL AFTER is_read,
-                    ADD INDEX idx_order_id (order_id)
-                """)
-                print("? Added order_id column to buyer_notifications table")
-        except Exception as e:
-            print(f"Note: Could not add order_id column: {e}")
-        
-        # Create rider_notifications table if it doesn't exist
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS rider_notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                rider_email VARCHAR(255) NOT NULL,
-                message TEXT NOT NULL,
-                order_id INT DEFAULT NULL,
-                is_read BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_rider_email (rider_email),
-                INDEX idx_is_read (is_read),
-                INDEX idx_order_id (order_id)
-            )
-        """)
-        
-        connection.commit()
-        print("? Database tables initialized successfully")
-        
-    except Exception as e:
-        print(f"? Error initializing database tables: {str(e)}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals():
-            connection.close()
+    """No-op: all tables are managed in Supabase via migration SQL files."""
+    print("✅ Supabase tables already initialized via migration SQL files.")
+
 
 def ensure_promotion_tables_exist():
-    """Ensure promotion-related tables exist in the database"""
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Create promotions table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS promotions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                code VARCHAR(50) NOT NULL,
-                seller_email VARCHAR(255) NOT NULL,
-                type ENUM('percentage', 'fixed', 'buy_one_get_one', 'free_shipping') NOT NULL,
-                discount_value DECIMAL(10,2) DEFAULT NULL,
-                max_discount DECIMAL(10,2) DEFAULT NULL,
-                min_purchase DECIMAL(10,2) DEFAULT 0.00,
-                min_quantity INT DEFAULT 1,
-                usage_limit_per_customer INT DEFAULT NULL,
-                total_usage_limit INT DEFAULT NULL,
-                current_usage_count INT DEFAULT 0,
-                start_date DATE NOT NULL,
-                start_time TIME DEFAULT '00:00:00',
-                end_date DATE NOT NULL,
-                end_time TIME DEFAULT '23:59:59',
-                product_scope ENUM('all', 'specific', 'category') DEFAULT 'all',
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                
-                INDEX idx_seller_email (seller_email),
-                INDEX idx_code (code),
-                INDEX idx_active_dates (is_active, start_date, end_date),
-                INDEX idx_type (type),
-                INDEX idx_product_scope (product_scope),
-                UNIQUE KEY unique_seller_code (seller_email, code)
-            )
-        """)
-        
-        # Create promotion_products table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS promotion_products (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                promotion_id INT NOT NULL,
-                product_id INT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                
-                INDEX idx_promotion_id (promotion_id),
-                INDEX idx_product_id (product_id),
-                UNIQUE KEY unique_promotion_product (promotion_id, product_id)
-            )
-        """)
-        
-        # Create promotion_categories table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS promotion_categories (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                promotion_id INT NOT NULL,
-                category VARCHAR(100) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                
-                INDEX idx_promotion_id (promotion_id),
-                INDEX idx_category (category),
-                UNIQUE KEY unique_promotion_category (promotion_id, category)
-            )
-        """)
-        
-        # Create promotion_usage table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS promotion_usage (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                promotion_id INT NOT NULL,
-                order_id INT NOT NULL,
-                customer_email VARCHAR(255) NOT NULL,
-                product_id VARCHAR(50),
-                discount_applied DECIMAL(10,2) NOT NULL,
-                used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                
-                INDEX idx_promotion_id (promotion_id),
-                INDEX idx_order_id (order_id),
-                INDEX idx_customer_email (customer_email),
-                INDEX idx_product_id (product_id),
-                INDEX idx_used_at (used_at)
-            )
-        """)
-        
-        # Add product_id column to existing promotion_usage table if it doesn't exist
-        try:
-            cursor.execute("""
-                ALTER TABLE promotion_usage 
-                ADD COLUMN product_id VARCHAR(50) AFTER customer_email,
-                ADD INDEX idx_product_id (product_id)
-            """)
-            print("? Added product_id column to promotion_usage table")
-        except Exception as alter_error:
-            # Column might already exist, which is fine
-            if "Duplicate column name" not in str(alter_error):
-                print(f"Note: Could not add product_id column: {alter_error}")
-        
-        # Sync current_usage_count with actual usage data for existing promotions
-        try:
-            cursor.execute("""
-                UPDATE promotions p 
-                SET current_usage_count = (
-                    SELECT COUNT(*) 
-                    FROM promotion_usage pu 
-                    WHERE pu.promotion_id = p.id
-                )
-                WHERE current_usage_count = 0 OR current_usage_count IS NULL
-            """)
-            print("? Synced current_usage_count with actual usage data")
-        except Exception as sync_error:
-            print(f"Note: Could not sync usage counts: {sync_error}")
-        
-        connection.commit()
-        print("? Promotion tables ensured to exist")
-        
-        # Backfill promotion usage for existing orders
-        backfill_promotion_usage(cursor)
-        
-    except Exception as e:
-        print(f"? Error ensuring promotion tables exist: {str(e)}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals():
-            connection.close()
+    """No-op: promotion tables are managed in Supabase via supabase_seller_migration.sql."""
+    pass
 
-def backfill_promotion_usage(cursor):
-    """Backfill promotion usage data for existing orders that used promotions"""
-    try:
-        print("?? Starting promotion usage backfill...")
-        
-        # Get all orders that might have used promotions (where original price > total price)
-        cursor.execute("""
-            SELECT o.id, o.product_id, o.seller_email, o.email, o.total_price, o.quantity, o.date,
-                   p.price as original_price
-            FROM orders o
-            LEFT JOIN products p ON o.product_id = p.id
-            WHERE o.product_id IS NOT NULL 
-            AND o.product_id != ''
-            AND p.price IS NOT NULL
-            AND CAST(p.price AS DECIMAL(10,2)) > CAST(o.total_price AS DECIMAL(10,2))
-            AND NOT EXISTS (
-                SELECT 1 FROM promotion_usage pu WHERE pu.order_id = o.id
-            )
-            ORDER BY o.date DESC
-        """)
-        
-        orders_with_discounts = cursor.fetchall()
-        backfilled_count = 0
-        
-        for order in orders_with_discounts:
-            try:
-                # Check if there was a promotion active for this product and seller
-                # We'll check all promotions (not just currently active ones)
-                cursor.execute("""
-                    SELECT pr.id, pr.type, pr.discount_value, pr.start_date, pr.end_date
-                    FROM promotions pr
-                    LEFT JOIN promotion_products pp ON pr.id = pp.promotion_id
-                    LEFT JOIN promotion_categories pc ON pr.id = pc.promotion_id
-                    LEFT JOIN products p ON (pp.product_id = p.id OR pc.category = p.category)
-                    WHERE pr.seller_email = %s
-                    AND (
-                        pr.product_scope = 'all' 
-                        OR (pr.product_scope = 'specific' AND p.id = %s)
-                        OR (pr.product_scope = 'category' AND p.id = %s)
-                    )
-                    AND pr.start_date <= %s 
-                    AND pr.end_date >= %s
-                    ORDER BY pr.created_at DESC
-                    LIMIT 1
-                """, (
-                    order['seller_email'], 
-                    order['product_id'], 
-                    order['product_id'],
-                    order['date'],
-                    order['date']
-                ))
-                
-                promotion = cursor.fetchone()
-                
-                if promotion:
-                    # Calculate the discount that was applied
-                    original_price = float(order['original_price'])
-                    total_price = float(order['total_price'])
-                    quantity = int(order['quantity'])
-                    
-                    # Calculate discount per item and total discount
-                    discount_per_item = original_price - (total_price / quantity)
-                    total_discount_applied = discount_per_item * quantity
-                    
-                    if total_discount_applied > 0:
-                        # Insert promotion usage record
-                        cursor.execute("""
-                            INSERT INTO promotion_usage (
-                                promotion_id,
-                                customer_email,
-                                order_id,
-                                product_id,
-                                discount_applied,
-                                used_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (
-                            promotion['id'],
-                            order['email'],
-                            order['id'],
-                            order['product_id'],
-                            total_discount_applied,
-                            order['date']
-                        ))
-                        
-                        backfilled_count += 1
-                        print(f"? Backfilled promotion usage for order {order['id']}: ?{total_discount_applied:.2f} discount")
-                
-            except Exception as order_error:
-                print(f"?? Error processing order {order['id']}: {order_error}")
-                continue
-        
-        print(f"? Backfilled {backfilled_count} promotion usage records")
-        
-    except Exception as e:
-        print(f"? Error in promotion usage backfill: {str(e)}")
-        import traceback
-        traceback.print_exc()
+
+def backfill_promotion_usage(cursor=None):
+    """No-op: backfill is not needed for Supabase-only setup."""
+    pass
 
 def convert_promotion_for_json(promotion):
     """Convert promotion data to JSON-serializable format"""
@@ -982,83 +559,68 @@ def _fetch_products_from_supabase(categories=None):
 
 
 def get_active_promotions_for_product(product_id, seller_email, category):
-    """Get active promotions that apply to a specific product"""
+    """Get active promotions that apply to a specific product — uses Supabase."""
     try:
-        # Validate input parameters
         if not product_id or not seller_email:
             return None
-            
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Query to find active promotions that apply to this product
-        cursor.execute("""
-            SELECT pr.id, pr.name, pr.code, pr.type, pr.discount_value, pr.max_discount,
-                   pr.min_purchase, pr.min_quantity, pr.start_date, pr.end_date,
-                   pr.start_time, pr.end_time, pr.product_scope
-            FROM promotions pr
-            WHERE pr.seller_email = %s
-            AND pr.is_active = 1 
-            AND pr.start_date <= CURDATE() 
-            AND pr.end_date >= CURDATE()
-            AND TIME(NOW()) BETWEEN pr.start_time AND pr.end_time
-            AND (
-                (pr.product_scope = 'all') OR 
-                (pr.product_scope = 'specific' AND EXISTS (
-                    SELECT 1 FROM promotion_products pp WHERE pp.promotion_id = pr.id AND pp.product_id = %s
-                )) OR
-                (pr.product_scope = 'category' AND EXISTS (
-                    SELECT 1 FROM promotion_categories pc WHERE pc.promotion_id = pr.id AND pc.category = %s
-                ))
-            )
-            ORDER BY pr.discount_value DESC
-            LIMIT 1
-        """, (seller_email, product_id, category))
-        
-        promotion = cursor.fetchone()
-        
-        if promotion:
-            # Convert discount_value to float if it's a Decimal with error handling
-            if promotion['discount_value']:
-                try:
-                    if hasattr(promotion['discount_value'], '__float__'):
-                        promotion['discount_value'] = float(promotion['discount_value'])
-                    else:
-                        promotion['discount_value'] = float(promotion['discount_value'])
-                except (ValueError, TypeError):
-                    promotion['discount_value'] = 0.0
-            
-            # Convert max_discount to float if it's a Decimal with error handling
-            if promotion['max_discount']:
-                try:
-                    if hasattr(promotion['max_discount'], '__float__'):
-                        promotion['max_discount'] = float(promotion['max_discount'])
-                    else:
-                        promotion['max_discount'] = float(promotion['max_discount'])
-                except (ValueError, TypeError):
-                    promotion['max_discount'] = None
-            
-            # Convert min_purchase to float if it's a Decimal with error handling
-            if promotion['min_purchase']:
-                try:
-                    if hasattr(promotion['min_purchase'], '__float__'):
-                        promotion['min_purchase'] = float(promotion['min_purchase'])
-                    else:
-                        promotion['min_purchase'] = float(promotion['min_purchase'])
-                except (ValueError, TypeError):
-                    promotion['min_purchase'] = 0.0
-        
-        cursor.close()
-        connection.close()
-        
-        return promotion
-        
-    except mysql.connector.Error as err:
-        print(f"Database error in get_active_promotions_for_product: {err}")
+
+        from datetime import date as _date
+        today = _date.today().isoformat()
+
+        # Fetch active promotions for this seller
+        promo_res = sb_admin.table('promotions') \
+            .select('id, name, code, type, discount_value, max_discount, min_purchase, '
+                    'min_quantity, start_date, end_date, start_time, end_time, product_scope') \
+            .eq('seller_email', seller_email) \
+            .eq('is_active', True) \
+            .lte('start_date', today) \
+            .gte('end_date', today) \
+            .order('discount_value', desc=True) \
+            .execute()
+
+        promotions = promo_res.data or []
+
+        for promo in promotions:
+            scope = promo.get('product_scope', 'all')
+
+            if scope == 'all':
+                return _normalize_promo_floats(promo)
+
+            elif scope == 'specific':
+                pp_res = sb_admin.table('promotion_products') \
+                    .select('id') \
+                    .eq('promotion_id', promo['id']) \
+                    .eq('product_id', product_id) \
+                    .limit(1) \
+                    .execute()
+                if pp_res.data:
+                    return _normalize_promo_floats(promo)
+
+            elif scope == 'category' and category:
+                pc_res = sb_admin.table('promotion_categories') \
+                    .select('id') \
+                    .eq('promotion_id', promo['id']) \
+                    .eq('category', category) \
+                    .limit(1) \
+                    .execute()
+                if pc_res.data:
+                    return _normalize_promo_floats(promo)
+
         return None
+
     except Exception as err:
         print(f"Error in get_active_promotions_for_product: {err}")
         return None
+
+
+def _normalize_promo_floats(promo):
+    """Convert Decimal/None fields in a promotion dict to float."""
+    for key in ('discount_value', 'max_discount', 'min_purchase'):
+        try:
+            promo[key] = float(promo[key]) if promo.get(key) is not None else None
+        except (ValueError, TypeError):
+            promo[key] = None
+    return promo
 
 def calculate_promotional_price(original_price, promotion):
     """Calculate the promotional price based on promotion type and discount value"""
@@ -1437,78 +999,47 @@ MStyle Team
         return False
 
 def create_low_stock_notification(seller_email, product_name, current_stock, threshold, product_id, variant_info=None):
-    """Create in-app notification for low stock"""
-    connection = None
-    cursor = None
+    """Create in-app notification for low stock — uses Supabase."""
     try:
         variant_text = ""
         if variant_info:
             variant_text = f" ({variant_info['color']} - {variant_info['size']})"
-        
-        message = f"?? Low Stock Alert: {product_name}{variant_text} - Only {current_stock} units left (threshold: {threshold})"
-        
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        cursor.execute("""
-            INSERT INTO notifications (seller_email, message, type, is_read, created_at)
-            VALUES (%s, %s, %s, FALSE, NOW())
-        """, (seller_email, message, 'low_stock'))
-        
-        connection.commit()
-        print(f"? Low stock notification created for {seller_email}: {product_name}{variant_text}")
+
+        message = f"⚠️ Low Stock Alert: {product_name}{variant_text} - Only {current_stock} units left (threshold: {threshold})"
+
+        sb_admin.table('notifications').insert({
+            'seller_email': seller_email,
+            'message':      message,
+            'type':         'low_stock',
+            'is_read':      False,
+        }).execute()
+        print(f"✅ Low stock notification created for {seller_email}: {product_name}{variant_text}")
         return True
-        
     except Exception as e:
-        print(f"? Error creating low stock notification: {str(e)}")
-        if connection:
-            try:
-                connection.rollback()
-            except:
-                pass
+        print(f"❌ Error creating low stock notification: {str(e)}")
         return False
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+
 
 def create_out_of_stock_notification(seller_email, product_name, product_id, variant_info=None):
-    """Create in-app notification for out of stock"""
-    connection = None
-    cursor = None
+    """Create in-app notification for out of stock — uses Supabase."""
     try:
         variant_text = ""
         if variant_info:
             variant_text = f" ({variant_info['color']} - {variant_info['size']})"
-        
-        message = f"?? Out of Stock: {product_name}{variant_text} - Product is now unavailable for purchase"
-        
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        cursor.execute("""
-            INSERT INTO notifications (seller_email, message, type, is_read, created_at)
-            VALUES (%s, %s, %s, FALSE, NOW())
-        """, (seller_email, message, 'out_of_stock'))
-        
-        connection.commit()
-        print(f"? Out of stock notification created for {seller_email}: {product_name}{variant_text}")
+
+        message = f"🚫 Out of Stock: {product_name}{variant_text} - Product is now unavailable for purchase"
+
+        sb_admin.table('notifications').insert({
+            'seller_email': seller_email,
+            'message':      message,
+            'type':         'out_of_stock',
+            'is_read':      False,
+        }).execute()
+        print(f"✅ Out of stock notification created for {seller_email}: {product_name}{variant_text}")
         return True
-        
     except Exception as e:
-        print(f"? Error creating out of stock notification: {str(e)}")
-        if connection:
-            try:
-                connection.rollback()
-            except:
-                pass
+        print(f"❌ Error creating out of stock notification: {str(e)}")
         return False
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
 def check_and_notify_stock_levels(product_id, seller_email, new_quantity, threshold, product_name, variant_info=None):
     """Check stock levels and send notifications if needed"""
@@ -1533,20 +1064,26 @@ def check_and_notify_stock_levels(product_id, seller_email, new_quantity, thresh
         return False
 
 def get_user_by_email(email):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-    user = cursor.fetchone()
-    conn.close()
-    return user
+    """Fetch a user row from Supabase by email."""
+    try:
+        res = sb_admin.table('users').select('*').eq('email', email).limit(1).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f"get_user_by_email error: {e}")
+        return None
+
+
 def update_password_in_db(email, new_password):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    # Hash the password before storing it
-    hashed_password = generate_password_hash(new_password)
-    cursor.execute("UPDATE users SET password = %s WHERE email = %s", (hashed_password, email))
-    conn.commit()
-    conn.close()
+    """Update password in Supabase auth (best-effort, non-blocking)."""
+    try:
+        # Find the user's auth UID
+        users_res = sb_admin.table('users').select('id').eq('email', email).limit(1).execute()
+        if users_res.data:
+            uid = users_res.data[0]['id']
+            sb_admin.auth.admin.update_user_by_id(uid, {'password': new_password})
+            print(f"✅ Supabase auth password updated for {email}")
+    except Exception as e:
+        print(f"⚠️ update_password_in_db error (non-fatal): {e}")
 
 @app.route('/')
 def home():
@@ -1596,19 +1133,7 @@ def test_supabase():
     except Exception as e:
         return f"<h2>? Supabase error</h2><pre>{e}</pre>"
 
-@app.route('/test-db')
-def test_db():
-    """Test route to check database connectivity"""
-    try:
-        db = get_db_connection()
-        cursor = db.cursor()
-        cursor.execute("SELECT 1")
-        result = cursor.fetchone()
-        cursor.close()
-        db.close()
-        return f"Database connection successful! Result: {result}"
-    except Exception as e:
-        return f"Database connection failed: {str(e)}"
+# /test-db route removed
 
 #----------------------------------------------------------------------
                          #LOGIN RELATED ROUTES
@@ -1829,6 +1354,10 @@ def login():
                     flash('Your account no longer exists.', 'error')
             else:
                 flash('Invalid email or password.', 'error')
+        except AuthRetryableError as e:
+            # Supabase auth timed out — show error, no MySQL fallback
+            print(f"Supabase auth timeout: {e}")
+            flash('Login service is temporarily unavailable. Please try again in a moment.', 'error')
         except Exception as e:
             import traceback
             print(f"Login unexpected error: {e}")
@@ -1837,8 +1366,6 @@ def login():
 
         return redirect(url_for('login'))
 
-    # GET
-    return render_template('login.html')
     # GET
     return render_template('login.html')
 
@@ -2345,48 +1872,7 @@ def register():
         except Exception as sb_err:
             print(f"Warning: Supabase pending_users insert failed: {sb_err}")
 
-        # -- Also try MySQL pending_users (optional � may not be running) --
-        hashed_password = generate_password_hash(password)
-        try:
-            db     = get_db_connection()
-            cursor = db.cursor(dictionary=True)
-
-            cursor.execute('SELECT status FROM pending_users WHERE email = %s', (email,))
-            existing = cursor.fetchone()
-
-            if existing:
-                cursor.execute('''
-                    UPDATE pending_users
-                    SET password=%s, first_name=%s, last_name=%s, phone_number=%s,
-                        address=%s, user_type=%s, valid_id_path=%s,
-                        vehicle_type=%s, vehicle_model=%s, vehicle_plate_number=%s, vehicle_year_model=%s,
-                        or_cr_path=%s, nbi_clearance_path=%s, supabase_uid=%s,
-                        status='pending', created_at=CURRENT_TIMESTAMP, rejection_reason=NULL
-                    WHERE email=%s
-                ''', (hashed_password, first_name, last_name, phone_number, address,
-                      user_type, valid_id_path, vehicle_type, vehicle_model,
-                      vehicle_plate_number, vehicle_year_model, or_cr_path, nbi_clearance_path,
-                      uid, email))
-            else:
-                cursor.execute('''
-                    INSERT INTO pending_users
-                    (email, password, first_name, last_name, phone_number, address,
-                     user_type, valid_id_path, vehicle_type, vehicle_model, vehicle_plate_number,
-                     vehicle_year_model, or_cr_path, nbi_clearance_path, supabase_uid, status)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ''', (email, hashed_password, first_name, last_name, phone_number, address,
-                      user_type, valid_id_path, vehicle_type, vehicle_model,
-                      vehicle_plate_number, vehicle_year_model, or_cr_path, nbi_clearance_path,
-                      uid, 'pending'))
-
-            db.commit()
-            print(f"Inserted into MySQL pending_users for {email}")
-        except Exception as db_error:
-            # MySQL is optional � registration still succeeds via Supabase
-            print(f"?? MySQL pending_users insert skipped (MySQL unavailable): {db_error}")
-            if db:
-                try: db.rollback()
-                except Exception: pass
+        # MySQL mirror removed
 
         # Clean up OTP storage
         otp_storage.pop(email, None)
@@ -2408,44 +1894,7 @@ def register():
             except Exception: pass
     
 
-@app.route('/otp_verification', methods=['GET', 'POST'])
-def otp_verification():
-    if request.method == 'POST':
-        user_otp = request.get_json().get('otp')  # Get the OTP entered by the user from JSON
-
-        # Check if the OTP exists in the session and if it matches
-        if 'otp' in session and int(user_otp) == session['otp']:
-            # Finalize registration by saving user data
-            registration_data = session.get('registration_data')
-            if registration_data:
-                try:
-                    db = get_db_connection()  # Ensure this function returns a valid DB connection
-                    cursor = db.cursor()
-                    
-                    # Insert into users table
-                    cursor.execute('''INSERT INTO users (first_name, last_name, email, phone_number, address, password, user_type)
-                                          VALUES (%s, %s, %s, %s, %s, %s, %s)''',
-                                       (registration_data['first_name'], registration_data['last_name'], session['email'], 
-                                        registration_data['phone_number'], registration_data['address'], 
-                                        registration_data['password'], registration_data['user_type']))
-                    db.commit()
-                    response_data = {'success': True, 'message': 'Registration successful.'}
-                    
-                    cursor.close()
-                    db.close()
-
-                    # Clear the registration data from the session
-                    session.pop('registration_data', None)
-
-                except mysql.connector.Error as err:
-                    response_data = {'success': False, 'error': f"Error: {err}"}
-                    return jsonify(response_data)  # Return error in JSON format
-
-            return jsonify(response_data)  # Return response data as JSON
-        else:
-            return jsonify(success=False, error="Invalid OTP")  # Return JSON response for invalid OTP
-
-    return render_template('otp_verification.html')
+# /otp_verification route removed
 
 @app.route('/register')
 def register_page():
@@ -2573,62 +2022,7 @@ def seller_register():
             except Exception as sb_err:
                 print(f"Warning: Supabase pending_sellers insert failed: {sb_err}")
 
-            # -- Also try MySQL pending_sellers (optional � may not be running) --
-            hashed_password = generate_password_hash(password)
-            db = cursor = None
-            try:
-                db     = get_db_connection()
-                cursor = db.cursor(dictionary=True)
-
-                cursor.execute('SELECT status FROM pending_sellers WHERE email = %s', (email,))
-                existing = cursor.fetchone()
-
-                if existing:
-                    if existing['status'] == 'pending':
-                        cursor.close(); db.close()
-                        flash('You already have a pending seller application.', 'info')
-                        return render_template('login.html')
-                    elif existing['status'] == 'approved':
-                        cursor.close(); db.close()
-                        flash('Your seller account has already been approved. Please log in.', 'success')
-                        return redirect(url_for('login'))
-                    else:
-                        cursor.execute('''
-                            UPDATE pending_sellers
-                            SET first_name=%s, last_name=%s, business_name=%s, phone_number=%s,
-                                address=%s, business_type=%s, password=%s, valid_id_path=%s,
-                                dti_path=%s, bir_path=%s, business_permit_path=%s, supabase_uid=%s,
-                                status='pending', created_at=%s, rejection_reason=NULL
-                            WHERE email=%s
-                        ''', (first_name, last_name, business_name, phone_number, address,
-                              business_type, hashed_password, valid_id_path, dti_path, bir_path,
-                              business_permit_path, uid, datetime.now(), email))
-                else:
-                    cursor.execute('''
-                        INSERT INTO pending_sellers
-                        (first_name, last_name, business_name, phone_number, address,
-                         business_type, email, password, valid_id_path, dti_path, bir_path,
-                         business_permit_path, supabase_uid, status, created_at)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ''', (first_name, last_name, business_name, phone_number, address,
-                          business_type, email, hashed_password, valid_id_path, dti_path, bir_path,
-                          business_permit_path, uid, 'pending', datetime.now()))
-
-                db.commit()
-                print(f"Inserted into MySQL pending_sellers for {email}")
-            except Exception as db_error:
-                # MySQL is optional � registration still succeeds via Supabase
-                print(f"?? MySQL pending_sellers insert skipped (MySQL unavailable): {db_error}")
-                if db:
-                    try: db.rollback()
-                    except Exception: pass
-            finally:
-                if cursor:
-                    try: cursor.close()
-                    except Exception: pass
-                if db:
-                    try: db.close()
-                    except Exception: pass
+            # MySQL mirror removed
 
             # Clean up OTP storage
             otp_storage.pop(email, None)
@@ -2763,12 +2157,7 @@ def reset_password():
 
         print(f"DEBUG reset_password: password updated successfully")
 
-        # Best-effort MySQL update
-        if email:
-            try:
-                update_password_in_db(email, new_password)
-            except Exception:
-                pass
+        # Password updated in Supabase auth above
 
         # Clear all reset session keys
         for k in ('reset_code', 'reset_uid', 'reset_email',
@@ -2791,132 +2180,41 @@ def reset_password():
 def change_password():
     if 'user_id' not in session:
         return jsonify({'success': False, 'message': 'You need to log in to change your password.'}), 401
-
     try:
-        # Get form data
         data = request.get_json() if request.is_json else request.form
-        old_password = data.get('old_password')
-        new_password = data.get('new_password')
+        old_password     = data.get('old_password')
+        new_password     = data.get('new_password')
         confirm_password = data.get('confirm_password')
-
-        # Validate inputs
         if not all([old_password, new_password, confirm_password]):
             return jsonify({'success': False, 'message': 'All fields are required.'}), 400
-
         if new_password != confirm_password:
             return jsonify({'success': False, 'message': 'New password and confirm password do not match.'}), 400
-
-        # Get database connection
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
-        # Get user data by email (user_id is now a Supabase UUID, not MySQL integer)
         user_email = session.get('email')
-        cursor.execute("SELECT * FROM users WHERE email = %s", (user_email,))
-        user = cursor.fetchone()
-
-        if not user:
-            return jsonify({'success': False, 'message': 'User not found.'}), 404
-
-        # Verify old password - handle both hashed and plain text passwords
-        password_valid = False
-        
-        # First try hashed password comparison
+        # Verify old password via Supabase sign-in
         try:
-            if check_password_hash(user['password'], old_password):
-                password_valid = True
-        except:
-            # If hashed comparison fails, try plain text comparison
-            if user['password'] == old_password:
-                password_valid = True
-        
-        if not password_valid:
+            sb.auth.sign_in_with_password({'email': user_email, 'password': old_password})
+        except Exception:
             return jsonify({'success': False, 'message': 'Incorrect current password.'}), 400
-
-        # Update password - try hashed first, fallback to plain text if database constraint fails
-        try:
-            # Hash the new password
-            hashed_new_password = generate_password_hash(new_password)
-            
-            # Try to update with hashed password
-            cursor.execute(
-                "UPDATE users SET password = %s WHERE email = %s",
-                (hashed_new_password, session.get('email'))
-            )
-            connection.commit()
-            
-        except Exception as db_error:
-            # If hashed password fails (likely due to field length), try plain text
-            print(f"Hashed password update failed: {db_error}")
-            print("Falling back to plain text password storage")
-            
-            try:
-                cursor.execute(
-                    "UPDATE users SET password = %s WHERE email = %s",
-                    (new_password, session.get('email'))
-                )
-                connection.commit()
-            except Exception as fallback_error:
-                raise Exception(f"Both hashed and plain text password updates failed: {fallback_error}")
-
-        return jsonify({
-            'success': True,
-            'message': 'Password updated successfully!'
-        })
-
+        # Update password in Supabase auth
+        uid_res = sb_admin.table('users').select('id').eq('email', user_email).limit(1).execute()
+        if uid_res.data:
+            sb_admin.auth.admin.update_user_by_id(uid_res.data[0]['id'], {'password': new_password})
+        return jsonify({'success': True, 'message': 'Password updated successfully!'})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'An error occurred: {str(e)}'
-        }), 500
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals():
-            connection.close()
+        return jsonify({'success': False, 'message': f'An error occurred: {str(e)}'}), 500
 
 @app.route('/check-old-password', methods=['POST'])
 def check_old_password():
-    user_id = session.get('user_id')
-    if user_id is None:
-        return jsonify(valid=False), 401  # User not logged in
-
+    if session.get('user_id') is None:
+        return jsonify(valid=False), 401
     data = request.get_json()
-    old_password = data.get("old_password")
-
+    old_password = data.get('old_password')
+    user_email = session.get('email')
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Fetch the stored password for comparison (use email since user_id is now a UUID)
-        user_email = session.get('email')
-        cursor.execute("SELECT password FROM users WHERE email = %s", (user_email,))
-        user_data = cursor.fetchone()
-        
-        if user_data:
-            # Check password - handle both hashed and plain text passwords
-            password_valid = False
-            
-            # First try hashed password comparison
-            try:
-                if check_password_hash(user_data['password'], old_password):
-                    password_valid = True
-            except:
-                # If hashed comparison fails, try plain text comparison
-                if user_data['password'] == old_password:
-                    password_valid = True
-            
-            return jsonify(valid=password_valid)
-        else:
-            return jsonify(valid=False)  # User not found
-
-    except mysql.connector.Error as err:
-        print("Database error:", err)
-        return jsonify(valid=False), 500
-
-    finally:
-        cursor.close()
-        connection.close()
+        sb.auth.sign_in_with_password({'email': user_email, 'password': old_password})
+        return jsonify(valid=True)
+    except Exception:
+        return jsonify(valid=False)
 
 
 #----------------------------------------------------------------------
@@ -3042,39 +2340,15 @@ def search():
 @app.route('/api/search-suggestions')
 def search_suggestions():
     query = request.args.get('query', '').strip()
-    
     if not query or len(query) < 2:
         return jsonify({'success': False, 'suggestions': []})
-    
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get product suggestions based on name and category (only active products for buyers)
-        cursor.execute("""
-            SELECT DISTINCT name, category FROM products 
-            WHERE quantity > 0 AND is_active = 1 AND (name LIKE %s OR category LIKE %s)
-            ORDER BY 
-                CASE 
-                    WHEN name LIKE %s THEN 1
-                    WHEN name LIKE %s THEN 2
-                    ELSE 3
-                END,
-                sold DESC
-            LIMIT 8
-        """, (f"%{query}%", f"%{query}%", f"{query}%", f"%{query}%"))
-        
-        suggestions = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'success': True,
-            'suggestions': suggestions
-        })
-        
-    except mysql.connector.Error as err:
-        print(f"Database error in search suggestions: {err}")
+        q = f'%{query}%'
+        res = sb_admin.table('products').select('name, category').eq('is_active', True).or_(f'name.ilike.{q},category.ilike.{q}').order('sold', desc=True).limit(8).execute()
+        suggestions = [{'name': p['name'], 'category': p['category']} for p in (res.data or [])]
+        return jsonify({'success': True, 'suggestions': suggestions})
+    except Exception as err:
+        print(f"search_suggestions error: {err}")
         return jsonify({'success': False, 'suggestions': []})
 
 
@@ -3251,45 +2525,7 @@ def view_product(product_id):
     except Exception as sb_err:
         print(f"?? Supabase view_product failed: {sb_err}")
 
-    # -- FALLBACK: MySQL -------------------------------------------------------
-    if product is None:
-        try:
-            db = get_db_connection()
-            cursor = db.cursor(dictionary=True)
-            cursor.execute("""
-                SELECT p.*,
-                       CONCAT(u.first_name, ' ', u.last_name) as seller_name,
-                       COALESCE(u.business_name, CONCAT(u.first_name, ' ', u.last_name)) as business_name,
-                       u.profile_picture as seller_profile_picture
-                FROM products p
-                JOIN users u ON p.seller_email = u.email
-                WHERE p.id = %s AND p.is_active = 1
-            """, (product_id,))
-            product = cursor.fetchone()
-
-            if product:
-                cursor.execute("""
-                    SELECT r.*,
-                           CONCAT(u.first_name, ' ', u.last_name) as customer_name,
-                           u.profile_picture,
-                           r.seller_response, r.response_date
-                    FROM reviews r
-                    JOIN users u ON r.customer_email = u.email
-                    WHERE r.product_id = %s
-                    ORDER BY r.created_at DESC
-                """, (product_id,))
-                reviews = cursor.fetchall()
-                if reviews:
-                    total_rating = sum(rv['rating'] for rv in reviews)
-                    review_stats['total_reviews'] = len(reviews)
-                    review_stats['average_rating'] = round(total_rating / len(reviews), 1)
-                    for rv in reviews:
-                        review_stats['rating_distribution'][rv['rating']] += 1
-
-            cursor.close()
-            db.close()
-        except Exception as mysql_err:
-            print(f"?? MySQL view_product fallback failed: {mysql_err}")
+    # MySQL fallback removed  Supabase is the only source
 
     # -- Promotions ------------------------------------------------------------
     active_promotion = None
@@ -3406,62 +2642,7 @@ def profile():
                     else:
                         return jsonify({'success': False, 'message': 'Please upload a valid image file (PNG, JPG, JPEG, GIF)'}), 400
 
-            # -- Also update MySQL users table (by email) ------------------
-            user_type = session.get('user_type', '').lower()
-            try:
-                connection = get_db_connection()
-                cursor = connection.cursor()
-
-                if profile_picture_filename:
-                    if user_type == 'rider':
-                        try:
-                            cursor.execute("""
-                                UPDATE users
-                                SET first_name=%s, last_name=%s, phone_number=%s, address=%s,
-                                    business_name=%s, vehicle_type=%s, vehicle_model=%s,
-                                    vehicle_plate_number=%s, vehicle_year_model=%s, profile_picture=%s
-                                WHERE email=%s
-                            """, (first_name, last_name, phone_number, address, business_name,
-                                  vehicle_type, vehicle_model, vehicle_plate_number,
-                                  vehicle_year_model, profile_picture_filename, user_email))
-                        except Exception:
-                            cursor.execute("""
-                                UPDATE users SET first_name=%s, last_name=%s, phone_number=%s,
-                                    address=%s, business_name=%s, profile_picture=%s WHERE email=%s
-                            """, (first_name, last_name, phone_number, address, business_name,
-                                  profile_picture_filename, user_email))
-                    else:
-                        cursor.execute("""
-                            UPDATE users SET first_name=%s, last_name=%s, phone_number=%s,
-                                address=%s, business_name=%s, profile_picture=%s WHERE email=%s
-                        """, (first_name, last_name, phone_number, address, business_name,
-                              profile_picture_filename, user_email))
-                else:
-                    if user_type == 'rider':
-                        try:
-                            cursor.execute("""
-                                UPDATE users
-                                SET first_name=%s, last_name=%s, phone_number=%s, address=%s,
-                                    business_name=%s, vehicle_type=%s, vehicle_model=%s,
-                                    vehicle_plate_number=%s, vehicle_year_model=%s
-                                WHERE email=%s
-                            """, (first_name, last_name, phone_number, address, business_name,
-                                  vehicle_type, vehicle_model, vehicle_plate_number,
-                                  vehicle_year_model, user_email))
-                        except Exception:
-                            cursor.execute("""
-                                UPDATE users SET first_name=%s, last_name=%s, phone_number=%s,
-                                    address=%s, business_name=%s WHERE email=%s
-                            """, (first_name, last_name, phone_number, address, business_name, user_email))
-                    else:
-                        cursor.execute("""
-                            UPDATE users SET first_name=%s, last_name=%s, phone_number=%s,
-                                address=%s, business_name=%s WHERE email=%s
-                        """, (first_name, last_name, phone_number, address, business_name, user_email))
-
-                connection.commit()
-            except Exception as mysql_err:
-                print(f"?? MySQL profile update skipped (unavailable): {mysql_err}")
+            # MySQL mirror removed
 
             # Update session first_name
             if first_name:
@@ -3544,29 +2725,7 @@ def profile():
                 'vehicle_year_model':   '',
             }
 
-        # -- Supplement with MySQL data (profile_picture, business_name, vehicle) --
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor(dictionary=True)
-            cur.execute("""
-                SELECT profile_picture, business_name,
-                       vehicle_type, vehicle_model, vehicle_plate_number, vehicle_year_model
-                FROM users WHERE email = %s
-            """, (user_email,))
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
-            if row:
-                user_data['profile_picture'] = row.get('profile_picture')
-                # Only use MySQL business_name if Supabase didn't have one
-                if not user_data.get('business_name'):
-                    user_data['business_name'] = row.get('business_name', '') or ''
-                user_data['vehicle_type']         = row.get('vehicle_type', '') or ''
-                user_data['vehicle_model']        = row.get('vehicle_model', '') or ''
-                user_data['vehicle_plate_number'] = row.get('vehicle_plate_number', '') or ''
-                user_data['vehicle_year_model']   = row.get('vehicle_year_model', '') or ''
-        except Exception as mysql_err:
-            print(f"?? MySQL profile supplement skipped: {mysql_err}")
+        # MySQL supplement removed  data comes from Supabase only
 
         # -- For riders: also check Supabase rider_vehicles table ----------
         # Vehicle data is stored there after admin approval (primary source).
@@ -3673,237 +2832,122 @@ def seller_dashboard():
     if 'email' not in session:
         return redirect(url_for('home'))
 
-    # -- Get seller name from Supabase (works even when MySQL is down) -----
+    seller_email = session['email']
+
+    # -- Get seller name from Supabase ------------------------------------
     seller_name = session.get('first_name', 'Seller')
     try:
-        sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
+        sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', seller_email).execute()
         if sb_res.data:
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
-    except Exception as sb_err:
-        print(f"?? Supabase name fetch failed in seller_dashboard: {sb_err}")
+    except Exception as e:
+        print(f"seller_dashboard name fetch failed: {e}")
 
-    # Get date range from query parameters or use default (last 7 days)
-    end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
-    start_date = request.args.get('start_date', (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d'))
-
-    # Safe defaults � used when MySQL is unavailable
-    total_sales    = 0.0
-    total_earnings = 0.0
-    total_items    = 0
+    # -- Safe defaults ----------------------------------------------------
+    total_sales     = 0.0
+    total_earnings  = 0.0
+    total_items     = 0
     avg_order_value = 0.0
-    pending_orders  = 0
-    cancelled_orders = 0
     total_products  = 0
-    status_counts   = {k: 0 for k in ['Pending','Confirmed','Preparing','Ready for Pickup','Out for Delivery','Delivered','Completed','Cancelled']}
-    chart_dates     = []
-    chart_sales     = []
-    chart_earnings  = []
+    status_counts   = {k: 0 for k in [
+        'Pending', 'Confirmed', 'Preparing', 'Ready for Pickup',
+        'Out for Delivery', 'Delivered', 'Completed', 'Cancelled'
+    ]}
 
-    # Pre-fill chart dates regardless of MySQL availability
-    current_date = datetime.strptime(end_date, '%Y-%m-%d')
+    # Build 12-month chart skeleton
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.now()
+    chart_dates    = []
+    chart_sales    = []
+    chart_earnings = []
     for i in range(11, -1, -1):
-        month_date = current_date - timedelta(days=i*30)
-        chart_dates.append(month_date.strftime('%Y-%m'))
+        m = now - _td(days=i * 30)
+        chart_dates.append(m.strftime('%Y-%m'))
         chart_sales.append(0)
         chart_earnings.append(0)
 
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-    except Exception as db_err:
-        print(f"?? MySQL unavailable in seller_dashboard: {db_err}")
-        return render_template('seller_dashboard.html',
-                             total_sales="{:.2f}".format(total_sales),
-                             total_earnings="{:.2f}".format(total_earnings),
-                             total_items=total_items,
-                             pending_orders=pending_orders,
-                             cancelled_orders=cancelled_orders,
-                             avg_order_value="{:.2f}".format(avg_order_value),
-                             total_products=total_products,
-                             start_date=start_date,
-                             end_date=end_date,
-                             user_name=seller_name,
-                             user_email=session.get('email', 'Seller'),
-                             order_status_counts=status_counts,
-                             chart_dates=chart_dates,
-                             chart_sales=chart_sales,
-                             chart_earnings=chart_earnings)
+        # All orders for this seller
+        orders_res = sb_admin.table('orders') \
+            .select('id, status, total_price, date, quantity') \
+            .eq('seller_email', seller_email) \
+            .execute()
+        all_orders = orders_res.data or []
 
-    try:
-        # Fetch sales and earnings data for charts (last 30 days, only completed/delivered orders)
-        cursor.execute("""
-            SELECT 
-                DATE(o.date) as sale_date,
-                SUM(o.total_price) as daily_sales,
-                o.id as order_id,
-                o.product_id,
-                o.total_price,
-                o.date as order_date,
-                o.seller_email
-            FROM orders o
-            WHERE o.seller_email = %s 
-            AND DATE(o.date) >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-            AND o.status IN ('Completed', 'Delivered')
-            GROUP BY DATE(o.date), o.id, o.product_id, o.total_price, o.date, o.seller_email
-            ORDER BY sale_date
-        """, (session['email'],))
-        
-        orders_data = cursor.fetchall()
-        
-        # Calculate monthly sales and earnings
-        monthly_data = {}
-        
-        for order in orders_data:
-            month_key = order['sale_date'].strftime('%Y-%m')
-            order_value = float(order['total_price'])
-            
-            if month_key not in monthly_data:
-                monthly_data[month_key] = {'sales': 0, 'earnings': 0}
-            
-            monthly_data[month_key]['sales'] += order_value
-            
-            cursor.execute("""
-                SELECT COALESCE(discount_applied, 0) as discount
-                FROM promotion_usage
-                WHERE order_id = %s
-            """, (order['order_id'],))
-            discount_result = cursor.fetchone()
-            discount_applied = float(discount_result['discount']) if discount_result else 0.0
-            
-            net_sales = order_value - discount_applied
-            
-            has_free_shipping = False
-            if order['product_id']:
-                cursor.execute("""
-                    SELECT pr.id
-                    FROM promotions pr
-                    LEFT JOIN promotion_products pp ON pr.id = pp.promotion_id
-                    LEFT JOIN promotion_categories pc ON pr.id = pc.promotion_id
-                    LEFT JOIN products p ON (pp.product_id = p.id OR pc.category = p.category)
-                    WHERE pr.seller_email = %s
-                    AND pr.type = 'free_shipping'
-                    AND pr.is_active = 1
-                    AND pr.start_date <= %s
-                    AND pr.end_date >= %s
-                    AND (
-                        pr.product_scope = 'all' 
-                        OR (pr.product_scope = 'specific' AND p.id = %s)
-                        OR (pr.product_scope = 'category' AND p.id = %s)
-                    )
-                    LIMIT 1
-                """, (order['seller_email'], order['order_date'].date(), order['order_date'].date(), order['product_id'], order['product_id']))
-                has_free_shipping = cursor.fetchone() is not None
-            
-            shipping_fee_deduction = 50 if has_free_shipping else 0
-            platform_commission = net_sales * 0.05
-            order_earnings = net_sales - shipping_fee_deduction - platform_commission
-            monthly_data[month_key]['earnings'] += order_earnings
-        
-        # Rebuild chart data with real values
-        chart_dates = []
-        chart_sales = []
-        chart_earnings = []
-        for i in range(11, -1, -1):
-            month_date = current_date - timedelta(days=i*30)
-            month_key = month_date.strftime('%Y-%m')
-            chart_dates.append(month_key)
-            chart_sales.append(monthly_data.get(month_key, {}).get('sales', 0))
-            chart_earnings.append(monthly_data.get(month_key, {}).get('earnings', 0))
-
-        # Get dashboard stats
-        cursor.execute("""
-            SELECT 
-                COALESCE(SUM(total_price), 0) as total_sales,
-                COUNT(*) as total_items,
-                COALESCE(AVG(total_price), 0) as avg_order_value
-            FROM orders 
-            WHERE seller_email = %s
-            AND status IN ('Completed', 'Delivered')
-        """, (session['email'],))
-        stats = cursor.fetchone()
-
-        # Get total earnings
-        cursor.execute("""
-            SELECT o.id, o.product_id, o.total_price, o.date, o.seller_email
-            FROM orders o
-            WHERE o.seller_email = %s 
-            AND o.status IN ('Delivered', 'Completed')
-        """, (session['email'],))
-        completed_orders = cursor.fetchall()
-        
-        for order in completed_orders:
-            has_free_shipping = False
-            order_value = float(order['total_price'])
-            cursor.execute("SELECT COALESCE(discount_applied, 0) as discount FROM promotion_usage WHERE order_id = %s", (order['id'],))
-            discount_result = cursor.fetchone()
-            discount_applied = float(discount_result['discount']) if discount_result else 0.0
-            net_sales = order_value - discount_applied
-            if order['product_id']:
-                cursor.execute("""
-                    SELECT pr.id FROM promotions pr
-                    LEFT JOIN promotion_products pp ON pr.id = pp.promotion_id
-                    LEFT JOIN promotion_categories pc ON pr.id = pc.promotion_id
-                    LEFT JOIN products p ON (pp.product_id = p.id OR pc.category = p.category)
-                    WHERE pr.seller_email = %s AND pr.type = 'free_shipping' AND pr.is_active = 1
-                    AND pr.start_date <= %s AND pr.end_date >= %s
-                    AND (pr.product_scope = 'all' OR (pr.product_scope = 'specific' AND p.id = %s) OR (pr.product_scope = 'category' AND p.id = %s))
-                    LIMIT 1
-                """, (order['seller_email'], order['date'].date(), order['date'].date(), order['product_id'], order['product_id']))
-                has_free_shipping = cursor.fetchone() is not None
-            shipping_fee_deduction = 50.0 if has_free_shipping else 0.0
-            platform_commission = net_sales * 0.05
-            total_earnings += net_sales - shipping_fee_deduction - platform_commission
-        
-        total_sales = float(stats['total_sales'])
-        total_items = stats['total_items']
-        avg_order_value = float(stats['avg_order_value'])
-
-        cursor.execute("SELECT COUNT(*) as pending_count FROM orders WHERE seller_email = %s AND status = 'Pending'", (session['email'],))
-        pending_orders = (cursor.fetchone() or {}).get('pending_count', 0)
-
-        cursor.execute("SELECT COUNT(*) as cancelled_count FROM orders WHERE seller_email = %s AND status = 'Cancelled'", (session['email'],))
-        cancelled_orders = (cursor.fetchone() or {}).get('cancelled_count', 0)
-
-        cursor.execute("SELECT COUNT(*) as product_count FROM products WHERE seller_email = %s", (session['email'],))
-        total_products = (cursor.fetchone() or {}).get('product_count', 0)
-
-        cursor.execute("SELECT status, COUNT(*) as count FROM orders WHERE seller_email = %s GROUP BY status", (session['email'],))
-        status_mapping = {
-            'pending': 'Pending', 'confirmed': 'Confirmed', 'preparing': 'Preparing',
-            'ready_for_pickup': 'Ready for Pickup', 'out_for_delivery': 'Out for Delivery',
-            'delivered': 'Delivered', 'completed': 'Completed', 'cancelled': 'Cancelled'
+        # Status distribution
+        status_alias = {
+            'waiting for pickup': 'Ready for Pickup',
+            'for pickup':         'Ready for Pickup',
+            'in transit':         'Out for Delivery',
+            'out for delivery':   'Out for Delivery',
+            'heading to seller':  'Out for Delivery',
+            'shipped':            'Out for Delivery',
         }
-        for row in cursor.fetchall():
-            key = status_mapping.get(row['status'].lower(), row['status'])
+        for o in all_orders:
+            raw = (o.get('status') or '').strip()
+            key = status_alias.get(raw.lower(), raw)
             if key in status_counts:
-                status_counts[key] = row['count']
+                status_counts[key] += 1
+
+        # Stats from completed/delivered orders
+        done_orders = [o for o in all_orders if (o.get('status') or '').lower() in ('completed', 'delivered')]
+        for o in done_orders:
+            val = float(o.get('total_price') or 0)
+            total_sales    += val
+            total_earnings += val * 0.95   # 5% platform fee
+            total_items    += int(o.get('quantity') or 1)
+
+        avg_order_value = (total_sales / len(done_orders)) if done_orders else 0.0
+
+        # Monthly chart data
+        monthly = {}
+        for o in done_orders:
+            raw_date = o.get('date')
+            if not raw_date:
+                continue
+            try:
+                month_key = str(raw_date)[:7]   # 'YYYY-MM'
+                val = float(o.get('total_price') or 0)
+                if month_key not in monthly:
+                    monthly[month_key] = {'sales': 0.0, 'earnings': 0.0}
+                monthly[month_key]['sales']    += val
+                monthly[month_key]['earnings'] += val * 0.95
+            except Exception:
+                pass
+
+        chart_sales    = [monthly.get(m, {}).get('sales',    0) for m in chart_dates]
+        chart_earnings = [monthly.get(m, {}).get('earnings', 0) for m in chart_dates]
+
+        # Total products
+        prod_res = sb_admin.table('products') \
+            .select('id', count='exact') \
+            .eq('seller_email', seller_email) \
+            .execute()
+        total_products = prod_res.count or 0
 
     except Exception as e:
-        print(f"?? MySQL query error in seller_dashboard: {e}")
-    finally:
-        if 'cursor' in locals() and cursor:
-            cursor.close()
-        if 'connection' in locals() and connection:
-            connection.close()
+        print(f"seller_dashboard Supabase error: {e}")
+
+    end_date   = now.strftime('%Y-%m-%d')
+    start_date = (now - _td(days=7)).strftime('%Y-%m-%d')
 
     return render_template('seller_dashboard.html',
-                         total_sales="{:.2f}".format(total_sales),
-                         total_earnings="{:.2f}".format(total_earnings),
-                         total_items=total_items,
-                         pending_orders=pending_orders,
-                         cancelled_orders=cancelled_orders,
-                         avg_order_value="{:.2f}".format(avg_order_value),
-                         total_products=total_products,
-                         start_date=start_date,
-                         end_date=end_date,
-                         user_name=seller_name,
-                         user_email=session.get('email', 'Seller'),
-                         order_status_counts=status_counts,
-                         chart_dates=chart_dates,
-                         chart_sales=chart_sales,
-                         chart_earnings=chart_earnings)
-
+                           total_sales="{:.2f}".format(total_sales),
+                           total_earnings="{:.2f}".format(total_earnings),
+                           total_items=total_items,
+                           pending_orders=status_counts.get('Pending', 0),
+                           cancelled_orders=status_counts.get('Cancelled', 0),
+                           avg_order_value="{:.2f}".format(avg_order_value),
+                           total_products=total_products,
+                           start_date=start_date,
+                           end_date=end_date,
+                           user_name=seller_name,
+                           user_email=seller_email,
+                           order_status_counts=status_counts,
+                           chart_dates=chart_dates,
+                           chart_sales=chart_sales,
+                           chart_earnings=chart_earnings)
 @app.route('/reports_analytics')
 def reports_analytics():
     if 'email' not in session:
@@ -3923,22 +2967,122 @@ def reports_analytics():
     except Exception as sb_err:
         print(f"?? Supabase name fetch failed in reports_analytics: {sb_err}")
 
+    seller_email = session['email']
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-    except Exception as db_err:
-        print(f"?? MySQL unavailable in reports_analytics: {db_err}")
-        return render_template('reports_analytics.html',
-                             total_revenue="0.00", total_orders=0,
-                             avg_order_value="0.00", total_earnings="0.00",
-                             top_products=[], status_stats={
-                                 k: {'count': 0, 'value': 0.0} for k in
-                                 ['pending','confirmed','preparing','ready_for_pickup',
-                                  'out_for_delivery','delivered','completed','cancelled']
-                             },
-                             order_details=[], promotion_performance=[],
-                             financial_summary=[], user_name=seller_name,
-                             user_email=session.get('email', 'Seller'))
+        from datetime import date as _date
+        today = _date.today().isoformat()
+
+        # All orders for this seller
+        orders_res = sb_admin.table('orders').select('id, status, total_price, date, quantity, name, received_at, delivered_at, email, product_id').eq('seller_email', seller_email).execute()
+        all_orders = orders_res.data or []
+
+        done_orders = [o for o in all_orders if (o.get('status') or '').lower() in ('completed', 'delivered')]
+        total_revenue = sum(float(o.get('total_price') or 0) for o in done_orders)
+        total_orders  = len(done_orders)
+        avg_order_value = (total_revenue / total_orders) if total_orders else 0.0
+        total_earnings  = total_revenue * 0.95
+
+        # Top products
+        from collections import defaultdict
+        prod_sales = defaultdict(lambda: {'total_sold': 0, 'revenue': 0.0, 'name': ''})
+        for o in done_orders:
+            pid = o.get('product_id') or o.get('name', 'unknown')
+            prod_sales[pid]['total_sold'] += int(o.get('quantity') or 1)
+            prod_sales[pid]['revenue']    += float(o.get('total_price') or 0)
+            prod_sales[pid]['name']        = o.get('name', str(pid))
+        top_products = sorted(
+            [{'name': v['name'], 'product_id': k, 'total_sold': v['total_sold'],
+              'revenue': v['revenue'], 'stock_left': 0, 'avg_rating': 0.0, 'review_count': 0}
+             for k, v in prod_sales.items()],
+            key=lambda x: x['total_sold'], reverse=True
+        )[:5]
+
+        # Status stats
+        status_stats = {k: {'count': 0, 'value': 0.0} for k in
+            ['pending','confirmed','preparing','ready_for_pickup','out_for_delivery','delivered','completed','cancelled']}
+        for o in all_orders:
+            key = (o.get('status') or '').lower().replace(' ', '_')
+            if key in status_stats:
+                status_stats[key]['count'] += 1
+                status_stats[key]['value'] += float(o.get('total_price') or 0)
+
+        # Order details
+        buyer_emails = list({o['email'] for o in all_orders if o.get('email')})
+        buyer_map = {}
+        if buyer_emails:
+            ur = sb_admin.table('users').select('email, first_name, last_name').in_('email', buyer_emails).execute()
+            buyer_map = {u['email']: u for u in (ur.data or [])}
+
+        order_details = []
+        for o in sorted(all_orders, key=lambda x: x.get('date') or '', reverse=True)[:100]:
+            buyer = buyer_map.get(o.get('email', ''), {})
+            buyer_name = f"{buyer.get('first_name','')} {buyer.get('last_name','')}".strip() or 'N/A'
+            order_details.append({
+                'product_name':    o.get('name', ''),
+                'quantity':        int(o.get('quantity') or 0),
+                'status':          (o.get('status') or '').lower(),
+                'order_date':      o.get('date'),
+                'completion_date': o.get('received_at') or o.get('delivered_at'),
+                'total_amount':    float(o.get('total_price') or 0),
+                'buyer_name':      buyer_name,
+            })
+
+        # Promotion performance from Supabase
+        promo_res = sb_admin.table('promotions').select('id, name, type, discount_value, start_date, end_date, is_active, current_usage_count').eq('seller_email', seller_email).execute()
+        promotion_performance = []
+        for p in (promo_res.data or []):
+            sd = str(p.get('start_date') or '')[:10]
+            ed = str(p.get('end_date') or '')[:10]
+            if not p.get('is_active'):
+                pstatus = 'ended'
+            elif ed < today:
+                pstatus = 'expired'
+            elif sd <= today <= ed:
+                pstatus = 'active'
+            else:
+                pstatus = 'inactive'
+            promotion_performance.append({
+                'name': p.get('name',''), 'type': p.get('type',''),
+                'discount_value': float(p.get('discount_value') or 0),
+                'start_date': sd, 'end_date': ed,
+                'usage_count': int(p.get('current_usage_count') or 0),
+                'revenue_generated': 0.0, 'status': pstatus,
+            })
+
+        # Financial summary
+        financial_summary = []
+        for o in done_orders[:100]:
+            net = float(o.get('total_price') or 0)
+            financial_summary.append({
+                'order_id': o['id'], 'product_name': o.get('name',''),
+                'quantity': int(o.get('quantity') or 1),
+                'date_completed': o.get('received_at') or o.get('delivered_at') or o.get('date'),
+                'product_sales': net, 'discounts': 0.0, 'net_sales': net,
+                'shipping_fee_collected': 50.0, 'platform_commission': net * 0.05,
+                'net_earnings': net * 0.95, 'promotion_type': None,
+            })
+
+    except Exception as e:
+        print(f"reports_analytics Supabase error: {e}")
+        import traceback; traceback.print_exc()
+        total_revenue = avg_order_value = total_earnings = 0.0
+        total_orders = 0
+        top_products = order_details = promotion_performance = financial_summary = []
+        status_stats = {k: {'count': 0, 'value': 0.0} for k in
+            ['pending','confirmed','preparing','ready_for_pickup','out_for_delivery','delivered','completed','cancelled']}
+
+    return render_template('reports_analytics.html',
+                         total_revenue="{:.2f}".format(total_revenue),
+                         total_orders=total_orders,
+                         avg_order_value="{:.2f}".format(avg_order_value),
+                         total_earnings="{:.2f}".format(total_earnings),
+                         top_products=top_products,
+                         status_stats=status_stats,
+                         order_details=order_details,
+                         promotion_performance=promotion_performance,
+                         financial_summary=financial_summary,
+                         user_name=seller_name,
+                         user_email=session.get('email', 'Seller'))
     cursor.execute("""
         SELECT 
             COALESCE(SUM(total_price), 0) as total_revenue,
@@ -4312,71 +3456,33 @@ def promotions():
     except Exception as sb_err:
         print(f"?? Supabase name fetch failed in promotions: {sb_err}")
 
-    # Ensure promotion tables exist
+    seller_email = session['email']
     try:
-        ensure_promotion_tables_exist()
-    except Exception:
-        pass
+        from datetime import date as _date
+        today = _date.today().isoformat()
 
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-    except Exception as db_err:
-        print(f"?? MySQL unavailable in promotions: {db_err}")
-        return render_template('promotions.html', products=[], active_promotions=[],
-                             user_name=seller_name, user_email=session.get('email', 'Seller'))
+        # Products for promotion management
+        prod_res = sb_admin.table('products').select('id, name, price, image, quantity, category').eq('seller_email', seller_email).gt('quantity', 0).order('name').execute()
+        products = []
+        for p in (prod_res.data or []):
+            products.append({'id': p['id'], 'name': p['name'],
+                'price': float(p.get('price') or 0), 'image': p.get('image',''),
+                'quantity': int(p.get('quantity') or 0), 'category': p.get('category','')})
 
-    # Get seller's products for promotion management
-    cursor.execute("""
-        SELECT id, name, price, image, quantity, category
-        FROM products 
-        WHERE seller_email = %s AND quantity > 0
-        ORDER BY name ASC
-    """, (session['email'],))
-    
-    products = cursor.fetchall()
-    
-    # Safely convert product prices to avoid TypeError
-    for product in products:
-        try:
-            product['price'] = float(product['price']) if product['price'] is not None else 0.0
-            product['quantity'] = int(product['quantity']) if product['quantity'] is not None else 0
-        except (ValueError, TypeError):
-            product['price'] = 0.0
-            product['quantity'] = 0
+        # Active promotions
+        ap_res = sb_admin.table('promotions').select('*').eq('seller_email', seller_email).eq('is_active', True).lte('start_date', today).gte('end_date', today).order('created_at', desc=True).limit(10).execute()
+        active_promotions = []
+        for p in (ap_res.data or []):
+            sd = str(p.get('start_date') or '')[:10]
+            ed = str(p.get('end_date') or '')[:10]
+            active_promotions.append({**p, 'start_date': sd, 'end_date': ed,
+                'total_uses': int(p.get('current_usage_count') or 0),
+                'total_discount_given': 0.0})
 
-    # Get active promotions for this seller
-    try:
-        cursor.execute("""
-            SELECT p.*, 
-                   p.current_usage_count as total_uses,
-                   COALESCE(SUM(pu.discount_applied), 0) as total_discount_given
-            FROM promotions p
-            LEFT JOIN promotion_usage pu ON p.id = pu.promotion_id
-            WHERE p.seller_email = %s AND p.is_active = 1
-            AND p.start_date <= CURDATE() AND p.end_date >= CURDATE()
-            GROUP BY p.id
-            ORDER BY p.created_at DESC
-            LIMIT 10
-        """, (session['email'],))
-        
-        active_promotions = cursor.fetchall()
-        
-        # Debug: Print promotion usage counts
-        for promotion in active_promotions:
-            print(f"DEBUG - Promotion '{promotion['name']}' (ID: {promotion['id']}): {promotion['total_uses']} uses, ?{promotion['total_discount_given']:.2f} total discount")
-            
     except Exception as e:
-        print(f"Error fetching promotions: {str(e)}")
-        active_promotions = []  # Empty list if table doesn't exist yet
-    
-    # Format promotions for display
-    for promotion in active_promotions:
-        promotion['start_date'] = promotion['start_date'].strftime('%b %d, %Y')
-        promotion['end_date'] = promotion['end_date'].strftime('%b %d, %Y')
-
-    cursor.close()
-    connection.close()
+        print(f"promotions Supabase error: {e}")
+        products = []
+        active_promotions = []
 
     return render_template('promotions.html',
                          products=products,
@@ -4386,125 +3492,131 @@ def promotions():
 
 @app.route('/seller_reviews')
 def seller_reviews():
-    """Seller Reviews & Ratings page - view and respond to buyer reviews"""
+    """Seller Reviews & Ratings page - powered by Supabase"""
     if 'email' not in session:
         return redirect(url_for('home'))
-    
     if session.get('user_type', '').lower() != 'seller':
         flash('Access denied. Seller privileges required.', 'error')
         return redirect(url_for('login'))
 
-    # -- Get seller name from Supabase (works even when MySQL is down) -----
+    seller_email = session['email']
+    empty_stats = {'total_reviews': 0, 'average_rating': 0,
+                   'five_star': 0, 'four_star': 0, 'three_star': 0,
+                   'two_star': 0, 'one_star': 0}
+
+    # -- Seller name -------------------------------------------------------
     seller_name = session.get('first_name', 'Seller')
     try:
-        sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
+        sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', seller_email).execute()
         if sb_res.data:
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
-    except Exception as sb_err:
-        print(f"?? Supabase name fetch failed in seller_reviews: {sb_err}")
-
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-    except Exception as db_err:
-        print(f"?? MySQL unavailable in seller_reviews: {db_err}")
-        empty_stats = {'total_reviews': 0, 'average_rating': 0,
-                       'five_star': 0, 'four_star': 0, 'three_star': 0,
-                       'two_star': 0, 'one_star': 0}
-        return render_template('seller_reviews.html', reviews=[], stats=empty_stats,
-                             user_name=seller_name, user_email=session.get('email', 'Seller'))
-
-    # Ensure seller_response column exists
-    try:
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = 'mstyle' 
-            AND TABLE_NAME = 'reviews' 
-            AND COLUMN_NAME = 'seller_response'
-        """)
-        result = cursor.fetchone()
-        if result and result['COUNT(*)'] == 0:
-            try:
-                cursor.execute("""
-                    ALTER TABLE reviews 
-                    ADD COLUMN seller_response TEXT NULL AFTER review_text
-                """)
-                cursor.execute("""
-                    ALTER TABLE reviews 
-                    ADD COLUMN response_date TIMESTAMP NULL AFTER seller_response
-                """)
-                connection.commit()
-                print("? Added seller_response columns to reviews table")
-            except Exception as alter_error:
-                print(f"Note: Could not add seller_response columns: {alter_error}")
-                connection.rollback()
     except Exception as e:
-        print(f"Note: Could not check seller_response columns: {e}")
+        print(f"seller_reviews name fetch failed: {e}")
 
-    # Get all reviews for seller's products with product and customer details
-    cursor.execute("""
-        SELECT 
-            r.id,
-            r.order_id,
-            r.product_id,
-            r.customer_email,
-            r.rating,
-            r.review_text,
-            r.seller_response,
-            r.response_date,
-            r.created_at,
-            p.name as product_name,
-            p.image as product_image,
-            p.price as product_price,
-            u.first_name as customer_first_name,
-            u.last_name as customer_last_name
-        FROM reviews r
-        JOIN products p ON r.product_id = p.id
-        LEFT JOIN users u ON r.customer_email = u.email
-        WHERE r.seller_email = %s
-        ORDER BY r.created_at DESC
-    """, (session['email'],))
-    
-    reviews = cursor.fetchall()
+    try:
+        from datetime import datetime as _dt
 
-    # Calculate review statistics
-    cursor.execute("""
-        SELECT 
-            COUNT(*) as total_reviews,
-            AVG(rating) as average_rating,
-            SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) as five_star,
-            SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) as four_star,
-            SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) as three_star,
-            SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) as two_star,
-            SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) as one_star
-        FROM reviews
-        WHERE seller_email = %s
-    """, (session['email'],))
-    
-    stats = cursor.fetchone()
-    
-    # Format reviews for display
-    for review in reviews:
-        review['customer_name'] = f"{review['customer_first_name']} {review['customer_last_name']}" if review['customer_first_name'] else "Anonymous"
-        review['time_ago'] = format_time_ago(review['created_at'])
-        review['rating_stars'] = '?' * review['rating'] + '?' * (5 - review['rating'])
-        # Format response date if exists
-        if review.get('response_date'):
-            review['response_time_ago'] = format_time_ago(review['response_date'])
-        else:
-            review['response_time_ago'] = None
+        # 1. Fetch all reviews for this seller
+        rev_res = sb_admin.table('reviews') \
+            .select('id, order_id, product_id, customer_email, rating, review_text, seller_response, response_date, created_at') \
+            .eq('seller_email', seller_email) \
+            .order('created_at', desc=True) \
+            .execute()
+        raw_reviews = rev_res.data or []
 
-    cursor.close()
-    connection.close()
+        if not raw_reviews:
+            return render_template('seller_reviews.html', reviews=[], stats=empty_stats,
+                                   user_name=seller_name, user_email=seller_email)
 
-    return render_template('seller_reviews.html',
-                         reviews=reviews,
-                         stats=stats,
-                         user_name=seller_name,
-                         user_email=session.get('email', 'Seller'))
+        # 2. Batch-fetch product info
+        product_ids = list({r['product_id'] for r in raw_reviews if r.get('product_id')})
+        product_map = {}
+        if product_ids:
+            prod_res = sb_admin.table('products') \
+                .select('id, name, image, price') \
+                .in_('id', product_ids) \
+                .execute()
+            for p in (prod_res.data or []):
+                product_map[p['id']] = p
 
+        # 3. Batch-fetch customer info
+        customer_emails = list({r['customer_email'] for r in raw_reviews if r.get('customer_email')})
+        customer_map = {}
+        if customer_emails:
+            cust_res = sb_admin.table('users') \
+                .select('email, first_name, last_name') \
+                .in_('email', customer_emails) \
+                .execute()
+            for c in (cust_res.data or []):
+                customer_map[c['email']] = c
+
+        # 4. Build formatted review list
+        def _time_ago(ts_str):
+            if not ts_str:
+                return ''
+            try:
+                ts = _dt.fromisoformat(str(ts_str).replace('Z', '+00:00').replace('+00:00', ''))
+                diff = _dt.now() - ts
+                s = diff.total_seconds()
+                if s < 60:      return 'Just now'
+                if s < 3600:    return f"{int(s/60)} minute{'s' if int(s/60)!=1 else ''} ago"
+                if s < 86400:   return f"{int(s/3600)} hour{'s' if int(s/3600)!=1 else ''} ago"
+                if s < 604800:  return f"{int(s/86400)} day{'s' if int(s/86400)!=1 else ''} ago"
+                if s < 2592000: return f"{int(s/604800)} week{'s' if int(s/604800)!=1 else ''} ago"
+                if s < 31536000:return f"{int(s/2592000)} month{'s' if int(s/2592000)!=1 else ''} ago"
+                return f"{int(s/31536000)} year{'s' if int(s/31536000)!=1 else ''} ago"
+            except Exception:
+                return ''
+
+        reviews = []
+        for r in raw_reviews:
+            prod = product_map.get(r.get('product_id'), {})
+            cust = customer_map.get(r.get('customer_email', ''), {})
+            fn = cust.get('first_name') or ''
+            ln = cust.get('last_name') or ''
+            rating = int(r.get('rating') or 0)
+            reviews.append({
+                'id':                   r['id'],
+                'order_id':             r.get('order_id'),
+                'product_id':           r.get('product_id'),
+                'customer_email':       r.get('customer_email', ''),
+                'customer_first_name':  fn,
+                'customer_name':        f"{fn} {ln}".strip() or 'Anonymous',
+                'rating':               rating,
+                'rating_stars':         '\u2605' * rating + '\u2606' * (5 - rating),
+                'review_text':          r.get('review_text', ''),
+                'seller_response':      r.get('seller_response'),
+                'response_time_ago':    _time_ago(r.get('response_date')),
+                'time_ago':             _time_ago(r.get('created_at')),
+                'product_name':         prod.get('name', 'Unknown Product'),
+                'product_image':        prod.get('image', ''),
+                'product_price':        float(prod.get('price') or 0),
+            })
+
+        # 5. Compute stats
+        total = len(reviews)
+        ratings = [rv['rating'] for rv in reviews]
+        stats = {
+            'total_reviews':  total,
+            'average_rating': round(sum(ratings) / total, 1) if total else 0,
+            'five_star':  sum(1 for x in ratings if x == 5),
+            'four_star':  sum(1 for x in ratings if x == 4),
+            'three_star': sum(1 for x in ratings if x == 3),
+            'two_star':   sum(1 for x in ratings if x == 2),
+            'one_star':   sum(1 for x in ratings if x == 1),
+        }
+
+        return render_template('seller_reviews.html',
+                               reviews=reviews,
+                               stats=stats,
+                               user_name=seller_name,
+                               user_email=seller_email)
+
+    except Exception as e:
+        print(f"seller_reviews Supabase error: {e}")
+        return render_template('seller_reviews.html', reviews=[], stats=empty_stats,
+                               user_name=seller_name, user_email=seller_email)
 def format_time_ago(timestamp):
     """Format timestamp as 'time ago' string"""
     now = datetime.now()
@@ -4535,878 +3647,281 @@ def format_time_ago(timestamp):
 
 @app.route('/api/seller/review/respond', methods=['POST'])
 def seller_respond_to_review():
-    """API endpoint for seller to respond to a review"""
+    """Seller responds to a review - powered by Supabase"""
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
         return jsonify({'success': False, 'error': 'Unauthorized. Please log in as a seller.'}), 401
-    
-    connection = None
-    cursor = None
-    
+
     try:
         data = request.get_json()
-        
         if not data:
             return jsonify({'success': False, 'error': 'No data received'}), 400
-        
-        review_id = data.get('review_id')
-        response_text = data.get('response_text', '').strip()
-        
-        print(f"DEBUG: Received review_id={review_id}, response_text length={len(response_text)}")
-        
+
+        review_id    = data.get('review_id')
+        response_text = (data.get('response_text') or '').strip()
+
         if not review_id:
             return jsonify({'success': False, 'error': 'Review ID is required'}), 400
-            
         if not response_text:
             return jsonify({'success': False, 'error': 'Response text cannot be empty'}), 400
-        
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
+
         # Verify the review belongs to this seller
-        cursor.execute("""
-            SELECT id, seller_email 
-            FROM reviews 
-            WHERE id = %s
-        """, (review_id,))
-        
-        review = cursor.fetchone()
-        
-        print(f"DEBUG: Review found: {review}")
-        
-        if not review:
-            cursor.close()
-            connection.close()
+        check = sb_admin.table('reviews') \
+            .select('id, seller_email') \
+            .eq('id', review_id) \
+            .limit(1) \
+            .execute()
+
+        if not check.data:
             return jsonify({'success': False, 'error': 'Review not found'}), 404
-        
-        if review['seller_email'] != session['email']:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'error': 'You are not authorized to respond to this review'}), 403
-        
-        # Update the review with seller response
-        cursor.execute("""
-            UPDATE reviews 
-            SET seller_response = %s, response_date = NOW()
-            WHERE id = %s
-        """, (response_text, review_id))
-        
-        affected_rows = cursor.rowcount
-        connection.commit()
-        
-        print(f"DEBUG: Updated {affected_rows} rows")
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Response posted successfully',
-            'response_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        })
-        
+        if check.data[0]['seller_email'] != session['email']:
+            return jsonify({'success': False, 'error': 'Not authorized to respond to this review'}), 403
+
+        from datetime import datetime as _dt
+        now_iso = _dt.now().isoformat()
+
+        sb_admin.table('reviews') \
+            .update({'seller_response': response_text, 'response_date': now_iso}) \
+            .eq('id', review_id) \
+            .execute()
+
+        return jsonify({'success': True, 'message': 'Response posted successfully',
+                        'response_date': now_iso})
+
     except Exception as e:
-        print(f"? Error posting seller response: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
-            
+        print(f"seller_respond_to_review error: {e}")
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/admin/backfill-promotion-usage')
 def admin_backfill_promotion_usage():
-    """Admin route to manually trigger promotion usage backfill"""
     if 'email' not in session:
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        backfill_promotion_usage(cursor)
-        connection.commit()
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({'success': True, 'message': 'Promotion usage backfill completed'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+    return jsonify({'success': True, 'message': 'No backfill needed (Supabase-only)'})
 
 @app.route('/api/create_promotion', methods=['POST'])
 def create_promotion():
-    """Create a new promotion"""
-    print(f"DEBUG: Session data: {dict(session)}")
-    print(f"DEBUG: Request method: {request.method}")
-    print(f"DEBUG: Request headers: {dict(request.headers)}")
-    
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
-        print(f"DEBUG: Unauthorized - email in session: {'email' in session}, user_type: {session.get('user_type')}")
         return jsonify({'success': False, 'message': 'Unauthorized access'}), 401
-    
     try:
         data = request.get_json()
-        print(f"DEBUG: Received promotion data: {data}")  # Debug logging
-        
         if not data:
             return jsonify({'success': False, 'message': 'No data received'}), 400
-        
-        # Ensure promotion tables exist
-        ensure_promotion_tables_exist()
-        
-        # Validate required fields
-        required_fields = ['name', 'code', 'type', 'startDate', 'endDate', 'productScope']
-        for field in required_fields:
+        for field in ['name', 'code', 'type', 'startDate', 'endDate', 'productScope']:
             if not data.get(field) or str(data.get(field)).strip() == '':
-                print(f"DEBUG: Missing or empty field: {field}")  # Debug logging
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
-        
-        # Initialize discount_value
         discount_value = None
-        
-        # Validate discount value for percentage and fixed types
         if data['type'] in ['percentage', 'fixed']:
-            if not data.get('discountValue') or str(data.get('discountValue')).strip() == '':
-                return jsonify({'success': False, 'message': 'Discount value is required for this promotion type'}), 400
-            
-            try:
-                discount_value = float(data['discountValue'])
-                if data['type'] == 'percentage' and (discount_value < 1 or discount_value > 100):
-                    return jsonify({'success': False, 'message': 'Percentage must be between 1 and 100'}), 400
-                elif data['type'] == 'fixed' and discount_value < 1:
-                    return jsonify({'success': False, 'message': 'Fixed discount must be at least 1'}), 400
-            except (ValueError, TypeError):
-                return jsonify({'success': False, 'message': 'Invalid discount value format'}), 400
+            if not data.get('discountValue'):
+                return jsonify({'success': False, 'message': 'Discount value is required'}), 400
+            discount_value = float(data['discountValue'])
+            if data['type'] == 'percentage' and not (1 <= discount_value <= 100):
+                return jsonify({'success': False, 'message': 'Percentage must be between 1 and 100'}), 400
         else:
-            # For BOGO and free shipping, set discount_value to 0
-            discount_value = 0.00
-        
-        try:
-            connection = get_db_connection()
-            cursor = connection.cursor()
-            print(f"DEBUG: Database connection established")
-        except Exception as conn_error:
-            print(f"DEBUG: Database connection failed: {conn_error}")
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-        
-        # Check if promotion code already exists for this seller
-        try:
-            cursor.execute("SELECT id FROM promotions WHERE code = %s AND seller_email = %s", 
-                          (data['code'], session['email']))
-            if cursor.fetchone():
-                cursor.close()
-                connection.close()
-                return jsonify({'success': False, 'message': 'Promotion code already exists'}), 400
-        except Exception as check_error:
-            print(f"DEBUG: Error checking existing promotion: {check_error}")
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Error checking existing promotions'}), 500
-        
-        # Prepare values for insertion
-        try:
-            max_discount_val = float(data.get('maxDiscount')) if data.get('maxDiscount') and str(data.get('maxDiscount')).strip() != '' else None
-            min_purchase_val = float(data.get('minPurchase')) if data.get('minPurchase') and str(data.get('minPurchase')).strip() != '' else 0
-            min_quantity_val = int(data.get('minQuantity')) if data.get('minQuantity') and str(data.get('minQuantity')).strip() != '' else 1
-            usage_limit_val = int(data.get('usageLimit')) if data.get('usageLimit') and str(data.get('usageLimit')).strip() != '' else None
-        except (ValueError, TypeError) as e:
-            print(f"DEBUG: Error converting values: {e}")
-            return jsonify({'success': False, 'message': 'Invalid numeric values provided'}), 400
-
-        print(f"DEBUG: Inserting promotion with values: name={data['name']}, code={data['code']}, type={data['type']}")
-        
+            discount_value = 0.0
+        max_discount_val = float(data['maxDiscount']) if data.get('maxDiscount') else None
+        min_purchase_val = float(data.get('minPurchase') or 0)
+        min_quantity_val = int(data.get('minQuantity') or 1)
+        usage_limit_val  = int(data['usageLimit']) if data.get('usageLimit') else None
+        # Check duplicate code
+        dup = sb_admin.table('promotions').select('id').eq('code', data['code']).eq('seller_email', session['email']).execute()
+        if dup.data:
+            return jsonify({'success': False, 'message': 'Promotion code already exists'}), 400
         # Insert promotion
-        try:
-            print(f"DEBUG: About to insert promotion with discount_value: {discount_value}")
-            print(f"DEBUG: All values: name={data['name']}, code={data['code']}, type={data['type']}")
-            print(f"DEBUG: Dates: start={data['startDate']}, end={data['endDate']}")
-            
-            cursor.execute("""
-                INSERT INTO promotions (
-                    name, code, seller_email, type, discount_value, max_discount,
-                    min_purchase, min_quantity, usage_limit_per_customer, 
-                    start_date, start_time, end_date, end_time, product_scope, is_active
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                data['name'], 
-                data['code'], 
-                session['email'], 
-                data['type'], 
-                discount_value,
-                max_discount_val,
-                min_purchase_val,
-                min_quantity_val,
-                usage_limit_val,
-                data['startDate'], 
-                data.get('startTime', '00:00:00'),
-                data['endDate'], 
-                data.get('endTime', '23:59:59'),
-                data['productScope'], 
-                data.get('isActive', True)
-            ))
-            
-            promotion_id = cursor.lastrowid
-            print(f"DEBUG: Promotion inserted with ID: {promotion_id}")
-            
-        except Exception as insert_error:
-            print(f"DEBUG: Error inserting promotion: {insert_error}")
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': f'Error creating promotion: {str(insert_error)}'}), 500
-        
-        # Handle product/category associations with error handling
-        try:
-            if data['productScope'] == 'specific' and data.get('selectedProducts'):
-                print(f"DEBUG: Adding specific products: {data['selectedProducts']}")
-                for product_id in data['selectedProducts']:
-                    cursor.execute("""
-                        INSERT INTO promotion_products (promotion_id, product_id)
-                        VALUES (%s, %s)
-                    """, (promotion_id, int(product_id)))
-            
-            elif data['productScope'] == 'category' and data.get('selectedCategories'):
-                print(f"DEBUG: Adding categories: {data['selectedCategories']}")
-                for category in data['selectedCategories']:
-                    cursor.execute("""
-                        INSERT INTO promotion_categories (promotion_id, category)
-                        VALUES (%s, %s)
-                    """, (promotion_id, category))
-            
-            connection.commit()
-            print(f"DEBUG: Promotion created successfully with ID: {promotion_id}")
-            
-        except Exception as assoc_error:
-            print(f"DEBUG: Error adding product/category associations: {assoc_error}")
-            # Rollback the transaction
-            connection.rollback()
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': f'Error adding product associations: {str(assoc_error)}'}), 500
-        
-        cursor.close()
-        connection.close()
-        
-        print(f"DEBUG: About to return success response")
-        response_data = {'success': True, 'message': 'Promotion created successfully', 'promotion_id': promotion_id}
-        print(f"DEBUG: Response data: {response_data}")
-        return jsonify(response_data)
-        
-    except mysql.connector.Error as db_error:
-        print(f"Database error creating promotion: {str(db_error)}")
-        import traceback
-        traceback.print_exc()
-        if 'connection' in locals():
-            try:
-                connection.rollback()
-            except:
-                pass
-        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'}), 500
+        ins = sb_admin.table('promotions').insert({
+            'name': data['name'], 'code': data['code'], 'seller_email': session['email'],
+            'type': data['type'], 'discount_value': discount_value, 'max_discount': max_discount_val,
+            'min_purchase': min_purchase_val, 'min_quantity': min_quantity_val,
+            'usage_limit_per_customer': usage_limit_val,
+            'start_date': data['startDate'], 'start_time': data.get('startTime', '00:00:00'),
+            'end_date': data['endDate'], 'end_time': data.get('endTime', '23:59:59'),
+            'product_scope': data['productScope'], 'is_active': data.get('isActive', True),
+        }).execute()
+        promotion_id = ins.data[0]['id']
+        if data['productScope'] == 'specific' and data.get('selectedProducts'):
+            for pid in data['selectedProducts']:
+                sb_admin.table('promotion_products').insert({'promotion_id': promotion_id, 'product_id': int(pid)}).execute()
+        elif data['productScope'] == 'category' and data.get('selectedCategories'):
+            for cat in data['selectedCategories']:
+                sb_admin.table('promotion_categories').insert({'promotion_id': promotion_id, 'category': cat}).execute()
+        return jsonify({'success': True, 'message': 'Promotion created successfully', 'promotion_id': promotion_id})
     except Exception as e:
-        print(f"Error creating promotion: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
-    finally:
-        try:
-            if 'cursor' in locals() and cursor:
-                cursor.close()
-                print(f"DEBUG: Cursor closed")
-        except Exception as cursor_error:
-            print(f"DEBUG: Error closing cursor: {cursor_error}")
-        
-        try:
-            if 'connection' in locals() and connection:
-                connection.close()
-                print(f"DEBUG: Connection closed")
-        except Exception as conn_error:
-            print(f"DEBUG: Error closing connection: {conn_error}")
 
 
 
 @app.route('/api/get_promotion/<int:promotion_id>')
 def get_promotion(promotion_id):
-    """Get a specific promotion for editing"""
-    print(f"DEBUG: Getting promotion {promotion_id} for user {session.get('email')}")
-    print(f"DEBUG: Session data: {dict(session)}")
-    
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
-        print("DEBUG: Unauthorized access - no session or not seller")
-        print(f"DEBUG: Email in session: {'email' in session}")
-        print(f"DEBUG: User type: {session.get('user_type', 'None')}")
         return jsonify({'success': False, 'message': 'Unauthorized access'}), 401
-    
     try:
-        print(f"DEBUG: Connecting to database...")
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if promotions table exists
-        cursor.execute("SHOW TABLES LIKE 'promotions'")
-        if not cursor.fetchone():
-            print("DEBUG: Promotions table does not exist")
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Promotions table not found. Please contact administrator.'}), 500
-        
-        # Get promotion details
-        print(f"DEBUG: Fetching promotion {promotion_id} for seller {session['email']}")
-        cursor.execute("""
-            SELECT * FROM promotions 
-            WHERE id = %s AND seller_email = %s
-        """, (promotion_id, session['email']))
-        
-        promotion = cursor.fetchone()
-        print(f"DEBUG: Promotion query result: {promotion}")
-        
-        if not promotion:
-            cursor.close()
-            connection.close()
-            print(f"DEBUG: Promotion {promotion_id} not found for seller {session['email']}")
+        res = sb_admin.table('promotions').select('*').eq('id', promotion_id).eq('seller_email', session['email']).limit(1).execute()
+        if not res.data:
             return jsonify({'success': False, 'message': 'Promotion not found'}), 404
-        
-        # Get associated products if any
-        print(f"DEBUG: Fetching associated products for promotion {promotion_id}")
-        cursor.execute("""
-            SELECT product_id FROM promotion_products 
-            WHERE promotion_id = %s
-        """, (promotion_id,))
-        selected_products = [row['product_id'] for row in cursor.fetchall()]
-        print(f"DEBUG: Selected products: {selected_products}")
-        
-        # Get associated categories if any
-        print(f"DEBUG: Fetching associated categories for promotion {promotion_id}")
-        cursor.execute("""
-            SELECT category FROM promotion_categories 
-            WHERE promotion_id = %s
-        """, (promotion_id,))
-        selected_categories = [row['category'] for row in cursor.fetchall()]
-        print(f"DEBUG: Selected categories: {selected_categories}")
-        
-        # Convert all fields to JSON-serializable formats
-        promotion = convert_promotion_for_json(promotion)
-        
-        # Add selected items to response
-        promotion['selectedProducts'] = selected_products
-        promotion['selectedCategories'] = selected_categories
-        
-        cursor.close()
-        connection.close()
-        
+        promotion = convert_promotion_for_json(res.data[0])
+        pp = sb_admin.table('promotion_products').select('product_id').eq('promotion_id', promotion_id).execute()
+        promotion['selectedProducts'] = [r['product_id'] for r in (pp.data or [])]
+        pc = sb_admin.table('promotion_categories').select('category').eq('promotion_id', promotion_id).execute()
+        promotion['selectedCategories'] = [r['category'] for r in (pc.data or [])]
         return jsonify({'success': True, 'promotion': promotion})
-        
-    except mysql.connector.Error as db_error:
-        print(f"DEBUG: Database error getting promotion: {str(db_error)}")
-        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'}), 500
     except Exception as e:
-        print(f"DEBUG: General error getting promotion: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
-    finally:
-        try:
-            if 'cursor' in locals() and cursor:
-                cursor.close()
-        except Exception as cursor_error:
-            print(f"DEBUG: Error closing cursor in get_promotion: {cursor_error}")
-        
-        try:
-            if 'connection' in locals() and connection:
-                connection.close()
-        except Exception as conn_error:
-            print(f"DEBUG: Error closing connection in get_promotion: {conn_error}")
 
 @app.route('/api/update_promotion/<int:promotion_id>', methods=['PUT'])
 def update_promotion(promotion_id):
-    """Update an existing promotion"""
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
         return jsonify({'success': False, 'message': 'Unauthorized access'}), 401
-    
     try:
         data = request.get_json()
-        print(f"DEBUG: Updating promotion {promotion_id} with data: {data}")
-        
         if not data:
             return jsonify({'success': False, 'message': 'No data received'}), 400
-        
-        # Validate required fields
-        required_fields = ['name', 'code', 'type', 'startDate', 'endDate', 'productScope']
-        for field in required_fields:
+        for field in ['name', 'code', 'type', 'startDate', 'endDate', 'productScope']:
             if not data.get(field) or str(data.get(field)).strip() == '':
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
-        
-        # Initialize discount_value
-        discount_value = None
-        
-        # Validate discount value for percentage and fixed types
+        discount_value = 0.0
         if data['type'] in ['percentage', 'fixed']:
-            if not data.get('discountValue') or str(data.get('discountValue')).strip() == '':
-                return jsonify({'success': False, 'message': 'Discount value is required for this promotion type'}), 400
-            
-            try:
-                discount_value = float(data['discountValue'])
-                if data['type'] == 'percentage' and (discount_value < 1 or discount_value > 100):
-                    return jsonify({'success': False, 'message': 'Percentage must be between 1 and 100'}), 400
-                elif data['type'] == 'fixed' and discount_value < 1:
-                    return jsonify({'success': False, 'message': 'Fixed discount must be at least 1'}), 400
-            except (ValueError, TypeError):
-                return jsonify({'success': False, 'message': 'Invalid discount value format'}), 400
-        else:
-            # For BOGO and free shipping, set discount_value to 0
-            discount_value = 0.00
-        
-        try:
-            connection = get_db_connection()
-            cursor = connection.cursor()
-        except Exception as conn_error:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-        
-        # Check if promotion exists and belongs to seller
-        cursor.execute("SELECT id FROM promotions WHERE id = %s AND seller_email = %s", 
-                      (promotion_id, session['email']))
-        if not cursor.fetchone():
-            cursor.close()
-            connection.close()
+            discount_value = float(data.get('discountValue') or 0)
+        # Check promotion exists
+        chk = sb_admin.table('promotions').select('id').eq('id', promotion_id).eq('seller_email', session['email']).execute()
+        if not chk.data:
             return jsonify({'success': False, 'message': 'Promotion not found'}), 404
-        
-        # Check if promotion code already exists for another promotion
-        cursor.execute("SELECT id FROM promotions WHERE code = %s AND seller_email = %s AND id != %s", 
-                      (data['code'], session['email'], promotion_id))
-        if cursor.fetchone():
-            cursor.close()
-            connection.close()
+        # Check duplicate code
+        dup = sb_admin.table('promotions').select('id').eq('code', data['code']).eq('seller_email', session['email']).neq('id', promotion_id).execute()
+        if dup.data:
             return jsonify({'success': False, 'message': 'Promotion code already exists'}), 400
-        
-        # Prepare values for update
-        try:
-            max_discount_val = float(data.get('maxDiscount')) if data.get('maxDiscount') and str(data.get('maxDiscount')).strip() != '' else None
-            min_purchase_val = float(data.get('minPurchase')) if data.get('minPurchase') and str(data.get('minPurchase')).strip() != '' else 0
-            min_quantity_val = int(data.get('minQuantity')) if data.get('minQuantity') and str(data.get('minQuantity')).strip() != '' else 1
-            usage_limit_val = int(data.get('usageLimit')) if data.get('usageLimit') and str(data.get('usageLimit')).strip() != '' else None
-        except (ValueError, TypeError) as e:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Invalid numeric values provided'}), 400
-        
-        # Update promotion
-        try:
-            cursor.execute("""
-                UPDATE promotions SET
-                    name = %s, code = %s, type = %s, discount_value = %s, max_discount = %s,
-                    min_purchase = %s, min_quantity = %s, usage_limit_per_customer = %s,
-                    start_date = %s, start_time = %s, end_date = %s, end_time = %s,
-                    product_scope = %s, is_active = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s AND seller_email = %s
-            """, (
-                data['name'], data['code'], data['type'], discount_value, max_discount_val,
-                min_purchase_val, min_quantity_val, usage_limit_val,
-                data['startDate'], data.get('startTime', '00:00:00'),
-                data['endDate'], data.get('endTime', '23:59:59'),
-                data['productScope'], data.get('isActive', True),
-                promotion_id, session['email']
-            ))
-            
-            # Delete existing product/category associations
-            cursor.execute("DELETE FROM promotion_products WHERE promotion_id = %s", (promotion_id,))
-            cursor.execute("DELETE FROM promotion_categories WHERE promotion_id = %s", (promotion_id,))
-            
-            # Add new product/category associations
-            if data['productScope'] == 'specific' and data.get('selectedProducts'):
-                for product_id in data['selectedProducts']:
-                    cursor.execute("""
-                        INSERT INTO promotion_products (promotion_id, product_id)
-                        VALUES (%s, %s)
-                    """, (promotion_id, int(product_id)))
-            
-            elif data['productScope'] == 'category' and data.get('selectedCategories'):
-                for category in data['selectedCategories']:
-                    cursor.execute("""
-                        INSERT INTO promotion_categories (promotion_id, category)
-                        VALUES (%s, %s)
-                    """, (promotion_id, category))
-            
-            connection.commit()
-            cursor.close()
-            connection.close()
-            
-            return jsonify({'success': True, 'message': 'Promotion updated successfully'})
-            
-        except Exception as update_error:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': f'Error updating promotion: {str(update_error)}'}), 500
-        
+        sb_admin.table('promotions').update({
+            'name': data['name'], 'code': data['code'], 'type': data['type'],
+            'discount_value': discount_value,
+            'max_discount': float(data['maxDiscount']) if data.get('maxDiscount') else None,
+            'min_purchase': float(data.get('minPurchase') or 0),
+            'min_quantity': int(data.get('minQuantity') or 1),
+            'usage_limit_per_customer': int(data['usageLimit']) if data.get('usageLimit') else None,
+            'start_date': data['startDate'], 'start_time': data.get('startTime', '00:00:00'),
+            'end_date': data['endDate'], 'end_time': data.get('endTime', '23:59:59'),
+            'product_scope': data['productScope'], 'is_active': data.get('isActive', True),
+        }).eq('id', promotion_id).execute()
+        sb_admin.table('promotion_products').delete().eq('promotion_id', promotion_id).execute()
+        sb_admin.table('promotion_categories').delete().eq('promotion_id', promotion_id).execute()
+        if data['productScope'] == 'specific' and data.get('selectedProducts'):
+            for pid in data['selectedProducts']:
+                sb_admin.table('promotion_products').insert({'promotion_id': promotion_id, 'product_id': int(pid)}).execute()
+        elif data['productScope'] == 'category' and data.get('selectedCategories'):
+            for cat in data['selectedCategories']:
+                sb_admin.table('promotion_categories').insert({'promotion_id': promotion_id, 'category': cat}).execute()
+        return jsonify({'success': True, 'message': 'Promotion updated successfully'})
     except Exception as e:
-        print(f"Error updating promotion: {str(e)}")
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/get_promotions')
 def get_promotions():
-    """Get all promotions for the logged-in seller"""
-    print(f"DEBUG: get_promotions called for user {session.get('email')}")
-    
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
-        print("DEBUG: Unauthorized access to get_promotions")
         return jsonify({'success': False, 'message': 'Unauthorized access'}), 401
-    
-    connection = None
-    cursor = None
-    
     try:
-        print("DEBUG: Connecting to database...")
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if promotions table exists, create if not
-        print("DEBUG: Checking if promotions table exists...")
-        cursor.execute("SHOW TABLES LIKE 'promotions'")
-        if not cursor.fetchone():
-            print("DEBUG: Promotions table does not exist, creating it...")
-            try:
-                # Create promotions table
-                cursor.execute("""
-                    CREATE TABLE `promotions` (
-                      `id` INT AUTO_INCREMENT PRIMARY KEY,
-                      `name` VARCHAR(255) NOT NULL,
-                      `code` VARCHAR(50) NOT NULL UNIQUE,
-                      `seller_email` VARCHAR(255) NOT NULL,
-                      `type` ENUM('percentage', 'fixed', 'buy_one_get_one', 'free_shipping') NOT NULL,
-                      `discount_value` DECIMAL(10,2) DEFAULT NULL,
-                      `max_discount` DECIMAL(10,2) DEFAULT NULL,
-                      `min_purchase` DECIMAL(10,2) DEFAULT 0.00,
-                      `min_quantity` INT DEFAULT 1,
-                      `usage_limit_per_customer` INT DEFAULT NULL,
-                      `total_usage_limit` INT DEFAULT NULL,
-                      `current_usage_count` INT DEFAULT 0,
-                      `start_date` DATE NOT NULL,
-                      `start_time` TIME DEFAULT '00:00:00',
-                      `end_date` DATE NOT NULL,
-                      `end_time` TIME DEFAULT '23:59:59',
-                      `product_scope` ENUM('all', 'specific', 'category') DEFAULT 'all',
-                      `is_active` BOOLEAN DEFAULT TRUE,
-                      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                      
-                      INDEX `idx_seller_email` (`seller_email`),
-                      INDEX `idx_code` (`code`),
-                      INDEX `idx_active_dates` (`is_active`, `start_date`, `end_date`),
-                      INDEX `idx_type` (`type`),
-                      INDEX `idx_product_scope` (`product_scope`)
-                    )
-                """)
-                
-                # Create promotion_products table
-                cursor.execute("""
-                    CREATE TABLE `promotion_products` (
-                      `id` INT AUTO_INCREMENT PRIMARY KEY,
-                      `promotion_id` INT NOT NULL,
-                      `product_id` INT NOT NULL,
-                      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                      
-                      FOREIGN KEY (`promotion_id`) REFERENCES `promotions`(`id`) ON DELETE CASCADE,
-                      FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE,
-                      UNIQUE KEY `unique_promotion_product` (`promotion_id`, `product_id`),
-                      INDEX `idx_promotion_id` (`promotion_id`),
-                      INDEX `idx_product_id` (`product_id`)
-                    )
-                """)
-                
-                # Create promotion_categories table
-                cursor.execute("""
-                    CREATE TABLE `promotion_categories` (
-                      `id` INT AUTO_INCREMENT PRIMARY KEY,
-                      `promotion_id` INT NOT NULL,
-                      `category` VARCHAR(100) NOT NULL,
-                      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                      
-                      FOREIGN KEY (`promotion_id`) REFERENCES `promotions`(`id`) ON DELETE CASCADE,
-                      UNIQUE KEY `unique_promotion_category` (`promotion_id`, `category`),
-                      INDEX `idx_promotion_id` (`promotion_id`),
-                      INDEX `idx_category` (`category`)
-                    )
-                """)
-                
-                # Create promotion_usage table
-                cursor.execute("""
-                    CREATE TABLE `promotion_usage` (
-                      `id` INT AUTO_INCREMENT PRIMARY KEY,
-                      `promotion_id` INT NOT NULL,
-                      `order_id` INT NOT NULL,
-                      `customer_email` VARCHAR(255) NOT NULL,
-                      `product_id` VARCHAR(50),
-                      `discount_applied` DECIMAL(10,2) NOT NULL,
-                      `used_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                      
-                      FOREIGN KEY (`promotion_id`) REFERENCES `promotions`(`id`) ON DELETE CASCADE,
-                      FOREIGN KEY (`order_id`) REFERENCES `orders`(`id`) ON DELETE CASCADE,
-                      INDEX `idx_promotion_id` (`promotion_id`),
-                      INDEX `idx_order_id` (`order_id`),
-                      INDEX `idx_customer_email` (`customer_email`),
-                      INDEX `idx_product_id` (`product_id`),
-                      INDEX `idx_used_at` (`used_at`)
-                    )
-                """)
-                
-                connection.commit()
-                print("DEBUG: Successfully created promotions tables")
-                
-            except Exception as create_error:
-                print(f"DEBUG: Error creating promotions tables: {create_error}")
-                return jsonify({'success': False, 'message': f'Failed to create promotions tables: {str(create_error)}'}), 500
-        
-        print("DEBUG: Promotions table exists, fetching data...")
-        
-        # Get promotions with usage statistics
-        cursor.execute("""
-            SELECT p.*, 
-                   p.current_usage_count as total_uses,
-                   COALESCE(SUM(pu.discount_applied), 0) as total_discount_given
-            FROM promotions p
-            LEFT JOIN promotion_usage pu ON p.id = pu.promotion_id
-            WHERE p.seller_email = %s
-            GROUP BY p.id
-            ORDER BY p.created_at DESC
-        """, (session['email'],))
-        
-        promotions = cursor.fetchall()
-        print(f"DEBUG: Found {len(promotions)} promotions")
-        
-        # Get current date for status determination
-        from datetime import date
-        current_date = date.today()
-        
-        for promotion in promotions:
-            try:
-                # Determine status
-                if not promotion['is_active']:
-                    promotion['status'] = 'inactive'
-                elif promotion['start_date'] > current_date:
-                    promotion['status'] = 'scheduled'
-                elif promotion['end_date'] < current_date:
-                    promotion['status'] = 'expired'
-                else:
-                    promotion['status'] = 'active'
-                
-                # Format dates for display
-                if promotion['start_date']:
-                    promotion['start_date'] = promotion['start_date'].strftime('%Y-%m-%d')
-                if promotion['end_date']:
-                    promotion['end_date'] = promotion['end_date'].strftime('%Y-%m-%d')
-            except Exception as date_error:
-                print(f"DEBUG: Error processing promotion {promotion.get('id', 'unknown')}: {date_error}")
-                # Set default values if there's an error
-                promotion['status'] = 'unknown'
-                promotion['start_date'] = str(promotion.get('start_date', ''))
-                promotion['end_date'] = str(promotion.get('end_date', ''))
-        
-        print("DEBUG: Successfully processed promotions")
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        res = sb_admin.table('promotions').select('*').eq('seller_email', session['email']).order('created_at', desc=True).execute()
+        promotions = []
+        for p in (res.data or []):
+            sd = str(p.get('start_date') or '')[:10]
+            ed = str(p.get('end_date') or '')[:10]
+            if not p.get('is_active'):
+                status = 'inactive'
+            elif sd > today:
+                status = 'scheduled'
+            elif ed < today:
+                status = 'expired'
+            else:
+                status = 'active'
+            promotions.append({**p, 'start_date': sd, 'end_date': ed, 'status': status,
+                'total_uses': int(p.get('current_usage_count') or 0),
+                'total_discount_given': 0.0})
         return jsonify({'success': True, 'promotions': promotions})
-        
-    except mysql.connector.Error as db_error:
-        print(f"DEBUG: Database error in get_promotions: {str(db_error)}")
-        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'}), 500
     except Exception as e:
-        print(f"DEBUG: General error in get_promotions: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
-        print("DEBUG: Database connection closed")
 
 @app.route('/api/toggle_promotion/<int:promotion_id>', methods=['POST'])
 def toggle_promotion(promotion_id):
-    """Toggle promotion active status"""
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
         return jsonify({'success': False, 'message': 'Unauthorized access'}), 401
-    
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Verify promotion belongs to seller
-        cursor.execute("SELECT is_active FROM promotions WHERE id = %s AND seller_email = %s", 
-                      (promotion_id, session['email']))
-        result = cursor.fetchone()
-        
-        if not result:
+        res = sb_admin.table('promotions').select('is_active').eq('id', promotion_id).eq('seller_email', session['email']).limit(1).execute()
+        if not res.data:
             return jsonify({'success': False, 'message': 'Promotion not found'}), 404
-        
-        # Toggle status
-        new_status = not result[0]
-        cursor.execute("UPDATE promotions SET is_active = %s WHERE id = %s", 
-                      (new_status, promotion_id))
-        
-        connection.commit()
-        cursor.close()
-        connection.close()
-        
+        new_status = not res.data[0]['is_active']
+        sb_admin.table('promotions').update({'is_active': new_status}).eq('id', promotion_id).execute()
         return jsonify({'success': True, 'is_active': new_status})
-        
     except Exception as e:
-        print(f"Error toggling promotion: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to toggle promotion'}), 500
 
 @app.route('/api/delete_promotion/<int:promotion_id>', methods=['DELETE'])
 def delete_promotion(promotion_id):
-    """Delete a promotion"""
     if 'email' not in session or session.get('user_type', '').lower() != 'seller':
         return jsonify({'success': False, 'message': 'Unauthorized access'}), 401
-    
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Verify promotion belongs to seller
-        cursor.execute("SELECT id FROM promotions WHERE id = %s AND seller_email = %s", 
-                      (promotion_id, session['email']))
-        if not cursor.fetchone():
+        chk = sb_admin.table('promotions').select('id').eq('id', promotion_id).eq('seller_email', session['email']).execute()
+        if not chk.data:
             return jsonify({'success': False, 'message': 'Promotion not found'}), 404
-        
-        # Delete promotion (cascade will handle related records)
-        cursor.execute("DELETE FROM promotions WHERE id = %s", (promotion_id,))
-        
-        connection.commit()
-        cursor.close()
-        connection.close()
-        
+        sb_admin.table('promotions').delete().eq('id', promotion_id).execute()
         return jsonify({'success': True, 'message': 'Promotion deleted successfully'})
-        
     except Exception as e:
-        print(f"Error deleting promotion: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to delete promotion'}), 500
 
 @app.route('/api/apply_promotion', methods=['POST'])
 def apply_promotion():
-    """Apply a promotion code to cart items"""
     if 'email' not in session:
         return jsonify({'success': False, 'message': 'Please log in to apply promotions'}), 401
-    
     try:
         data = request.get_json()
         promotion_code = data.get('code')
         cart_items = data.get('cart_items', [])
-        
         if not promotion_code:
             return jsonify({'success': False, 'message': 'Promotion code is required'}), 400
-        
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Find active promotion
-        cursor.execute("""
-            SELECT * FROM promotions 
-            WHERE code = %s AND is_active = 1 
-            AND start_date <= CURDATE() AND end_date >= CURDATE()
-        """, (promotion_code,))
-        
-        promotion = cursor.fetchone()
-        if not promotion:
+        from datetime import date as _date
+        today = _date.today().isoformat()
+        res = sb_admin.table('promotions').select('*').eq('code', promotion_code).eq('is_active', True).lte('start_date', today).gte('end_date', today).limit(1).execute()
+        if not res.data:
             return jsonify({'success': False, 'message': 'Invalid or expired promotion code'}), 400
-        
-        # Check usage limits
-        if promotion['usage_limit_per_customer']:
-            cursor.execute("""
-                SELECT COUNT(*) as usage_count 
-                FROM promotion_usage 
-                WHERE promotion_id = %s AND customer_email = %s
-            """, (promotion['id'], session['email']))
-            
-            usage_count = cursor.fetchone()['usage_count']
-            if usage_count >= promotion['usage_limit_per_customer']:
+        promotion = res.data[0]
+        if promotion.get('usage_limit_per_customer'):
+            usage = sb_admin.table('promotion_usage').select('id', count='exact').eq('promotion_id', promotion['id']).eq('customer_email', session['email']).execute()
+            if (usage.count or 0) >= promotion['usage_limit_per_customer']:
                 return jsonify({'success': False, 'message': 'You have reached the usage limit for this promotion'}), 400
-        
-        # Calculate discount
-        total_discount = 0
+        total_discount = 0.0
         applicable_items = []
-        
         for item in cart_items:
-            item_applicable = False
-            
-            # Check if item is applicable based on product scope
-            if promotion['product_scope'] == 'all':
-                item_applicable = True
-            elif promotion['product_scope'] == 'specific':
-                cursor.execute("""
-                    SELECT 1 FROM promotion_products 
-                    WHERE promotion_id = %s AND product_id = %s
-                """, (promotion['id'], item['product_id']))
-                item_applicable = cursor.fetchone() is not None
-            elif promotion['product_scope'] == 'category':
-                cursor.execute("""
-                    SELECT 1 FROM promotion_categories pc
-                    JOIN products p ON pc.category = p.category
-                    WHERE pc.promotion_id = %s AND p.id = %s
-                """, (promotion['id'], item['product_id']))
-                item_applicable = cursor.fetchone() is not None
-            
-            if item_applicable:
-                item_price = float(item['price'])
-                item_quantity = int(item['quantity'])
-                item_total = item_price * item_quantity
-                
-                if promotion['type'] == 'percentage':
-                    item_discount = item_total * (float(promotion['discount_value']) / 100)
-                    if promotion['max_discount']:
-                        item_discount = min(item_discount, float(promotion['max_discount']))
-                elif promotion['type'] == 'fixed':
-                    item_discount = min(float(promotion['discount_value']), item_total)
-                elif promotion['type'] == 'buy_one_get_one':
-                    # Simple BOGO: for every 2 items, discount the price of 1
-                    free_items = item_quantity // 2
-                    item_discount = free_items * item_price
-                elif promotion['type'] == 'free_shipping':
-                    # Free shipping discount (you can customize this based on your shipping logic)
-                    item_discount = 50.0  # Assuming ?50 shipping fee
+            applicable = False
+            scope = promotion.get('product_scope', 'all')
+            if scope == 'all':
+                applicable = True
+            elif scope == 'specific':
+                pp = sb_admin.table('promotion_products').select('id').eq('promotion_id', promotion['id']).eq('product_id', item['product_id']).limit(1).execute()
+                applicable = bool(pp.data)
+            elif scope == 'category':
+                prod = sb_admin.table('products').select('category').eq('id', item['product_id']).limit(1).execute()
+                if prod.data:
+                    pc = sb_admin.table('promotion_categories').select('id').eq('promotion_id', promotion['id']).eq('category', prod.data[0]['category']).limit(1).execute()
+                    applicable = bool(pc.data)
+            if applicable:
+                price = float(item['price']); qty = int(item['quantity']); total = price * qty
+                ptype = promotion['type']; dval = float(promotion.get('discount_value') or 0)
+                if ptype == 'percentage':
+                    disc = total * (dval / 100)
+                    if promotion.get('max_discount'): disc = min(disc, float(promotion['max_discount']))
+                elif ptype == 'fixed':
+                    disc = min(dval, total)
+                elif ptype == 'buy_one_get_one':
+                    disc = (qty // 2) * price
+                elif ptype == 'free_shipping':
+                    disc = 50.0
                 else:
-                    item_discount = 0
-                
-                total_discount += item_discount
-                applicable_items.append({
-                    'product_id': item['product_id'],
-                    'name': item['name'],
-                    'discount': item_discount
-                })
-        
-        # Check minimum purchase requirement
-        cart_total = sum(float(item['price']) * int(item['quantity']) for item in cart_items)
-        if promotion['min_purchase'] and cart_total < float(promotion['min_purchase']):
-            return jsonify({
-                'success': False, 
-                'message': f'Minimum purchase of ?{promotion["min_purchase"]} required'
-            }), 400
-        
-        # Check minimum quantity requirement
-        total_quantity = sum(int(item['quantity']) for item in cart_items)
-        if promotion['min_quantity'] and total_quantity < promotion['min_quantity']:
-            return jsonify({
-                'success': False, 
-                'message': f'Minimum {promotion["min_quantity"]} items required'
-            }), 400
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'success': True,
-            'promotion': {
-                'id': promotion['id'],
-                'name': promotion['name'],
-                'code': promotion['code'],
-                'type': promotion['type'],
-                'discount_value': promotion['discount_value']
-            },
-            'total_discount': round(total_discount, 2),
-            'applicable_items': applicable_items
-        })
-        
+                    disc = 0.0
+                total_discount += disc
+                applicable_items.append({'product_id': item['product_id'], 'name': item.get('name',''), 'discount': disc})
+        cart_total = sum(float(i['price']) * int(i['quantity']) for i in cart_items)
+        if promotion.get('min_purchase') and cart_total < float(promotion['min_purchase']):
+            return jsonify({'success': False, 'message': f'Minimum purchase of {promotion["min_purchase"]} required'}), 400
+        return jsonify({'success': True, 'promotion': {'id': promotion['id'], 'name': promotion['name'], 'code': promotion['code'], 'type': promotion['type'], 'discount_value': promotion.get('discount_value')}, 'total_discount': round(total_discount, 2), 'applicable_items': applicable_items})
     except Exception as e:
-        print(f"Error applying promotion: {str(e)}")
         return jsonify({'success': False, 'message': 'Failed to apply promotion'}), 500
 
 @app.route('/rider_dashboard')
@@ -5600,7 +4115,7 @@ def accept_delivery():
         sb_admin.table('orders').update({'status': 'For Pickup', 'rider_email': rider_email}).eq('id', order_id).execute()
 
         # Seller in-app notification
-        notif_msg = f"?? Rider {rider_name} has accepted delivery for Order #{order_id} ({product_name}). The rider is now heading to pick up the item."
+        notif_msg = f"🛵 Rider {rider_name} has accepted delivery for Order #{order_id} ({product_name}). The order is now awaiting pickup."
         sb_admin.table('notifications').insert({'seller_email': seller_email, 'message': notif_msg, 'type': 'rider_assigned', 'is_read': False}).execute()
 
         # Email to seller
@@ -5620,7 +4135,7 @@ def accept_delivery():
                   <p><strong>Rider Name:</strong> {rider_name}</p>
                   <p><strong>Status:</strong> <span style="background:#10b981;color:white;padding:4px 12px;border-radius:20px;">For Pickup</span></p>
                 </div>
-                <p>The rider is now heading to your location to pick up the item.</p>
+                <p>The rider will head to your location to pick up the item once they start the pickup.</p>
               </div>
             </div>
             </body></html>"""
@@ -7767,192 +6282,215 @@ def seller_order_history():
     if 'email' not in session:
         return redirect(url_for('home'))
 
-    # -- Get seller name from Supabase (works even when MySQL is down) -----
+    seller_email = session['email']
+
+    # Get seller name from Supabase
     seller_name = session.get('first_name', 'Seller')
     try:
-        sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', session['email']).execute()
+        sb_res = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', seller_email).execute()
         if sb_res.data:
             u = sb_res.data[0]
             seller_name = u.get('business_name') or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip() or 'Seller'
-    except Exception as sb_err:
-        print(f"?? Supabase name fetch failed in seller_order_history: {sb_err}")
+    except Exception as e:
+        print(f"seller_order_history name fetch error: {e}")
 
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-    except Exception as db_err:
-        print(f"?? MySQL unavailable in seller_order_history: {db_err}")
-        return render_template('seller_order_history.html', orders=[],
-                             user_name=seller_name, user_email=session.get('email', 'Seller'),
-                             completed_count=0, cancelled_count=0,
-                             total_revenue="0.00", total_orders=0)
-
-    # Get completed and cancelled orders with customer information
-    cursor.execute("""
-        SELECT o.id, o.name, o.quantity, o.date, o.total_price, o.payment_method, 
-               o.status, o.email, o.address, o.seller_email, o.product_id, o.image, 
-               o.variations, o.size, u.first_name, u.last_name, p.sizes as product_sizes,
-               p.price as product_original_price
-        FROM orders o
-        JOIN users u ON o.email = u.email
-        LEFT JOIN products p ON o.product_id = p.id
-        WHERE o.seller_email = %s 
-        AND o.status IN ('Completed', 'Cancelled')
-        ORDER BY o.date DESC
-    """, (session['email'],))
-    
-    orders = cursor.fetchall()
-    
-    # Calculate statistics
+    orders = []
     completed_count = 0
     cancelled_count = 0
     total_revenue = 0.0
-    
-    # Process orders to add promotion information and calculate stats
-    for order in orders:
-        try:
-            # Ensure total_price is always a float
+
+    try:
+        # Fetch completed + cancelled orders from Supabase
+        res = sb_admin.table('orders') \
+            .select('id, name, quantity, date, total_price, shipping_fee, payment_method, status, email, address, seller_email, product_id, image, variations, size') \
+            .eq('seller_email', seller_email) \
+            .in_('status', ['Completed', 'Cancelled']) \
+            .order('date', desc=True) \
+            .execute()
+
+        raw_orders = res.data or []
+
+        # Collect buyer emails for name lookup
+        buyer_emails = list({o['email'] for o in raw_orders if o.get('email')})
+        buyer_map = {}
+        if buyer_emails:
+            users_res = sb_admin.table('users') \
+                .select('email, first_name, last_name') \
+                .in_('email', buyer_emails) \
+                .execute()
+            for u in (users_res.data or []):
+                buyer_map[u['email']] = u
+
+        for order in raw_orders:
+            buyer = buyer_map.get(order.get('email') or '', {})
+            order['first_name'] = buyer.get('first_name') or ''
+            order['last_name']  = buyer.get('last_name')  or ''
+
+            # Normalize price
             try:
-                total_price_val = order.get('total_price', 0)
-                if isinstance(total_price_val, str):
-                    total_price_val = total_price_val.strip()
-                    total_price_val = float(total_price_val) if total_price_val and total_price_val.lower() != 'none' else 0.0
-                else:
-                    total_price_val = float(total_price_val) if total_price_val is not None else 0.0
-                order['total_price'] = total_price_val
+                order['total_price'] = float(order.get('total_price') or 0)
             except (ValueError, TypeError):
                 order['total_price'] = 0.0
-            
-            # Set original price from product data
-            original_price_val = order.get('product_original_price', order.get('total_price', 0))
-            if isinstance(original_price_val, str):
-                original_price_val = original_price_val.strip()
-                if original_price_val == '' or original_price_val.lower() == 'none':
-                    original_price_val = order.get('total_price', 0)
-            
-            # Ensure original_price is always a float
-            try:
-                order['original_price'] = float(original_price_val) if original_price_val else 0.0
-            except (ValueError, TypeError):
-                order['original_price'] = 0.0
-            
-            # Calculate statistics
-            if order.get('status') == 'Completed':
-                completed_count += 1
+
+            # Format date to readable format
+            raw_date = order.get('date') or ''
+            if raw_date:
                 try:
-                    price_val = order.get('total_price', 0)
-                    if isinstance(price_val, str):
-                        price_val = price_val.strip()
-                        if price_val and price_val.lower() != 'none':
-                            total_revenue += float(price_val)
-                    elif price_val is not None:
-                        total_revenue += float(price_val)
-                except (ValueError, TypeError) as e:
-                    print(f"Error converting price for order {order.get('id')}: {e}")
-                    pass
-            elif order.get('status') == 'Cancelled':
-                cancelled_count += 1
-            
-            # Calculate if there was a promotion applied
-            try:
-                if isinstance(original_price_val, str):
-                    original_price_val = original_price_val.strip()
-                    original_price = float(original_price_val) if original_price_val and original_price_val.lower() != 'none' else 0.0
-                else:
-                    original_price = float(original_price_val) if original_price_val is not None else 0.0
-            except (ValueError, TypeError):
-                original_price = 0.0
-                
-            try:
-                total_price_val = order.get('total_price', 0)
-                if isinstance(total_price_val, str):
-                    total_price_val = total_price_val.strip()
-                    total_price = float(total_price_val) if total_price_val and total_price_val.lower() != 'none' else 0.0
-                else:
-                    total_price = float(total_price_val) if total_price_val is not None else 0.0
-            except (ValueError, TypeError):
-                total_price = 0.0
-            
-            # Check for active promotions for this product
-            if order.get('product_id'):
-                try:
-                    active_promotion = get_active_promotions_for_product(
-                        order.get('product_id'), 
-                        order.get('seller_email', ''), 
-                        ''
-                    )
-                    
-                    if active_promotion:
-                        order['promotion_type'] = active_promotion.get('type', '') or ''
-                        order['promotion_name'] = active_promotion.get('name', '') or ''
-                        
-                        try:
-                            # Ensure both values are floats before comparison
-                            original_price_float = float(original_price) if original_price else 0.0
-                            total_price_float = float(total_price) if total_price else 0.0
-                            
-                            if original_price_float > 0 and total_price_float < original_price_float:
-                                discount_amount = original_price_float - total_price_float
-                                discount_percentage = round((discount_amount / original_price_float) * 100, 1)
-                                
-                                order['discount_amount'] = discount_amount
-                                order['discount_percentage'] = discount_percentage
-                            else:
-                                order['discount_amount'] = 0
-                                order['discount_percentage'] = 0
-                        except (ValueError, TypeError, ZeroDivisionError) as calc_error:
-                            print(f"Error calculating discount for order {order.get('id')}: {calc_error}")
-                            order['discount_amount'] = 0
-                            order['discount_percentage'] = 0
+                    from datetime import datetime, timezone
+                    if isinstance(raw_date, str):
+                        dt = datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
                     else:
-                        order['promotion_type'] = ''
-                        order['promotion_name'] = ''
-                        order['discount_amount'] = 0
-                        order['discount_percentage'] = 0
-                except Exception as promo_error:
-                    print(f"Error getting promotion for order {order.get('id', 'unknown')}: {promo_error}")
-                    order['promotion_type'] = ''
-                    order['promotion_name'] = ''
-                    order['discount_amount'] = 0
-                    order['discount_percentage'] = 0
-            else:
-                order['promotion_type'] = ''
-                order['promotion_name'] = ''
-                order['discount_amount'] = 0
-                order['discount_percentage'] = 0
-                
-        except Exception as order_error:
-            print(f"Error processing order {order.get('id', 'unknown')}: {order_error}")
-            order['original_price'] = order.get('total_price', 0)
-            order['promotion_type'] = ''
-            order['promotion_name'] = ''
-            order['discount_amount'] = 0
+                        dt = raw_date
+                    # Convert to local-friendly format
+                    order['date'] = dt.strftime('%b %d, %Y %I:%M %p')
+                except Exception:
+                    order['date'] = str(raw_date)[:10]  # fallback: just the date part
+
+            order['original_price']      = order['total_price']
+            order['promotion_type']      = ''
+            order['promotion_name']      = ''
+            order['discount_amount']     = 0
             order['discount_percentage'] = 0
-    
-    # Ensure all orders have required fields
-    for order in orders:
-        if not order.get('original_price'):
-            order['original_price'] = order.get('total_price', 0)
-        if not order.get('promotion_type'):
-            order['promotion_type'] = ''
-        if not order.get('promotion_name'):
-            order['promotion_name'] = ''
-        if not order.get('discount_amount'):
-            order['discount_amount'] = 0
-        if not order.get('discount_percentage'):
-            order['discount_percentage'] = 0
-    
-    cursor.close()
-    connection.close()
-    
-    return render_template('seller_order_history.html', 
-                         orders=orders, 
-                         user_name=seller_name,
-                         user_email=session.get('email', 'Seller'),
-                         completed_count=completed_count,
-                         cancelled_count=cancelled_count,
-                         total_revenue=f"{total_revenue:.2f}",
-                         total_orders=len(orders))
+
+            # Resolve image URL
+            img = (order.get('image') or '').strip()
+            if img and not img.startswith('http') and not img.startswith('/'):
+                order['image'] = img  # keep as filename for product_img filter
+            
+            # Stats
+            if order['status'] == 'Completed':
+                completed_count += 1
+                total_revenue += order['total_price']
+            elif order['status'] == 'Cancelled':
+                cancelled_count += 1
+
+            orders.append(order)
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f"seller_order_history error: {e}")
+
+    return render_template('seller_order_history.html',
+                           orders=orders,
+                           user_name=seller_name,
+                           user_email=seller_email,
+                           completed_count=completed_count,
+                           cancelled_count=cancelled_count,
+                           total_revenue=f"{total_revenue:.2f}",
+                           total_orders=len(orders))
+
+# ── Polling endpoint: seller order statuses ──────────────────────────────────
+@app.route('/api/orders/seller-statuses', methods=['GET'])
+def seller_order_statuses():
+    """Returns a lightweight JSON list of {id, status} for the logged-in seller.
+    Used by the order_list page to auto-sync statuses without a full page reload."""
+    if 'email' not in session:
+        return jsonify({'success': False}), 401
+    seller_email = session['email']
+    try:
+        res = sb_admin.table('orders') \
+            .select('id, status') \
+            .eq('seller_email', seller_email) \
+            .not_.in_('status', ['Completed', 'Cancelled']) \
+            .execute()
+        return jsonify({'success': True, 'orders': res.data or []})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ── Polling endpoint: buyer order statuses ───────────────────────────────────
+@app.route('/api/orders/buyer-statuses', methods=['GET'])
+def buyer_order_statuses():
+    """Returns a lightweight JSON list of {id, status} for the logged-in buyer.
+    Used by the orders page to auto-sync statuses without a full page reload."""
+    if 'email' not in session:
+        return jsonify({'success': False}), 401
+    buyer_email = session['email']
+    try:
+        res = sb_admin.table('orders') \
+            .select('id, status') \
+            .eq('email', buyer_email) \
+            .execute()
+        return jsonify({'success': True, 'orders': res.data or []})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/seller-order-details/<int:order_id>')
+def seller_order_details(order_id):
+    if 'email' not in session:
+        return jsonify({'success': False, 'message': 'Not logged in'}), 401
+
+    seller_email = session['email']
+    try:
+        res = sb_admin.table('orders') \
+            .select('id, name, quantity, date, total_price, shipping_fee, payment_method, status, email, address, seller_email, product_id, image, variations, size') \
+            .eq('id', order_id) \
+            .eq('seller_email', seller_email) \
+            .limit(1).execute()
+
+        if not res.data:
+            return jsonify({'success': False, 'message': 'Order not found'}), 404
+
+        order = res.data[0]
+
+        # Get buyer name
+        buyer_res = sb_admin.table('users') \
+            .select('first_name, last_name') \
+            .eq('email', order.get('email', '')) \
+            .limit(1).execute()
+        if buyer_res.data:
+            order['first_name'] = buyer_res.data[0].get('first_name', '')
+            order['last_name']  = buyer_res.data[0].get('last_name', '')
+        else:
+            order['first_name'] = ''
+            order['last_name']  = ''
+
+        # Format date
+        raw_date = order.get('date') or ''
+        if raw_date:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
+                order['date'] = dt.strftime('%b %d, %Y %I:%M %p')
+            except Exception:
+                order['date'] = str(raw_date)[:10]
+
+        # Resolve image URL
+        img = (order.get('image') or '').strip()
+        if img and not img.startswith('http') and not img.startswith('/'):
+            order['image'] = f'/static/images/uploads/{img}'
+
+        # Normalize price
+        try:
+            order['total_price'] = float(order.get('total_price') or 0)
+        except (ValueError, TypeError):
+            order['total_price'] = 0.0
+
+        return jsonify({'success': True, 'order': order})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/delete-order-history/<int:order_id>', methods=['DELETE'])
+def delete_order_history(order_id):
+    if 'email' not in session:
+        return jsonify({'success': False, 'message': 'Not logged in'}), 401
+
+    seller_email = session['email']
+    try:
+        # Only allow deleting completed/cancelled orders belonging to this seller
+        res = sb_admin.table('orders') \
+            .delete() \
+            .eq('id', order_id) \
+            .eq('seller_email', seller_email) \
+            .in_('status', ['Completed', 'Cancelled']) \
+            .execute()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @app.route('/api/rider-notifications')
 def get_rider_notifications():
@@ -8435,55 +6973,6 @@ def mark_rider_buyer_messages_read():
         print(f"Error marking buyer-rider messages as read: {e}")
         import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/delete-order-history/<int:order_id>', methods=['DELETE'])
-def delete_order_history(order_id):
-    if 'email' not in session:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
-    
-    seller_email = session.get('email')
-    
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if order exists and belongs to seller
-        cursor.execute("""
-            SELECT id, status FROM orders 
-            WHERE id = %s AND seller_email = %s
-        """, (order_id, seller_email))
-        
-        order = cursor.fetchone()
-        
-        if not order:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Order not found or unauthorized'}), 404
-        
-        # Only allow deletion of Completed or Cancelled orders
-        if order['status'] not in ['Completed', 'Cancelled']:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Only completed or cancelled orders can be deleted'}), 400
-        
-        # Delete the order
-        cursor.execute("DELETE FROM orders WHERE id = %s", (order_id,))
-        connection.commit()
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Order deleted successfully'
-        })
-        
-    except Exception as e:
-        print(f"Error deleting order: {str(e)}")
-        return jsonify({
-            'success': False, 
-            'message': f'Error deleting order: {str(e)}'
-        }), 500
 
 @app.route('/api/seller-order-details/<int:order_id>')
 def get_seller_order_details(order_id):
@@ -9624,316 +8113,263 @@ def admin_users():
 
 @app.route('/product_management')
 def product_management():
-    """Admin route to manage all products from all sellers"""
-    print(f"DEBUG product_management: session = {dict(session)}")
-    
-    # Check if user is logged in and is admin
+    """Admin: manage all products — Supabase"""
     if 'user_id' not in session or session.get('user_type') != 'Admin':
-        print(f"DEBUG: Access denied - user_id: {session.get('user_id')}, user_type: {session.get('user_type')}")
-        flash('Access denied. Admin privileges required.', 'danger')
         return redirect(url_for('login'))
-    
-    print("DEBUG: Admin access granted, loading products...")
-    
-    try:
-        conn = get_db_connection()
-    except Exception as e:
-        print(f"?? MySQL unavailable in product_management: {e}")
-        return render_template('product_management.html',
-                             products=[], categories=[], sellers=[],
-                             page=1, total_pages=1, total_products=0,
-                             low_stock_count=0, out_of_stock_count=0)
-    
-    cursor = conn.cursor(dictionary=True)
-    
-    try:
-        # Check if created_at and updated_at columns exist, if not add them
-        try:
-            cursor.execute("SHOW COLUMNS FROM products LIKE 'created_at'")
-            if not cursor.fetchone():
-                print("Adding created_at column to products table...")
-                cursor.execute("""
-                    ALTER TABLE products 
-                    ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                """)
-                conn.commit()
-                print("created_at column added successfully!")
-        except Exception as e:
-            print(f"Error checking/adding created_at column: {e}")
-        
-        try:
-            cursor.execute("SHOW COLUMNS FROM products LIKE 'updated_at'")
-            if not cursor.fetchone():
-                print("Adding updated_at column to products table...")
-                cursor.execute("""
-                    ALTER TABLE products 
-                    ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                """)
-                conn.commit()
-                print("updated_at column added successfully!")
-        except Exception as e:
-            print(f"Error checking/adding updated_at column: {e}")
-        
-        # Check if is_active column exists, if not add it
-        try:
-            cursor.execute("SHOW COLUMNS FROM products LIKE 'is_active'")
-            if not cursor.fetchone():
-                print("Adding is_active column to products table...")
-                cursor.execute("""
-                    ALTER TABLE products 
-                    ADD COLUMN is_active BOOLEAN DEFAULT TRUE
-                """)
-                conn.commit()
-                print("is_active column added successfully!")
-        except Exception as e:
-            print(f"Error checking/adding is_active column: {e}")
-        
-        # Get search and filter parameters
-        search_query = request.args.get('search', '').strip()
-        category_filter = request.args.get('category', '').strip()
-        seller_filter = request.args.get('seller', '').strip()
-        status_filter = request.args.get('status', '').strip()
-        
-        # Get pagination parameters
-        page = request.args.get('page', 1, type=int)
-        per_page = 20  # 20 products per page
-        offset = (page - 1) * per_page
-        
-        # Build query to get all products with seller information
-        base_query = """
-            SELECT p.*, 
-                   u.first_name, u.last_name, u.business_name,
-                   COALESCE(u.business_name, CONCAT(u.first_name, ' ', u.last_name)) as seller_name
-            FROM products p
-            LEFT JOIN users u ON p.seller_email = u.email
-            WHERE 1=1
-        """
-        
-        params = []
-        
-        # Add search filter
-        if search_query:
-            base_query += " AND (p.name LIKE %s OR p.category LIKE %s OR p.description LIKE %s)"
-            search_param = f'%{search_query}%'
-            params.extend([search_param, search_param, search_param])
-        
-        # Add category filter
-        if category_filter:
-            base_query += " AND p.category = %s"
-            params.append(category_filter)
-        
-        # Add seller filter
-        if seller_filter:
-            base_query += " AND p.seller_email = %s"
-            params.append(seller_filter)
-        
-        # Add status filter
-        if status_filter:
-            if status_filter == 'active':
-                base_query += " AND p.is_active = TRUE AND (p.flagged_at IS NULL OR p.flagged_at = '')"
-            elif status_filter == 'inactive':
-                base_query += " AND p.is_active = FALSE"
-            elif status_filter == 'flagged':
-                base_query += " AND p.flagged_at IS NOT NULL AND p.flagged_at != ''"
-            elif status_filter == 'out_of_stock':
-                base_query += " AND CAST(p.quantity AS SIGNED) <= 0"
-            elif status_filter == 'low_stock':
-                base_query += " AND CAST(p.quantity AS SIGNED) > 0 AND CAST(p.quantity AS SIGNED) <= COALESCE(p.low_stock_threshold, 5)"
-        
-        # Get total count for pagination
-        count_query = f"SELECT COUNT(*) as total FROM ({base_query}) as filtered_products"
-        cursor.execute(count_query, params)
-        total_products = cursor.fetchone()['total']
-        total_pages = (total_products + per_page - 1) // per_page
-        
-        # Order by created_at if it exists, otherwise by id
-        base_query += " ORDER BY p.id DESC"
-        
-        # Add pagination
-        base_query += " LIMIT %s OFFSET %s"
-        params.extend([per_page, offset])
-        
-        # Execute query
-        cursor.execute(base_query, params)
-        products = cursor.fetchall()
-        
-        # Convert price to float and quantity to int for proper formatting
-        for product in products:
-            if product.get('price'):
-                try:
-                    product['price'] = float(product['price'])
-                except (ValueError, TypeError):
-                    product['price'] = 0.0
-            
-            # Convert quantity/stock to integer
-            if product.get('quantity') is not None:
-                try:
-                    product['quantity'] = int(product['quantity'])
-                except (ValueError, TypeError):
-                    product['quantity'] = 0
-            
-            if product.get('stock_quantity') is not None:
-                try:
-                    product['stock_quantity'] = int(product['stock_quantity'])
-                except (ValueError, TypeError):
-                    product['stock_quantity'] = 0
-        
-        # Get all categories for filter dropdown
-        cursor.execute("SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category")
-        categories = [row['category'] for row in cursor.fetchall() if row['category']]
-        
-        # Get all sellers for filter dropdown
-        cursor.execute("""
-            SELECT DISTINCT u.email, 
-                   COALESCE(u.business_name, CONCAT(u.first_name, ' ', u.last_name)) as seller_name
-            FROM users u
-            INNER JOIN products p ON u.email = p.seller_email
-            WHERE u.user_type = 'Seller'
-            ORDER BY seller_name
-        """)
-        sellers = cursor.fetchall()
-        
-        # Calculate low stock and out of stock counts
-        # Get all products to calculate stock status
-        cursor.execute("""
-            SELECT quantity, low_stock_threshold
-            FROM products
-        """)
-        all_products = cursor.fetchall()
-        
-        low_stock_count = 0
-        out_of_stock_count = 0
-        
-        for product in all_products:
-            quantity = int(product['quantity']) if product.get('quantity') is not None else 0
-            threshold = int(product['low_stock_threshold']) if product.get('low_stock_threshold') else 5
-            
-            if quantity <= 0:
-                out_of_stock_count += 1
-            elif quantity <= threshold:
-                low_stock_count += 1
-        
-        cursor.close()
-        conn.close()
-        
-        return render_template('product_management.html', 
-                             products=products, 
-                             categories=categories,
-                             sellers=sellers,
-                             page=page,
-                             total_pages=total_pages,
-                             total_products=total_products,
-                             low_stock_count=low_stock_count,
-                             out_of_stock_count=out_of_stock_count)
-    
-    except Exception as e:
-        print(f"Error in product_management: {e}")
-        flash(f'An error occurred while loading products: {str(e)}', 'danger')
-        cursor.close()
-        conn.close()
-        return redirect(url_for('admin_dashboard'))
 
+    search_query    = request.args.get('search',   '').strip().lower()
+    category_filter = request.args.get('category', '').strip()
+    seller_filter   = request.args.get('seller',   '').strip()
+    status_filter   = request.args.get('status',   '').strip()
+    page            = request.args.get('page', 1, type=int)
+    per_page        = 20
+
+    try:
+        from datetime import datetime as _dt
+
+        # Fetch all products with all columns
+        all_res = sb_admin.table('products').select('*').order('id', desc=True).execute()
+        all_products = all_res.data or []
+
+        # Batch-fetch seller names
+        seller_emails = list({p.get('seller_email', '') for p in all_products if p.get('seller_email')})
+        seller_name_map = {}
+        if seller_emails:
+            usr_res = sb_admin.table('users') \
+                .select('email, first_name, last_name, business_name') \
+                .in_('email', seller_emails).execute()
+            for u in (usr_res.data or []):
+                biz = (u.get('business_name') or '').strip()
+                fn  = (u.get('first_name')    or '').strip()
+                ln  = (u.get('last_name')     or '').strip()
+                seller_name_map[u['email']] = biz or f'{fn} {ln}'.strip() or u['email']
+
+        # Attach seller_name to each product + normalise types
+        for p in all_products:
+            p['seller_name']  = seller_name_map.get(p.get('seller_email', ''), p.get('seller_email', ''))
+            p['price']        = float(p.get('price') or 0)
+            p['quantity']     = int(p.get('quantity') or 0)
+            p['is_active']    = bool(p.get('is_active', True))
+            # Parse datetime strings for template
+            for field in ('created_at', 'updated_at', 'flagged_at'):
+                val = p.get(field)
+                if val and isinstance(val, str):
+                    try:
+                        p[field] = _dt.fromisoformat(val.replace('Z', '+00:00').replace('+00:00', ''))
+                    except Exception:
+                        p[field] = None
+
+        # Apply filters
+        filtered = all_products
+        if search_query:
+            filtered = [p for p in filtered if
+                search_query in (p.get('name') or '').lower() or
+                search_query in (p.get('category') or '').lower() or
+                search_query in (p.get('description') or '').lower()]
+        if category_filter:
+            filtered = [p for p in filtered if (p.get('category') or '') == category_filter]
+        if seller_filter:
+            filtered = [p for p in filtered if (p.get('seller_email') or '') == seller_filter]
+        if status_filter == 'active':
+            filtered = [p for p in filtered if p['is_active'] and not p.get('flagged_at')]
+        elif status_filter == 'inactive':
+            filtered = [p for p in filtered if not p['is_active']]
+        elif status_filter == 'flagged':
+            filtered = [p for p in filtered if p.get('flagged_at')]
+        elif status_filter == 'out_of_stock':
+            filtered = [p for p in filtered if p['quantity'] <= 0]
+        elif status_filter == 'low_stock':
+            filtered = [p for p in filtered if 0 < p['quantity'] <= int(p.get('low_stock_threshold') or 5)]
+
+        # Stats
+        total_products    = len(filtered)
+        low_stock_count   = sum(1 for p in all_products if 0 < p['quantity'] <= int(p.get('low_stock_threshold') or 5))
+        out_of_stock_count = sum(1 for p in all_products if p['quantity'] <= 0)
+
+        # Pagination
+        total_pages = max(1, (total_products + per_page - 1) // per_page)
+        page        = max(1, min(page, total_pages))
+        offset      = (page - 1) * per_page
+        products    = filtered[offset: offset + per_page]
+
+        # Dropdown data
+        categories = sorted({p.get('category') for p in all_products if p.get('category')})
+        sellers    = [{'email': e, 'seller_name': seller_name_map.get(e, e)}
+                      for e in sorted(seller_name_map, key=lambda x: seller_name_map[x])]
+
+        return render_template('product_management.html',
+                               products=products,
+                               categories=categories,
+                               sellers=sellers,
+                               page=page,
+                               total_pages=total_pages,
+                               total_products=total_products,
+                               low_stock_count=low_stock_count,
+                               out_of_stock_count=out_of_stock_count)
+
+    except Exception as e:
+        print(f"product_management Supabase error: {e}")
+        import traceback; traceback.print_exc()
+        return render_template('product_management.html',
+                               products=[], categories=[], sellers=[],
+                               page=1, total_pages=1, total_products=0,
+                               low_stock_count=0, out_of_stock_count=0)
 @app.route('/admin_dashboard')
 def admin_dashboard():
-    # Safe defaults
-    total_buyers = total_sellers = total_riders = 0
-    total_sales = platform_sales = 0
-    pending_approvals = 0
-    total_orders = total_products = total_revenue = 0
-    total_platform_commission = 0.0
-    total_issues = 0
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        return redirect(url_for('admin_login'))
+
+    total_orders = total_products = total_users = total_issues = pending_approvals = 0
 
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
-        # User counts
-        try:
-            cursor.execute("SELECT UPPER(user_type) as t, COUNT(*) as c FROM users GROUP BY UPPER(user_type)")
-            for row in cursor.fetchall():
-                t = (row['t'] or '').upper()
-                if t == 'BUYER':   total_buyers  = row['c']
-                elif t == 'SELLER': total_sellers = row['c']
-                elif t == 'RIDER':  total_riders  = row['c']
-        except Exception as e:
-            print(f"Error fetching user counts: {e}")
-
-        # Sales
-        try:
-            cursor.execute("SELECT COALESCE(SUM(total_price),0) as s FROM orders WHERE status='Received'")
-            total_sales = cursor.fetchone()['s'] or 0
-            platform_sales = float(total_sales) * 0.05
-        except Exception as e:
-            print(f"Error fetching sales: {e}")
-
-        # Pending approvals
-        try:
-            cursor.execute("SELECT COUNT(*) as c FROM pending_users")
-            pu = cursor.fetchone()['c'] or 0
-            cursor.execute("SELECT COUNT(*) as c FROM pending_sellers WHERE status='pending'")
-            ps = cursor.fetchone()['c'] or 0
-            pending_approvals = pu + ps
-        except Exception as e:
-            print(f"Error fetching pending approvals: {e}")
+        from datetime import datetime as _dt
 
         # Total orders
-        try:
-            cursor.execute("SELECT COUNT(*) as c FROM orders")
-            total_orders = cursor.fetchone()['c'] or 0
-        except Exception as e:
-            print(f"Error fetching orders: {e}")
+        ord_res = sb_admin.table('orders').select('id', count='exact').execute()
+        total_orders = ord_res.count or 0
 
         # Total products
-        try:
-            cursor.execute("SELECT COUNT(*) as c FROM products")
-            total_products = cursor.fetchone()['c'] or 0
-        except Exception as e:
-            print(f"Error fetching products: {e}")
+        prod_res = sb_admin.table('products').select('id', count='exact').execute()
+        total_products = prod_res.count or 0
 
-        # Total revenue
-        try:
-            cursor.execute("SELECT COALESCE(SUM(total_price),0) as r FROM orders WHERE status IN ('Received','Delivered','Completed')")
-            total_revenue = cursor.fetchone()['r'] or 0
-        except Exception as e:
-            print(f"Error fetching revenue: {e}")
+        # Total users
+        usr_res = sb_admin.table('users').select('id', count='exact').execute()
+        total_users = usr_res.count or 0
 
-        # Platform commission
+        # Total issues (order_issues table; graceful fallback)
         try:
-            cursor.execute("""
-                SELECT
-                    COALESCE(SUM(CAST(total_price AS DECIMAL(10,2))*0.05),0) as sc,
-                    COALESCE(SUM(50.00*0.05),0) as rc
-                FROM orders
-                WHERE status IN ('Delivered','Completed','Received','delivered','completed','received')
-            """)
-            row = cursor.fetchone()
-            total_platform_commission = float(row['sc'] or 0) + float(row['rc'] or 0)
-        except Exception as e:
-            print(f"Error fetching commission: {e}")
+            iss_res = sb_admin.table('order_issues').select('id', count='exact').execute()
+            total_issues = iss_res.count or 0
+        except Exception:
+            total_issues = 0
 
-        # Total issues
+        # Pending approvals (pending_sellers)
         try:
-            cursor.execute("SELECT COUNT(*) as c FROM order_issues")
-            total_issues = cursor.fetchone()['c'] or 0
-        except Exception as e:
-            print(f"Error fetching issues: {e}")
-
-        cursor.close()
-        connection.close()
+            pa_res = sb_admin.table('pending_sellers') \
+                .select('id', count='exact') \
+                .eq('status', 'pending') \
+                .execute()
+            pending_approvals = pa_res.count or 0
+        except Exception:
+            pending_approvals = 0
 
     except Exception as e:
-        print(f"?? MySQL unavailable in admin_dashboard: {e}")
+        print(f"admin_dashboard Supabase error: {e}")
 
     return render_template('admin_dashboard.html',
-                           total_users=total_buyers + total_sellers + total_riders,
                            total_orders=total_orders,
-                           total_platform_commission=total_platform_commission,
-                           total_revenue=total_revenue,
                            total_products=total_products,
+                           total_users=total_users,
                            total_issues=total_issues,
-                           pending_approvals=pending_approvals,
-                           platform_sales=platform_sales)
-    
+                           pending_approvals=pending_approvals)
+
+
+@app.route('/admin_issue_reports', methods=['GET'])
+def admin_issue_reports():
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        return redirect(url_for('admin_login'))
+
+    # Filter params
+    status_filter        = request.args.get('status', '').strip()
+    reporter_role_filter = request.args.get('reporter_role', '').strip()
+    report_against_filter = request.args.get('report_against', '').strip()
+    search_query         = request.args.get('search', '').strip()
+    current_page         = max(1, int(request.args.get('page', 1)))
+    per_page             = 20
+
+    issues = []
+    stats  = {'total_issues': 0, 'pending_issues': 0, 'in_progress_issues': 0, 'resolved_issues': 0}
+    total_issues = 0
+    total_pages  = 1
+
+    try:
+        # -- Stats ----------------------------------------------------------
+        try:
+            all_res = sb_admin.table('order_issues').select('id, status').execute()
+            all_data = all_res.data or []
+            stats['total_issues']       = len(all_data)
+            stats['pending_issues']     = sum(1 for r in all_data if r.get('status') == 'pending')
+            stats['in_progress_issues'] = sum(1 for r in all_data if r.get('status') == 'in_progress')
+            stats['resolved_issues']    = sum(1 for r in all_data if r.get('status') == 'resolved')
+        except Exception as e:
+            print(f"admin_issue_reports stats error: {e}")
+
+        # -- Fetch issues ---------------------------------------------------
+        query = sb_admin.table('order_issues').select(
+            'id, order_id, reporter_email, reporter_role, '
+            'reported_against_email, reported_against_role, '
+            'issue_type, issue_description, status, created_at, '
+            'product_name, order_total'
+        )
+
+        if status_filter:
+            query = query.eq('status', status_filter)
+        if reporter_role_filter:
+            query = query.eq('reporter_role', reporter_role_filter)
+        if report_against_filter:
+            query = query.eq('reported_against_role', report_against_filter)
+
+        query = query.order('created_at', desc=True)
+        res   = query.execute()
+        rows  = res.data or []
+
+        # Client-side search filter
+        if search_query:
+            sq = search_query.lower()
+            rows = [r for r in rows if
+                    sq in (r.get('reporter_email') or '').lower() or
+                    sq in (r.get('reported_against_email') or '').lower() or
+                    sq in (r.get('product_name') or '').lower() or
+                    sq in (r.get('issue_description') or '').lower() or
+                    sq in str(r.get('order_id') or '').lower()]
+
+        total_issues = len(rows)
+        total_pages  = max(1, (total_issues + per_page - 1) // per_page)
+        current_page = min(current_page, total_pages)
+        page_rows    = rows[(current_page - 1) * per_page: current_page * per_page]
+
+        from datetime import datetime as _dt
+        for r in page_rows:
+            # Parse created_at into a datetime object for template strftime
+            raw_dt = r.get('created_at') or ''
+            try:
+                created_at = _dt.fromisoformat(raw_dt.replace('Z', '+00:00'))
+            except Exception:
+                created_at = _dt.utcnow()
+
+            issues.append({
+                'id':                     r['id'],
+                'order_id':               r.get('order_id'),
+                'reporter_email':         r.get('reporter_email', ''),
+                'reporter_role':          (r.get('reporter_role') or 'unknown').lower(),
+                'reported_against_email': r.get('reported_against_email', ''),
+                'reported_against_role':  (r.get('reported_against_role') or 'other').lower(),
+                'issue_type':             r.get('issue_type', 'other'),
+                'issue_description':      r.get('issue_description', ''),
+                'status':                 r.get('status', 'pending'),
+                'created_at':             created_at,
+                'product_name':           r.get('product_name'),
+                'order_total':            r.get('order_total'),
+            })
+
+    except Exception as e:
+        print(f"admin_issue_reports error: {e}")
+        import traceback; traceback.print_exc()
+
+    return render_template(
+        'admin_issue_reports.html',
+        issues=issues,
+        stats=stats,
+        total_issues=total_issues,
+        total_pages=total_pages,
+        current_page=current_page,
+        status_filter=status_filter,
+        reporter_role_filter=reporter_role_filter,
+        report_against_filter=report_against_filter,
+        search_query=search_query,
+    )
+
+
 @app.route('/debug_user_counts')
 def debug_user_counts():
     """Debug route to check user counts"""
@@ -11369,1442 +9805,456 @@ def print_layout():
 
 @app.route('/api/admin/dashboard_charts')
 def admin_dashboard_charts():
-    """API endpoint to provide chart data for admin dashboard"""
+    """Chart data for admin dashboard - powered by Supabase"""
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         return jsonify({'error': 'Unauthorized'}), 401
-    
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-    
-    try:
-        # Get last 12 months data
-        from datetime import datetime, timedelta
-        from calendar import monthrange
-        
-        # Calculate date range for last 12 months
-        end_date = datetime.now()
-        
-        # Helper function to add months
-        def add_months(date, months):
-            month = date.month - 1 + months
-            year = date.year + month // 12
-            month = month % 12 + 1
-            day = min(date.day, monthrange(year, month)[1])
-            return date.replace(year=year, month=month, day=day)
-        
-        start_date = add_months(end_date, -11)
-        
-        # Initialize data structures
-        months = []
-        revenue_data = []
-        commission_data = []
-        
-        # Generate month labels
-        current_month = start_date
-        for i in range(12):
-            month_label = current_month.strftime('%b %Y')
-            months.append(month_label)
-            
-            # Get revenue for this month
-            cursor.execute("""
-                SELECT 
-                    COALESCE(SUM(CAST(total_price AS DECIMAL(10,2))), 0) as monthly_revenue
-                FROM orders
-                WHERE status IN ('Delivered', 'Completed', 'Received', 'delivered', 'completed', 'received')
-                AND YEAR(date) = %s AND MONTH(date) = %s
-            """, (current_month.year, current_month.month))
-            
-            revenue_result = cursor.fetchone()
-            monthly_revenue = float(revenue_result['monthly_revenue']) if revenue_result and revenue_result['monthly_revenue'] else 0.0
-            revenue_data.append(monthly_revenue)
-            
-            # Get commission for this month (5% from sellers + 5% from riders)
-            cursor.execute("""
-                SELECT 
-                    COALESCE(SUM(CAST(total_price AS DECIMAL(10,2)) * 0.05), 0) as seller_commission,
-                    COALESCE(SUM(50.00 * 0.05), 0) as rider_commission
-                FROM orders
-                WHERE status IN ('Delivered', 'Completed', 'Received', 'delivered', 'completed', 'received')
-                AND YEAR(date) = %s AND MONTH(date) = %s
-            """, (current_month.year, current_month.month))
-            
-            commission_result = cursor.fetchone()
-            seller_comm = float(commission_result['seller_commission']) if commission_result and commission_result['seller_commission'] else 0.0
-            rider_comm = float(commission_result['rider_commission']) if commission_result and commission_result['rider_commission'] else 0.0
-            monthly_commission = seller_comm + rider_comm
-            commission_data.append(monthly_commission)
-            
-            # Move to next month
-            current_month = add_months(current_month, 1)
-        
-        # Get top selling categories
-        cursor.execute("""
-            SELECT 
-                p.category,
-                SUM(CAST(o.quantity AS UNSIGNED)) as total_sold
-            FROM orders o
-            JOIN products p ON o.product_id = p.id
-            WHERE o.status IN ('Delivered', 'Completed', 'Received', 'delivered', 'completed', 'received')
-            AND p.category IS NOT NULL
-            GROUP BY p.category
-            ORDER BY total_sold DESC
-            LIMIT 8
-        """)
-        
-        categories_result = cursor.fetchall()
-        category_labels = []
-        category_values = []
-        
-        for cat in categories_result:
-            category_labels.append(cat['category'] if cat['category'] else 'Uncategorized')
-            category_values.append(int(cat['total_sold']) if cat['total_sold'] else 0)
-        
-        # Get order status distribution
-        cursor.execute("""
-            SELECT 
-                status,
-                COUNT(*) as count
-            FROM orders
-            GROUP BY status
-            ORDER BY count DESC
-        """)
-        
-        status_result = cursor.fetchall()
-        status_labels = []
-        status_values = []
-        
-        # Map status names to more readable labels
-        status_map = {
-            'Pending': 'Pending',
-            'pending': 'Pending',
-            'Processing': 'Processing',
-            'processing': 'Processing',
-            'Shipped': 'Shipped',
-            'shipped': 'Shipped',
-            'Out for Delivery': 'Out for Delivery',
-            'out for delivery': 'Out for Delivery',
-            'Delivered': 'Delivered',
-            'delivered': 'Delivered',
-            'Completed': 'Completed',
-            'completed': 'Completed',
-            'Received': 'Received',
-            'received': 'Received',
-            'Cancelled': 'Cancelled',
-            'cancelled': 'Cancelled'
-        }
-        
-        for status in status_result:
-            status_name = status['status'] if status['status'] else 'Unknown'
-            mapped_status = status_map.get(status_name, status_name)
-            status_labels.append(mapped_status)
-            status_values.append(int(status['count']) if status['count'] else 0)
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'revenue': {
-                'labels': months,
-                'values': revenue_data
-            },
-            'commission': {
-                'labels': months,
-                'values': commission_data
-            },
-            'categories': {
-                'labels': category_labels,
-                'values': category_values
-            },
-            'orderStatus': {
-                'labels': status_labels,
-                'values': status_values
-            }
-        })
-        
-    except Exception as e:
-        print(f"Error fetching dashboard chart data: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        try:
-            cursor.close()
-            connection.close()
-        except:
-            pass
-        
-        # Return empty data instead of error to prevent chart breaking
-        return jsonify({
-            'revenue': {
-                'labels': [],
-                'values': []
-            },
-            'commission': {
-                'labels': [],
-                'values': []
-            },
-            'categories': {
-                'labels': [],
-                'values': []
-            },
-            'orderStatus': {
-                'labels': [],
-                'values': []
-            },
-            'error': str(e)
-        }), 200
 
+    empty = {'revenue': {'labels': [], 'values': []},
+             'commission': {'labels': [], 'values': []},
+             'categories': {'labels': [], 'values': []},
+             'orderStatus': {'labels': [], 'values': []}}
+
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        from collections import defaultdict
+
+        now = _dt.now()
+
+        # Build 12-month skeleton
+        months = []
+        for i in range(11, -1, -1):
+            m = now - _td(days=i * 30)
+            months.append(m.strftime('%b %Y'))
+
+        # Fetch all completed/delivered orders (for revenue + commission + categories)
+        done_res = sb_admin.table('orders') \
+            .select('id, total_price, date, quantity, product_id, status') \
+            .in_('status', ['Delivered', 'Completed', 'Received',
+                            'delivered', 'completed', 'received']) \
+            .execute()
+        done_orders = done_res.data or []
+
+        # Monthly revenue & commission
+        rev_map  = defaultdict(float)
+        comm_map = defaultdict(float)
+        for o in done_orders:
+            raw_date = o.get('date')
+            if not raw_date:
+                continue
+            try:
+                label = _dt.fromisoformat(str(raw_date)[:10]).strftime('%b %Y')
+                val = float(o.get('total_price') or 0)
+                rev_map[label]  += val
+                comm_map[label] += val * 0.05   # 5% platform fee
+            except Exception:
+                pass
+
+        revenue_data    = [rev_map.get(m, 0)  for m in months]
+        commission_data = [comm_map.get(m, 0) for m in months]
+
+        # Top selling categories  batch-fetch product categories
+        product_ids = list({o['product_id'] for o in done_orders if o.get('product_id')})
+        cat_map = {}
+        if product_ids:
+            prod_res = sb_admin.table('products') \
+                .select('id, category') \
+                .in_('id', product_ids) \
+                .execute()
+            for p in (prod_res.data or []):
+                cat_map[p['id']] = p.get('category') or 'Uncategorized'
+
+        cat_sold = defaultdict(int)
+        for o in done_orders:
+            pid = o.get('product_id')
+            if pid:
+                cat = cat_map.get(pid, 'Uncategorized')
+                cat_sold[cat] += int(o.get('quantity') or 1)
+
+        top_cats = sorted(cat_sold.items(), key=lambda x: x[1], reverse=True)[:8]
+        category_labels = [c[0] for c in top_cats]
+        category_values = [c[1] for c in top_cats]
+
+        # Order status distribution  all orders
+        all_res = sb_admin.table('orders').select('status').execute()
+        status_count = defaultdict(int)
+        for o in (all_res.data or []):
+            s = (o.get('status') or 'Unknown').strip()
+            status_count[s] += 1
+
+        status_labels = list(status_count.keys())
+        status_values = [status_count[k] for k in status_labels]
+
+        return jsonify({
+            'revenue':     {'labels': months,          'values': revenue_data},
+            'commission':  {'labels': months,          'values': commission_data},
+            'categories':  {'labels': category_labels, 'values': category_values},
+            'orderStatus': {'labels': status_labels,   'values': status_values},
+        })
+
+    except Exception as e:
+        print(f"admin_dashboard_charts Supabase error: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({**empty, 'error': str(e)}), 200
 @app.route('/api/admin/analytics')
 def admin_analytics_api():
-    """API endpoint to provide analytics data"""
+    """Admin analytics API — fully powered by Supabase"""
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         return jsonify({'error': 'Unauthorized'}), 401
-    
+
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get date range from query parameters (optional)
-        from_date = request.args.get('from_date')
-        to_date = request.args.get('to_date')
-        
-        # Build date filter
-        date_filter = ""
-        date_params = []
-        if from_date and to_date:
-            date_filter = " AND DATE(o.date) BETWEEN %s AND %s"
-            date_params = [from_date, to_date]
-        
-        # 1. Get key metrics
-        # Total orders
-        cursor.execute(f"SELECT COUNT(*) as total FROM orders o WHERE 1=1{date_filter}", date_params)
-        total_orders = cursor.fetchone()['total']
-        
-        # Total revenue (only completed orders)
-        cursor.execute(f"""
-            SELECT COALESCE(SUM(total_price), 0) as total 
-            FROM orders o 
-            WHERE status = 'Received'{date_filter}
-        """, date_params)
-        total_revenue = float(cursor.fetchone()['total'])
-        
-        # Total users
-        cursor.execute("SELECT COUNT(*) as total FROM users")
-        total_users = cursor.fetchone()['total']
-        
-        # Total products
-        cursor.execute("SELECT COUNT(*) as total FROM products")
-        total_products = cursor.fetchone()['total']
-        
-        # 2. Sales data for chart (last 30 days or date range)
-        if from_date and to_date:
-            cursor.execute("""
-                SELECT DATE(date) as order_date, COALESCE(SUM(total_price), 0) as daily_sales
-                FROM orders
-                WHERE status = 'Received' AND DATE(date) BETWEEN %s AND %s
-                GROUP BY DATE(date)
-                ORDER BY order_date
-            """, [from_date, to_date])
-        else:
-            cursor.execute("""
-                SELECT DATE(date) as order_date, COALESCE(SUM(total_price), 0) as daily_sales
-                FROM orders
-                WHERE status = 'Received' AND date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                GROUP BY DATE(date)
-                ORDER BY order_date
-            """)
-        
-        sales_data = cursor.fetchall()
-        sales_labels = [row['order_date'].strftime('%Y-%m-%d') for row in sales_data]
-        sales_values = [float(row['daily_sales']) for row in sales_data]
-        
-        # 3. Order status distribution (matching seller order statuses)
-        cursor.execute(f"""
-            SELECT 
-                CASE 
-                    WHEN LOWER(status) = 'pending' THEN 'Pending'
-                    WHEN LOWER(status) = 'confirmed' THEN 'Confirmed'
-                    WHEN LOWER(status) IN ('for pickup', 'ready for pickup') THEN 'For Pickup'
-                    WHEN LOWER(status) IN ('shipped', 'heading to seller') THEN 'Shipped'
-                    WHEN LOWER(status) = 'delivered' THEN 'Delivered'
-                    WHEN LOWER(status) IN ('completed', 'received') THEN 'Completed'
-                    WHEN LOWER(status) = 'cancelled' THEN 'Cancelled'
-                    WHEN LOWER(status) = 'rejected' THEN 'Rejected'
-                    ELSE status
-                END as normalized_status,
-                COUNT(*) as count
-            FROM orders o
-            WHERE 1=1{date_filter}
-            GROUP BY normalized_status
-        """, date_params)
-        
-        status_data = cursor.fetchall()
-        status_map = {
-            'Pending': 0,
-            'Confirmed': 0,
-            'For Pickup': 0,
-            'Shipped': 0,
-            'Delivered': 0,
-            'Completed': 0,
-            'Cancelled': 0,
-            'Rejected': 0
-        }
-        
-        for row in status_data:
-            normalized_status = row['normalized_status']
-            if normalized_status in status_map:
-                status_map[normalized_status] = row['count']
-        
-        order_status = [
-            status_map['Pending'],
-            status_map['Confirmed'],
-            status_map['For Pickup'],
-            status_map['Shipped'],
-            status_map['Delivered'],
-            status_map['Completed'],
-            status_map['Cancelled'],
-            status_map['Rejected']
-        ]
-        
-        # 4. Top products
-        cursor.execute(f"""
-            SELECT p.name, COUNT(o.id) as sales, COALESCE(SUM(o.total_price), 0) as revenue
-            FROM orders o
-            JOIN products p ON o.product_id = p.id
-            WHERE o.status = 'Received'{date_filter}
-            GROUP BY p.id, p.name
-            ORDER BY revenue DESC
-            LIMIT 5
-        """, date_params)
-        
-        top_products = []
-        for row in cursor.fetchall():
-            top_products.append({
-                'name': row['name'],
-                'sales': row['sales'],
-                'revenue': float(row['revenue'])
-            })
-        
-        # 5. Top sellers
-        cursor.execute(f"""
-            SELECT o.seller_email, COUNT(o.id) as orders, COALESCE(SUM(o.total_price), 0) as revenue
-            FROM orders o
-            WHERE o.status = 'Received'{date_filter}
-            GROUP BY o.seller_email
-            ORDER BY revenue DESC
-            LIMIT 5
-        """, date_params)
-        
-        top_sellers = []
-        for row in cursor.fetchall():
-            top_sellers.append({
-                'name': row['seller_email'],
-                'orders': row['orders'],
-                'revenue': float(row['revenue'])
-            })
-        
-        # 6. Inventory and Products Analytics
-        # First ensure is_active column exists
-        try:
-            cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
-            connection.commit()
-        except:
-            pass
-        
-        cursor.execute("""
-            SELECT 
-                p.id,
-                p.name as product_name,
-                p.seller_email,
-                p.category,
-                CASE 
-                    WHEN COALESCE(p.is_active, 1) = 1 THEN 'Active'
-                    ELSE 'Inactive'
-                END as status,
-                COALESCE(p.sold, 0) as units_sold,
-                p.quantity as stock,
-                COALESCE(AVG(r.rating), 0) as avg_rating,
-                p.is_active,
-                p.flagged_at,
-                p.flag_reason
-            FROM products p
-            LEFT JOIN reviews r ON p.id = r.product_id
-            GROUP BY p.id, p.name, p.seller_email, p.category, p.sold, p.quantity, p.is_active, p.flagged_at, p.flag_reason
-            ORDER BY units_sold DESC
-        """)
-        
+        from datetime import datetime as _dt
+        from collections import defaultdict
+
+        # ── 1. Fetch raw data in parallel batches ─────────────────────────────
+        orders_res   = sb_admin.table('orders').select('*').execute()
+        products_res = sb_admin.table('products').select('*').execute()
+        users_res    = sb_admin.table('users').select('email,first_name,last_name,business_name,user_type,phone,vehicle_type,vehicle_plate_number').execute()
+        reviews_res  = sb_admin.table('reviews').select('product_id,rating').execute()
+        cart_res     = sb_admin.table('cart').select('email').execute()
+        wishlist_res = sb_admin.table('wishlist').select('user_email').execute()
+
+        all_orders   = orders_res.data   or []
+        all_products = products_res.data or []
+        all_users    = users_res.data    or []
+        all_reviews  = reviews_res.data  or []
+        all_cart     = cart_res.data     or []
+        all_wishlist = wishlist_res.data or []
+
+        #  2. Build lookup maps 
+        user_map = {}
+        for u in all_users:
+            fn  = (u.get('first_name')    or '').strip()
+            ln  = (u.get('last_name')     or '').strip()
+            biz = (u.get('business_name') or '').strip()
+            user_map[u['email']] = {
+                'name':         biz or f'{fn} {ln}'.strip() or u['email'],
+                'user_type':    (u.get('user_type') or '').lower(),
+                'vehicle_type': u.get('vehicle_type') or 'N/A',
+                'plate':        u.get('vehicle_plate_number') or 'N/A',
+            }
+
+        # Rating map: product_id  [ratings]
+        rating_map = defaultdict(list)
+        for r in all_reviews:
+            if r.get('product_id') and r.get('rating') is not None:
+                rating_map[r['product_id']].append(float(r['rating']))
+
+        # Cart count per buyer email
+        cart_count = defaultdict(int)
+        for c in all_cart:
+            if c.get('email'): cart_count[c['email']] += 1
+
+        # Wishlist count per buyer email
+        wishlist_count = defaultdict(int)
+        for w in all_wishlist:
+            key = w.get('user_email') or w.get('email') or ''
+            if key: wishlist_count[key] += 1
+
+        def _fmt_date(val, fmt='%Y-%m-%d'):
+            if not val: return None
+            try: return _dt.fromisoformat(str(val).replace('Z','+00:00').replace('+00:00','')).strftime(fmt)
+            except: return str(val)[:10]
+
+        done_statuses = {'delivered','completed','received'}
+        cancelled_statuses = {'cancelled','rejected'}
+
+        #  3. Key metrics 
+        total_orders   = len(all_orders)
+        total_users    = len(all_users)
+        total_products = len(all_products)
+
+        #  4. Inventory & Products Analytics 
+        # Batch seller names for products
         inventory_products = []
-        for idx, row in enumerate(cursor.fetchall(), 1):
+        for idx, p in enumerate(sorted(all_products, key=lambda x: int(x.get('sold') or 0), reverse=True), 1):
+            pid     = p.get('id')
+            ratings = rating_map.get(pid, [])
+            avg_rat = round(sum(ratings)/len(ratings), 1) if ratings else float(p.get('rating') or 0)
             inventory_products.append({
-                'no': idx,
-                'product_name': row['product_name'],
-                'seller_name': row['seller_email'],
-                'category': row['category'],
-                'status': row['status'],
-                'units_sold': int(row['units_sold']),
-                'stock': int(row['stock']) if row['stock'] else 0,
-                'rating': round(float(row['avg_rating']), 1),
-                'is_active': bool(row['is_active']) if row['is_active'] is not None else True,
-                'is_flagged': bool(row['flagged_at']),
-                'flagged_at': row['flagged_at'].strftime('%b %d, %Y at %I:%M %p') if row['flagged_at'] else None
+                'no':           idx,
+                'product_name': p.get('name', 'N/A'),
+                'seller_name':  user_map.get(p.get('seller_email',''), {}).get('name', p.get('seller_email','N/A')),
+                'category':     p.get('category', 'N/A'),
+                'units_sold':   int(p.get('sold') or 0),
+                'stock':        int(p.get('quantity') or 0),
+                'rating':       avg_rat,
+                'is_active':    bool(p.get('is_active', True)),
+                'is_flagged':   bool(p.get('flagged_at')),
+                'flagged_at':   _fmt_date(p.get('flagged_at'), '%b %d, %Y at %I:%M %p') if p.get('flagged_at') else None,
+                'low_stock_threshold': int(p.get('low_stock_threshold') or 5),
             })
-        
-        # 7. Seller Performance Reports
-        # First, ensure the columns exist
-        try:
-            cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN DEFAULT FALSE")
-            cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
-            connection.commit()
-        except:
-            pass  # Columns might already exist
-        
-        cursor.execute("""
-            SELECT 
-                u.email,
-                COALESCE(u.business_name, CONCAT(u.first_name, ' ', u.last_name)) as seller_name,
-                COALESCE(prod_stats.total_products, 0) as total_products,
-                COALESCE(order_stats.total_orders, 0) as total_orders,
-                COALESCE(order_stats.completed_orders, 0) as completed_orders,
-                COALESCE(order_stats.cancelled_orders, 0) as cancelled_orders,
-                COALESCE(order_stats.total_revenue, 0) as total_revenue,
-                COALESCE(prod_stats.flagged_products, 0) as flagged_products,
-                COALESCE(prod_stats.deactivated_products, 0) as deactivated_products
-            FROM users u
-            LEFT JOIN (
-                SELECT 
-                    seller_email,
-                    COUNT(*) as total_products,
-                    SUM(CASE 
-                        WHEN (COALESCE(is_flagged, 0) = 1 OR flag_reason IS NOT NULL) 
-                        THEN 1 
-                        ELSE 0 
-                    END) as flagged_products,
-                    SUM(CASE WHEN COALESCE(is_active, 1) = 0 THEN 1 ELSE 0 END) as deactivated_products
-                FROM products
-                GROUP BY seller_email
-            ) prod_stats ON u.email = prod_stats.seller_email
-            LEFT JOIN (
-                SELECT 
-                    seller_email,
-                    COUNT(*) as total_orders,
-                    SUM(CASE WHEN status IN ('Received', 'Completed', 'Delivered') THEN 1 ELSE 0 END) as completed_orders,
-                    SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END) as cancelled_orders,
-                    SUM(CASE WHEN status IN ('Received', 'Completed', 'Delivered') THEN CAST(total_price AS DECIMAL(10,2)) ELSE 0 END) as total_revenue
-                FROM orders
-                GROUP BY seller_email
-            ) order_stats ON u.email = order_stats.seller_email
-            WHERE u.user_type = 'Seller'
-            ORDER BY total_revenue DESC
-        """)
-        
+
+        #  5. Seller Performance 
+        sellers = [u for u in all_users if (u.get('user_type') or '').lower() == 'seller']
+        seller_orders  = defaultdict(list)
+        seller_prods   = defaultdict(list)
+        for o in all_orders:
+            if o.get('seller_email'): seller_orders[o['seller_email']].append(o)
+        for p in all_products:
+            if p.get('seller_email'): seller_prods[p['seller_email']].append(p)
+
         seller_performance = []
-        for idx, row in enumerate(cursor.fetchall(), 1):
+        for idx, u in enumerate(sellers, 1):
+            email  = u['email']
+            orders = seller_orders.get(email, [])
+            prods  = seller_prods.get(email, [])
+            rev    = sum(float(o.get('total_price') or 0) for o in orders if (o.get('status') or '').lower() in done_statuses)
             seller_performance.append({
-                'no': idx,
-                'seller_name': row['seller_name'],
-                'email': row['email'],
-                'total_products': int(row['total_products']) if row['total_products'] else 0,
-                'total_orders': int(row['total_orders']) if row['total_orders'] else 0,
-                'completed_orders': int(row['completed_orders']) if row['completed_orders'] else 0,
-                'cancelled_orders': int(row['cancelled_orders']) if row['cancelled_orders'] else 0,
-                'total_revenue': float(row['total_revenue']),
-                'flagged_products': int(row['flagged_products']) if row['flagged_products'] else 0,
-                'deactivated_products': int(row['deactivated_products']) if row['deactivated_products'] else 0
+                'no':                  idx,
+                'seller_name':         user_map.get(email, {}).get('name', email),
+                'email':               email,
+                'total_products':      len(prods),
+                'total_orders':        len(orders),
+                'completed_orders':    sum(1 for o in orders if (o.get('status') or '').lower() in done_statuses),
+                'cancelled_orders':    sum(1 for o in orders if (o.get('status') or '').lower() in cancelled_statuses),
+                'total_revenue':       round(rev, 2),
+                'flagged_products':    sum(1 for p in prods if p.get('flagged_at')),
+                'deactivated_products':sum(1 for p in prods if not p.get('is_active', True)),
             })
-        
-        # 8. Rider/Delivery Analytics
+        seller_performance.sort(key=lambda x: x['total_revenue'], reverse=True)
+
+        #  6. Rider Analytics 
+        riders = [u for u in all_users if (u.get('user_type') or '').lower() == 'rider']
+        rider_orders = defaultdict(list)
+        for o in all_orders:
+            if o.get('rider_email'): rider_orders[o['rider_email']].append(o)
+
+        rider_analytics = []
+        for idx, u in enumerate(riders, 1):
+            email  = u['email']
+            orders = rider_orders.get(email, [])
+            succ   = sum(1 for o in orders if (o.get('status') or '').lower() in done_statuses)
+            fail   = sum(1 for o in orders if (o.get('status') or '').lower() in cancelled_statuses)
+            earn   = succ * 47.5   # 50 delivery fee  95% (5% platform cut)
+            rider_analytics.append({
+                'no':                   idx,
+                'rider_name':           user_map.get(email, {}).get('name', email),
+                'email':                email,
+                'vehicle_type':         user_map.get(email, {}).get('vehicle_type', 'N/A'),
+                'plate_number':         user_map.get(email, {}).get('plate', 'N/A'),
+                'total_deliveries':     len(orders),
+                'successful_deliveries':succ,
+                'failed_deliveries':    fail,
+                'total_earnings':       round(earn, 2),
+            })
+        rider_analytics.sort(key=lambda x: x['total_deliveries'], reverse=True)
+
+        #  7. Buyer Insights 
+        buyers = [u for u in all_users if (u.get('user_type') or '').lower() == 'buyer']
+        buyer_orders = defaultdict(list)
+        for o in all_orders:
+            if o.get('email'): buyer_orders[o['email']].append(o)
+
+        buyer_insights = []
+        for u in buyers:
+            email  = u['email']
+            orders = [o for o in buyer_orders.get(email, []) if (o.get('status') or '').lower() in done_statuses]
+            spend  = sum(float(o.get('total_price') or 0) for o in orders)
+            aov    = round(spend / len(orders), 2) if orders else 0.0
+            dates  = [o.get('date') for o in orders if o.get('date')]
+            last   = _fmt_date(max(dates)) if dates else None
+            buyer_insights.append({
+                'buyer_name':      user_map.get(email, {}).get('name', email),
+                'email':           email,
+                'total_orders':    len(orders),
+                'total_spend':     round(spend, 2),
+                'avg_order_value': aov,
+                'last_order_date': last,
+                'cart_items':      cart_count.get(email, 0),
+                'wishlist_items':  wishlist_count.get(email, 0),
+            })
+        buyer_insights.sort(key=lambda x: x['total_spend'], reverse=True)
+        buyer_insights = [dict(b, no=i+1) for i, b in enumerate(buyer_insights[:50])]
+
+        #  8. Promo Code Analytics 
+        promo_code_analytics = []
         try:
-            cursor.execute("""
-                SELECT 
-                    u.email,
-                    CONCAT(u.first_name, ' ', u.last_name) as rider_name,
-                    u.vehicle_type,
-                    u.vehicle_plate_number,
-                    COALESCE(delivery_stats.total_deliveries, 0) as total_deliveries,
-                    COALESCE(delivery_stats.successful_deliveries, 0) as successful_deliveries,
-                    COALESCE(delivery_stats.failed_deliveries, 0) as failed_deliveries,
-                    COALESCE(delivery_stats.total_earnings, 0) as total_earnings
-                FROM users u
-                LEFT JOIN (
-                    SELECT 
-                        rider_email,
-                        COUNT(*) as total_deliveries,
-                        SUM(CASE WHEN status IN ('Delivered', 'Completed', 'Received') THEN 1 ELSE 0 END) as successful_deliveries,
-                        SUM(CASE WHEN status = 'Cancelled' THEN 1 ELSE 0 END) as failed_deliveries,
-                        SUM(CASE 
-                            WHEN status IN ('Delivered', 'Completed', 'Received') 
-                            THEN (50.00 - (50.00 * 0.05))
-                            ELSE 0 
-                        END) as total_earnings
-                    FROM orders
-                    WHERE rider_email IS NOT NULL AND rider_email != ''
-                    GROUP BY rider_email
-                ) delivery_stats ON u.email = delivery_stats.rider_email
-                WHERE u.user_type = 'Rider'
-                ORDER BY total_deliveries DESC
-            """)
-            
-            rider_analytics = []
-            for idx, row in enumerate(cursor.fetchall(), 1):
-                rider_analytics.append({
-                    'no': idx,
-                    'rider_name': row['rider_name'],
-                    'email': row['email'],
-                    'vehicle_type': row['vehicle_type'] if row['vehicle_type'] else 'N/A',
-                    'plate_number': row['vehicle_plate_number'] if row['vehicle_plate_number'] else 'N/A',
-                    'total_deliveries': int(row['total_deliveries']) if row['total_deliveries'] else 0,
-                    'successful_deliveries': int(row['successful_deliveries']) if row['successful_deliveries'] else 0,
-                    'failed_deliveries': int(row['failed_deliveries']) if row['failed_deliveries'] else 0,
-                    'total_earnings': float(row['total_earnings'])
+            promos_res = sb_admin.table('promotions').select('*').execute()
+            usage_res  = sb_admin.table('promotion_usage').select('promotion_id,discount_applied').execute()
+            usage_map  = defaultdict(lambda: {'uses': 0, 'discount': 0.0})
+            for pu in (usage_res.data or []):
+                pid = pu.get('promotion_id')
+                if pid:
+                    usage_map[pid]['uses']     += 1
+                    usage_map[pid]['discount'] += float(pu.get('discount_applied') or 0)
+            for idx, p in enumerate((promos_res.data or []), 1):
+                pid = p.get('id')
+                promo_code_analytics.append({
+                    'no':                 idx,
+                    'promo_code':         p.get('code', 'N/A'),
+                    'discount_type':      p.get('type', 'N/A'),
+                    'discount_value':     float(p.get('discount_value') or 0),
+                    'start_date':         _fmt_date(p.get('start_date')),
+                    'end_date':           _fmt_date(p.get('end_date')),
+                    'total_uses':         usage_map[pid]['uses'],
+                    'total_discount_given': round(usage_map[pid]['discount'], 2),
                 })
-        except Exception as rider_error:
-            print(f"Error fetching rider analytics: {rider_error}")
-            rider_analytics = []
-        
-        # 9. Buyer Activity & Behavior Insights
+        except Exception as e:
+            print(f"promo analytics error: {e}")
+
+        #  9. Platform Commission 
+        done_orders = [o for o in all_orders if (o.get('status') or '').lower() in done_statuses]
+        platform_commission = []
+        for idx, o in enumerate(done_orders[:100], 1):
+            total   = float(o.get('total_price') or 0)
+            fee     = float(o.get('shipping_fee') or 50)
+            s_comm  = round(total * 0.05, 2)
+            r_comm  = round(fee   * 0.05, 2)
+            completed_date = o.get('received_at') or o.get('delivered_at') or o.get('date')
+            platform_commission.append({
+                'no':                    idx,
+                'order_id':              o['id'],
+                'seller_email':          o.get('seller_email', 'N/A'),
+                'rider_email':           o.get('rider_email') or 'N/A',
+                'order_total':           total,
+                'delivery_fee':          fee,
+                'seller_commission':     s_comm,
+                'rider_commission':      r_comm,
+                'total_platform_earnings': round(s_comm + r_comm, 2),
+                'order_date':            _fmt_date(o.get('date')),
+                'date_completed':        _fmt_date(completed_date),
+            })
+
+        #  10. Complaints & Issues 
+        complaints_issues = []
         try:
-            print("Fetching buyer insights...")
-            cursor.execute("""
-                SELECT 
-                    u.email,
-                    CONCAT(u.first_name, ' ', u.last_name) as buyer_name,
-                    COALESCE(order_stats.total_orders, 0) as total_orders,
-                    COALESCE(order_stats.total_spend, 0) as total_spend,
-                    COALESCE(order_stats.avg_order_value, 0) as avg_order_value,
-                    order_stats.last_order_date,
-                    COALESCE(cart_stats.cart_items, 0) as browsing_activity,
-                    CASE 
-                        WHEN COALESCE(cart_stats.cart_items, 0) > 0 AND COALESCE(order_stats.total_orders, 0) > 0
-                        THEN ((COALESCE(cart_stats.cart_items, 0) - COALESCE(order_stats.total_orders, 0)) / COALESCE(cart_stats.cart_items, 0) * 100)
-                        WHEN COALESCE(cart_stats.cart_items, 0) > 0 AND COALESCE(order_stats.total_orders, 0) = 0
-                        THEN 100
-                        ELSE 0
-                    END as cart_abandon_rate,
-                    COALESCE(wishlist_stats.wishlist_items, 0) as wishlist_items
-                FROM users u
-                LEFT JOIN (
-                    SELECT 
-                        email,
-                        COUNT(*) as total_orders,
-                        SUM(CAST(total_price AS DECIMAL(10,2))) as total_spend,
-                        AVG(CAST(total_price AS DECIMAL(10,2))) as avg_order_value,
-                        MAX(date) as last_order_date
-                    FROM orders
-                    WHERE status IN ('Delivered', 'Completed', 'Received')
-                    GROUP BY email
-                ) order_stats ON u.email = order_stats.email
-                LEFT JOIN (
-                    SELECT 
-                        email,
-                        COUNT(*) as cart_items
-                    FROM cart
-                    GROUP BY email
-                ) cart_stats ON u.email = cart_stats.email
-                LEFT JOIN (
-                    SELECT 
-                        user_id,
-                        COUNT(*) as wishlist_items
-                    FROM wishlist
-                    GROUP BY user_id
-                ) wishlist_stats ON u.id = wishlist_stats.user_id
-                WHERE u.user_type = 'Buyer'
-                ORDER BY COALESCE(order_stats.total_spend, 0) DESC
-                LIMIT 50
-            """)
-            
-            buyer_results = cursor.fetchall()
-            print(f"Found {len(buyer_results)} buyers")
-            
-            buyer_insights = []
-            for idx, row in enumerate(buyer_results, 1):
-                try:
-                    buyer_insights.append({
-                        'no': idx,
-                        'buyer_name': row['buyer_name'],
-                        'email': row['email'],
-                        'total_orders': int(row['total_orders']) if row['total_orders'] else 0,
-                        'total_spend': float(row['total_spend']) if row['total_spend'] else 0.0,
-                        'avg_order_value': float(row['avg_order_value']) if row['avg_order_value'] else 0.0,
-                        'last_order_date': row['last_order_date'].strftime('%Y-%m-%d') if row['last_order_date'] else None,
-                        'cart_items': int(row['browsing_activity']) if row['browsing_activity'] else 0,
-                        'wishlist_items': int(row['wishlist_items']) if row['wishlist_items'] else 0
-                    })
-                except Exception as row_error:
-                    print(f"Error processing buyer row {idx}: {row_error}")
-                    print(f"Row data: {row}")
-                    
-            print(f"Successfully processed {len(buyer_insights)} buyer insights")
-        except Exception as buyer_error:
-            print(f"Error fetching buyer insights: {buyer_error}")
-            import traceback
-            traceback.print_exc()
-            buyer_insights = []
-        
-        # 10. Promo Code Usage Analytics
-        try:
-            print("Fetching promo code analytics...")
-            
-            # Check if promotions table exists
-            cursor.execute("SHOW TABLES LIKE 'promotions'")
-            if not cursor.fetchone():
-                print("WARNING: promotions table does not exist!")
-                promo_code_analytics = []
-            else:
-                # Check if there are any promotions
-                cursor.execute("SELECT COUNT(*) as total FROM promotions")
-                promo_count = cursor.fetchone()['total']
-                print(f"Total promotions in database: {promo_count}")
-                
-                cursor.execute("""
-                    SELECT 
-                        p.id,
-                        p.code as promo_code,
-                        p.type as discount_type,
-                        p.discount_value,
-                        p.start_date,
-                        p.end_date,
-                        COALESCE(usage_stats.total_uses, 0) as total_uses,
-                        COALESCE(usage_stats.total_discount_given, 0) as total_discount_given
-                    FROM promotions p
-                    LEFT JOIN (
-                        SELECT 
-                            promotion_id,
-                            COUNT(*) as total_uses,
-                            SUM(discount_applied) as total_discount_given
-                        FROM promotion_usage
-                        GROUP BY promotion_id
-                    ) usage_stats ON p.id = usage_stats.promotion_id
-                    ORDER BY total_uses DESC, p.created_at DESC
-                """)
-                
-                promo_results = cursor.fetchall()
-                print(f"Found {len(promo_results)} promo codes")
-                
-                promo_code_analytics = []
-                for idx, row in enumerate(promo_results, 1):
-                    try:
-                        promo_code_analytics.append({
-                            'no': idx,
-                            'promo_code': row['promo_code'],
-                            'discount_type': row['discount_type'],
-                            'discount_value': float(row['discount_value']) if row['discount_value'] else 0.0,
-                            'start_date': row['start_date'].strftime('%Y-%m-%d') if row['start_date'] else None,
-                            'end_date': row['end_date'].strftime('%Y-%m-%d') if row['end_date'] else None,
-                            'total_uses': int(row['total_uses']) if row['total_uses'] else 0,
-                            'total_discount_given': float(row['total_discount_given']) if row['total_discount_given'] else 0.0
-                        })
-                    except Exception as row_error:
-                        print(f"Error processing promo code row {idx}: {row_error}")
-                        print(f"Row data: {row}")
-                        
-                print(f"Successfully processed {len(promo_code_analytics)} promo code analytics")
-        except Exception as promo_error:
-            print(f"Error fetching promo code analytics: {promo_error}")
-            import traceback
-            traceback.print_exc()
-            promo_code_analytics = []
-        
-        # 11. Platform Commission Summary Report
-        try:
-            print("Fetching platform commission data...")
-            
-            # First check if there are ANY orders at all
-            cursor.execute("SELECT COUNT(*) as total FROM orders")
-            total_orders_check = cursor.fetchone()['total']
-            print(f"Total orders in database: {total_orders_check}")
-            
-            # Check orders by status
-            cursor.execute("""
-                SELECT status, COUNT(*) as count 
-                FROM orders 
-                GROUP BY status
-            """)
-            status_counts = cursor.fetchall()
-            print(f"Orders by status: {status_counts}")
-            
-            cursor.execute("""
-                SELECT 
-                    o.id as order_id,
-                    o.seller_email,
-                    o.rider_email,
-                    o.status,
-                    CAST(o.total_price AS DECIMAL(10,2)) as order_total,
-                    50.00 as delivery_fee,
-                    CAST(o.total_price AS DECIMAL(10,2)) * 0.05 as seller_commission,
-                    50.00 * 0.05 as rider_commission,
-                    (CAST(o.total_price AS DECIMAL(10,2)) * 0.05) + (50.00 * 0.05) as total_platform_earnings,
-                    DATE(o.date) as order_date,
-                    DATE(COALESCE(o.received_at, o.delivered_at, o.date)) as date_completed
-                FROM orders o
-                WHERE o.status IN ('Delivered', 'Completed', 'Received', 'delivered', 'completed', 'received')
-                ORDER BY o.date DESC
-                LIMIT 100
-            """)
-            
-            commission_results = cursor.fetchall()
-            print(f"Found {len(commission_results)} commission records")
-            
-            if len(commission_results) == 0:
-                print("WARNING: No completed orders found for platform commission report")
-                print("This could mean:")
-                print("1. No orders exist in the database")
-                print("2. No orders have status 'Delivered', 'Completed', or 'Received'")
-                print("3. Check your order statuses in the database")
-            
-            platform_commission = []
-            for idx, row in enumerate(commission_results, 1):
-                try:
-                    platform_commission.append({
-                        'no': idx,
-                        'order_id': row['order_id'],
-                        'seller_email': row['seller_email'],
-                        'rider_email': row['rider_email'] if row['rider_email'] else 'N/A',
-                        'order_total': float(row['order_total']) if row['order_total'] else 0.0,
-                        'delivery_fee': float(row['delivery_fee']),
-                        'seller_commission': float(row['seller_commission']) if row['seller_commission'] else 0.0,
-                        'rider_commission': float(row['rider_commission']),
-                        'total_platform_earnings': float(row['total_platform_earnings']) if row['total_platform_earnings'] else 0.0,
-                        'order_date': row['order_date'].strftime('%Y-%m-%d') if row['order_date'] else None,
-                        'date_completed': row['date_completed'].strftime('%Y-%m-%d') if row['date_completed'] else None
-                    })
-                except Exception as row_error:
-                    print(f"Error processing commission row {idx}: {row_error}")
-                    print(f"Row data: {row}")
-                    
-            print(f"Successfully processed {len(platform_commission)} platform commission records")
-        except Exception as commission_error:
-            print(f"Error fetching platform commission data: {commission_error}")
-            import traceback
-            traceback.print_exc()
-            platform_commission = []
-        
-        # 12. Complaints & Issues Report
-        try:
-            print("Fetching complaints & issues data...")
-            
-            # Check if order_issues table exists
-            cursor.execute("SHOW TABLES LIKE 'order_issues'")
-            if not cursor.fetchone():
-                print("WARNING: order_issues table does not exist!")
-                complaints_issues = []
-            else:
-                # Check if there are any issues
-                cursor.execute("SELECT COUNT(*) as total FROM order_issues")
-                issues_count = cursor.fetchone()['total']
-                print(f"Total issues in database: {issues_count}")
-                
-                cursor.execute("""
-                    SELECT 
-                        oi.id,
-                        oi.order_id,
-                        oi.reporter_email,
-                        oi.reporter_role,
-                        oi.reported_against_email,
-                        oi.reported_against_role,
-                        oi.issue_type,
-                        oi.issue_description,
-                        oi.status,
-                        oi.created_at,
-                        reporter.email as reporter_email_verified,
-                        CONCAT(reporter.first_name, ' ', reporter.last_name) as reporter_name,
-                        reporter.business_name as reporter_business_name,
-                        against.email as against_email_verified,
-                        CONCAT(against.first_name, ' ', against.last_name) as against_name,
-                        against.business_name as against_business_name
-                    FROM order_issues oi
-                    LEFT JOIN users reporter ON oi.reporter_email = reporter.email
-                    LEFT JOIN users against ON oi.reported_against_email = against.email
-                    ORDER BY oi.created_at DESC
-                    LIMIT 100
-                """)
-                
-                issues_results = cursor.fetchall()
-                print(f"Found {len(issues_results)} issues")
-                
-                complaints_issues = []
-                for idx, row in enumerate(issues_results, 1):
-                    try:
-                        # Determine reported by display name (prefer business name for sellers)
-                        if row['reporter_role'] == 'seller' and row['reporter_business_name']:
-                            reported_by_display = row['reporter_business_name']
-                        elif row['reporter_name']:
-                            reported_by_display = row['reporter_name']
-                        else:
-                            reported_by_display = row['reporter_email']
-                        
-                        # Determine reported against display name
-                        if row['reported_against_role'] == 'platform':
-                            reported_against_display = 'Platform/System'
-                            reported_against_email = 'N/A'
-                        elif row['reported_against_role'] == 'seller' and row['against_business_name']:
-                            reported_against_display = row['against_business_name']
-                            reported_against_email = row['reported_against_email']
-                        elif row['against_name']:
-                            reported_against_display = row['against_name']
-                            reported_against_email = row['reported_against_email']
-                        elif row['reported_against_email']:
-                            reported_against_display = row['reported_against_email']
-                            reported_against_email = row['reported_against_email']
-                        else:
-                            reported_against_display = row['reported_against_role'].capitalize()
-                            reported_against_email = 'N/A'
-                        
-                        complaints_issues.append({
-                            'no': idx,
-                            'order_id': row['order_id'] if row['order_id'] else None,
-                            'reported_by': reported_by_display,
-                            'reported_by_email': row['reporter_email'],
-                            'reporter_role': row['reporter_role'].capitalize() if row['reporter_role'] else 'Unknown',
-                            'reported_against': reported_against_display,
-                            'reported_against_email': reported_against_email,
-                            'reported_against_role': row['reported_against_role'].capitalize() if row['reported_against_role'] else 'Unknown',
-                            'issue_type': row['issue_type'].replace('_', ' ').title() if row['issue_type'] else 'Other',
-                            'description': row['issue_description'] if row['issue_description'] else 'No description provided',
-                            'status': row['status'].replace('_', ' ').title() if row['status'] else 'Pending',
-                            'date_submitted': row['created_at'].strftime('%Y-%m-%d %I:%M %p') if row['created_at'] else None
-                        })
-                    except Exception as row_error:
-                        print(f"Error processing issue row {idx}: {row_error}")
-                        print(f"Row data: {row}")
-                        
-                print(f"Successfully processed {len(complaints_issues)} complaints & issues")
-        except Exception as issues_error:
-            print(f"Error fetching complaints & issues data: {issues_error}")
-            import traceback
-            traceback.print_exc()
-            complaints_issues = []
-        
-        cursor.close()
-        connection.close()
-        
-        # Debug: Print data counts
-        print(f"Analytics Data Summary:")
-        print(f"  - Inventory Products: {len(inventory_products)}")
-        print(f"  - Seller Performance: {len(seller_performance)}")
-        print(f"  - Rider Analytics: {len(rider_analytics)}")
-        print(f"  - Buyer Insights: {len(buyer_insights)}")
-        print(f"  - Promo Code Analytics: {len(promo_code_analytics)}")
-        print(f"  - Platform Commission: {len(platform_commission)}")
-        print(f"  - Complaints & Issues: {len(complaints_issues)}")
-        
-        # Return all analytics data
+            issues_res = sb_admin.table('order_issues').select('*').order('created_at', desc=True).limit(100).execute()
+            for idx, iss in enumerate((issues_res.data or []), 1):
+                reporter_email = iss.get('reporter_email', '')
+                against_email  = iss.get('reported_against_email', '')
+                complaints_issues.append({
+                    'no':                    idx,
+                    'order_id':              iss.get('order_id'),
+                    'reported_by':           user_map.get(reporter_email, {}).get('name', reporter_email),
+                    'reported_by_email':     reporter_email,
+                    'reporter_role':         (iss.get('reporter_role') or 'unknown').capitalize(),
+                    'reported_against':      user_map.get(against_email, {}).get('name', against_email) if against_email else (iss.get('reported_against_role') or 'N/A').capitalize(),
+                    'reported_against_email':against_email or 'N/A',
+                    'reported_against_role': (iss.get('reported_against_role') or 'N/A').capitalize(),
+                    'issue_type':            iss.get('issue_type', 'N/A'),
+                    'description':           iss.get('issue_description', ''),
+                    'status':                iss.get('status', 'pending'),
+                    'date_submitted':        _fmt_date(iss.get('created_at')),
+                })
+        except Exception as e:
+            print(f"complaints analytics error: {e}")
+
         return jsonify({
-            'totalOrders': total_orders,
-            'totalRevenue': total_revenue,
-            'totalUsers': total_users,
-            'totalProducts': total_products,
-            'salesData': {
-                'labels': sales_labels,
-                'values': sales_values
-            },
-            'orderStatus': order_status,
-            'topProducts': top_products,
-            'topSellers': top_sellers,
-            'inventoryProducts': inventory_products,
-            'sellerPerformance': seller_performance,
-            'riderAnalytics': rider_analytics,
-            'buyerInsights': buyer_insights,
-            'promoCodeAnalytics': promo_code_analytics,
-            'platformCommission': platform_commission,
-            'complaintsIssues': complaints_issues
+            'totalOrders':         total_orders,
+            'totalUsers':          total_users,
+            'totalProducts':       total_products,
+            'inventoryProducts':   inventory_products,
+            'sellerPerformance':   seller_performance,
+            'riderAnalytics':      rider_analytics,
+            'buyerInsights':       buyer_insights,
+            'promoCodeAnalytics':  promo_code_analytics,
+            'platformCommission':  platform_commission,
+            'complaintsIssues':    complaints_issues,
         })
-        
+
     except Exception as e:
-        print(f"Error in admin analytics API: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': 'Internal server error'}), 500
+        print(f"admin_analytics_api Supabase error: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/admin_issue_reports')
-def admin_issue_reports():
-    """Admin page to view and manage customer issue reports"""
-    if 'user_id' not in session or session.get('user_type') != 'Admin':
-        flash('Access denied. Admin privileges required.', 'danger')
-        return redirect(url_for('login'))
-    
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if order_issues table exists, create if not
-        try:
-            cursor.execute("SHOW TABLES LIKE 'order_issues'")
-            if not cursor.fetchone():
-                print("Creating order_issues table...")
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS order_issues (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        order_id INT NOT NULL,
-                        reporter_role ENUM('buyer', 'seller', 'rider', 'admin') NOT NULL,
-                        reporter_email VARCHAR(255) NOT NULL,
-                        reported_against_role ENUM('buyer', 'seller', 'rider', 'platform', 'other') NOT NULL DEFAULT 'seller',
-                        reported_against_email VARCHAR(255) NULL,
-                        issue_type VARCHAR(100) NOT NULL,
-                        issue_description TEXT NOT NULL,
-                        status ENUM('pending', 'in_progress', 'resolved', 'closed') DEFAULT 'pending',
-                        admin_response TEXT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                        resolved_at TIMESTAMP NULL,
-                        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-                        INDEX idx_order_id (order_id),
-                        INDEX idx_reporter_role (reporter_role),
-                        INDEX idx_reporter_email (reporter_email),
-                        INDEX idx_reported_against_role (reported_against_role),
-                        INDEX idx_status (status),
-                        INDEX idx_created_at (created_at)
-                    )
-                """)
-                connection.commit()
-                print("order_issues table created successfully")
-        except Exception as table_error:
-            print(f"Error checking/creating table: {table_error}")
-        
-        # Get filter parameters
-        status_filter = request.args.get('status', '')
-        report_against_filter = request.args.get('report_against', '')
-        reporter_role_filter = request.args.get('reporter_role', '')
-        search_query = request.args.get('search', '').strip()
-        page = request.args.get('page', 1, type=int)
-        per_page = 20
-        
-        # Build WHERE clause
-        where_conditions = []
-        params = []
-        
-        if status_filter:
-            where_conditions.append("oi.status = %s")
-            params.append(status_filter)
-        
-        if report_against_filter:
-            where_conditions.append("oi.reported_against_role = %s")
-            params.append(report_against_filter)
-        
-        if reporter_role_filter:
-            where_conditions.append("oi.reporter_role = %s")
-            params.append(reporter_role_filter)
-        
-        if search_query:
-            where_conditions.append("""
-                (oi.issue_description LIKE %s OR 
-                 oi.reporter_email LIKE %s OR 
-                 oi.reported_against_email LIKE %s OR 
-                 o.name LIKE %s OR
-                 oi.issue_type LIKE %s)
-            """)
-            search_param = f"%{search_query}%"
-            params.extend([search_param] * 5)
-        
-        where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
-        
-        # Get total count for pagination
-        cursor.execute(f"""
-            SELECT COUNT(*) as total
-            FROM order_issues oi
-            LEFT JOIN orders o ON oi.order_id = o.id
-            WHERE {where_clause}
-        """, params)
-        
-        total_issues = cursor.fetchone()['total']
-        total_pages = (total_issues + per_page - 1) // per_page
-        
-        # Get issue reports with pagination
-        offset = (page - 1) * per_page
-        cursor.execute(f"""
-            SELECT 
-                oi.*,
-                o.name as product_name,
-                o.total_price as order_total,
-                o.date as order_date,
-                o.status as order_status
-            FROM order_issues oi
-            LEFT JOIN orders o ON oi.order_id = o.id
-            WHERE {where_clause}
-            ORDER BY oi.created_at DESC
-            LIMIT %s OFFSET %s
-        """, params + [per_page, offset])
-        
-        issues = cursor.fetchall()
-        
-        # Get summary statistics
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_issues,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_issues,
-                SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_issues,
-                SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved_issues,
-                SUM(CASE WHEN reported_against_role = 'seller' THEN 1 ELSE 0 END) as seller_issues,
-                SUM(CASE WHEN reported_against_role = 'rider' THEN 1 ELSE 0 END) as delivery_issues,
-                SUM(CASE WHEN reported_against_role = 'buyer' THEN 1 ELSE 0 END) as buyer_issues,
-                SUM(CASE WHEN reported_against_role = 'platform' THEN 1 ELSE 0 END) as platform_issues
-            FROM order_issues
-        """)
-        
-        stats = cursor.fetchone()
-        
-        cursor.close()
-        connection.close()
-        
-        return render_template('admin_issue_reports.html', 
-                             issues=issues,
-                             stats=stats,
-                             current_page=page,
-                             total_pages=total_pages,
-                             total_issues=total_issues,
-                             status_filter=status_filter,
-                             report_against_filter=report_against_filter,
-                             reporter_role_filter=reporter_role_filter,
-                             search_query=search_query)
-        
-    except Exception as e:
-        print(f"?? MySQL unavailable in admin_issue_reports: {e}")
-        empty_stats = {'total_issues': 0, 'pending_issues': 0, 'in_progress_issues': 0,
-                       'resolved_issues': 0, 'seller_issues': 0, 'delivery_issues': 0,
-                       'buyer_issues': 0, 'platform_issues': 0}
-        return render_template('admin_issue_reports.html',
-                             issues=[], stats=empty_stats,
-                             current_page=1, total_pages=1, total_issues=0,
-                             status_filter='', report_against_filter='',
-                             reporter_role_filter='', search_query='')
 
-@app.route('/admin/issue/<int:issue_id>/details')
-def admin_get_issue_details(issue_id):
-    """Get detailed information about a specific issue"""
-    if 'user_id' not in session or session.get('user_type') != 'Admin':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get issue details with related order and customer information
-        cursor.execute("""
-            SELECT 
-                oi.*,
-                o.name as product_name,
-                o.total_price as order_total,
-                o.date as order_date,
-                o.status as order_status,
-                o.quantity,
-                o.size,
-                o.variations,
-                o.email as buyer_email,
-                o.seller_email,
-                o.rider_email,
-                reporter.first_name as reporter_first_name,
-                reporter.last_name as reporter_last_name,
-                reporter.phone_number as reporter_phone,
-                buyer.first_name as buyer_first_name,
-                buyer.last_name as buyer_last_name,
-                buyer.phone_number as buyer_phone,
-                seller.first_name as seller_first_name,
-                seller.last_name as seller_last_name,
-                seller.business_name as seller_business_name,
-                seller.phone_number as seller_phone,
-                rider.first_name as rider_first_name,
-                rider.last_name as rider_last_name,
-                rider.phone_number as rider_phone
-            FROM order_issues oi
-            LEFT JOIN orders o ON oi.order_id = o.id
-            LEFT JOIN users reporter ON oi.reporter_email = reporter.email
-            LEFT JOIN users buyer ON o.email = buyer.email
-            LEFT JOIN users seller ON o.seller_email = seller.email
-            LEFT JOIN users rider ON o.rider_email = rider.email
-            WHERE oi.id = %s
-        """, (issue_id,))
-        
-        issue = cursor.fetchone()
-        
-        if not issue:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Issue not found'}), 404
-        
-        # Safely format the response with proper null handling
-        try:
-            reporter_name = f"{issue.get('reporter_first_name', '') or ''} {issue.get('reporter_last_name', '') or ''}".strip()
-        except:
-            reporter_name = 'N/A'
-        
-        try:
-            buyer_name = f"{issue.get('buyer_first_name', '') or ''} {issue.get('buyer_last_name', '') or ''}".strip()
-        except:
-            buyer_name = 'N/A'
-        
-        try:
-            created_at_str = issue['created_at'].strftime('%B %d, %Y at %I:%M %p') if issue.get('created_at') else 'N/A'
-        except:
-            created_at_str = 'N/A'
-        
-        try:
-            updated_at_str = issue['updated_at'].strftime('%B %d, %Y at %I:%M %p') if issue.get('updated_at') else 'N/A'
-        except:
-            updated_at_str = 'N/A'
-        
-        try:
-            resolved_at_str = issue['resolved_at'].strftime('%B %d, %Y at %I:%M %p') if issue.get('resolved_at') else None
-        except:
-            resolved_at_str = None
-        
-        try:
-            order_date_str = issue['order_date'].strftime('%B %d, %Y') if issue.get('order_date') else 'N/A'
-        except:
-            order_date_str = 'N/A'
-        
-        try:
-            order_total_val = float(issue.get('order_total', 0)) if issue.get('order_total') else 0
-        except:
-            order_total_val = 0
-        
-        # Format seller name
-        try:
-            seller_name = issue.get('seller_business_name') or f"{issue.get('seller_first_name', '') or ''} {issue.get('seller_last_name', '') or ''}".strip()
-        except:
-            seller_name = 'N/A'
-        
-        # Format rider name
-        try:
-            rider_name = f"{issue.get('rider_first_name', '') or ''} {issue.get('rider_last_name', '') or ''}".strip()
-        except:
-            rider_name = 'N/A'
-        
-        # Format the response
-        issue_data = {
-            'id': issue.get('id', 0),
-            'order_id': issue.get('order_id', 0),
-            'reporter_role': issue.get('reporter_role', 'N/A'),
-            'reporter_email': issue.get('reporter_email', 'N/A'),
-            'reporter_name': reporter_name or 'N/A',
-            'reporter_phone': issue.get('reporter_phone') or 'N/A',
-            'reported_against_role': issue.get('reported_against_role', 'N/A'),
-            'reported_against_email': issue.get('reported_against_email') or 'N/A',
-            'customer_email': issue.get('buyer_email', 'N/A'),
-            'customer_name': buyer_name or 'N/A',
-            'customer_phone': issue.get('buyer_phone') or 'N/A',
-            'seller_email': issue.get('seller_email', 'N/A'),
-            'seller_name': seller_name or 'N/A',
-            'seller_phone': issue.get('seller_phone') or 'N/A',
-            'rider_email': issue.get('rider_email') or 'N/A',
-            'rider_name': rider_name or 'Not Assigned',
-            'rider_phone': issue.get('rider_phone') or 'N/A',
-            'report_against': issue.get('reported_against_role', 'N/A'),  # For backward compatibility
-            'issue_type': issue.get('issue_type', 'N/A'),
-            'issue_description': issue.get('issue_description', 'N/A'),
-            'status': issue.get('status', 'pending'),
-            'admin_response': issue.get('admin_response') or '',
-            'created_at': created_at_str,
-            'updated_at': updated_at_str,
-            'resolved_at': resolved_at_str,
-            'product_name': issue.get('product_name') or 'N/A',
-            'order_total': order_total_val,
-            'order_date': order_date_str,
-            'order_status': issue.get('order_status') or 'N/A',
-            'quantity': issue.get('quantity') or 'N/A',
-            'size': issue.get('size') or 'N/A',
-            'variations': issue.get('variations') or 'N/A'
-        }
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({'success': True, 'issue': issue_data})
-        
-    except Exception as e:
-        print(f"Error fetching issue details: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Try to close connections if they exist
-        try:
-            if 'cursor' in locals():
-                cursor.close()
-            if 'connection' in locals():
-                connection.close()
-        except:
-            pass
-        
-        return jsonify({'success': False, 'message': f'Internal server error: {str(e)}'}), 500
-
-@app.route('/admin/issue/<int:issue_id>/update-status', methods=['POST'])
-def admin_update_issue_status(issue_id):
-    """Update the status of an issue report"""
-    if 'user_id' not in session or session.get('user_type') != 'Admin':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
-    try:
-        new_status = request.json.get('status')
-        admin_response = request.json.get('admin_response', '')
-        
-        if new_status not in ['pending', 'in_progress', 'resolved', 'closed']:
-            return jsonify({'success': False, 'message': 'Invalid status'}), 400
-        
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get issue details before updating (for notifications)
-        cursor.execute("""
-            SELECT oi.*, o.name as product_name, o.id as order_id,
-                   reporter.first_name as reporter_first_name, 
-                   reporter.last_name as reporter_last_name
-            FROM order_issues oi
-            LEFT JOIN orders o ON oi.order_id = o.id
-            LEFT JOIN users reporter ON oi.reporter_email = reporter.email
-            WHERE oi.id = %s
-        """, (issue_id,))
-        
-        issue = cursor.fetchone()
-        
-        if not issue:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Issue not found'}), 404
-        
-        # Update issue status
-        update_fields = ['status = %s', 'updated_at = NOW()']
-        params = [new_status]
-        
-        if admin_response:
-            update_fields.append('admin_response = %s')
-            params.append(admin_response)
-        
-        if new_status == 'resolved':
-            update_fields.append('resolved_at = NOW()')
-        
-        params.append(issue_id)
-        
-        cursor.execute(f"""
-            UPDATE order_issues 
-            SET {', '.join(update_fields)}
-            WHERE id = %s
-        """, params)
-        
-        connection.commit()
-        cursor.close()
-        connection.close()
-        
-        # Send notifications to reporter (buyer/seller/rider who reported the issue)
-        reporter_email = issue.get('reporter_email')
-        reporter_name = f"{issue.get('reporter_first_name', '')} {issue.get('reporter_last_name', '')}".strip() or 'User'
-        reporter_role = issue.get('reporter_role', 'user')
-        
-        print(f"?? Reporter Email: {reporter_email}")
-        print(f"?? Reporter Role: {reporter_role}")
-        print(f"?? Reporter Name: {reporter_name}")
-        
-        if reporter_email:
-            try:
-                # Send email notification
-                send_issue_status_update_email(
-                    customer_email=reporter_email,
-                    customer_name=reporter_name,
-                    issue_id=issue_id,
-                    issue_type=issue.get('issue_type', 'Issue'),
-                    product_name=issue.get('product_name', 'Product'),
-                    new_status=new_status,
-                    admin_response=admin_response
-                )
-            except Exception as email_error:
-                print(f"? Error sending email notification: {email_error}")
-            
-            try:
-                print(f"?? Calling create_issue_status_notification for: {reporter_email}")
-                # Create in-app notification
-                create_issue_status_notification(
-                    customer_email=reporter_email,
-                    issue_id=issue_id,
-                    issue_type=issue.get('issue_type', 'Issue'),
-                    product_name=issue.get('product_name', 'Product'),
-                    new_status=new_status,
-                    admin_response=admin_response,
-                    order_id=issue.get('order_id')
-                )
-            except Exception as notif_error:
-                print(f"Error creating in-app notification: {notif_error}")
-        
-        return jsonify({'success': True, 'message': 'Issue status updated successfully'})
-        
-    except Exception as e:
-        print(f"Error updating issue status: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
-
-@app.route('/admin/issue/<int:issue_id>/delete', methods=['POST'])
-def admin_delete_issue(issue_id):
-    """Delete an issue report"""
-    if 'user_id' not in session or session.get('user_type') != 'Admin':
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if issue exists
-        cursor.execute("SELECT id FROM order_issues WHERE id = %s", (issue_id,))
-        issue = cursor.fetchone()
-        
-        if not issue:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Issue not found'}), 404
-        
-        # Delete the issue
-        cursor.execute("DELETE FROM order_issues WHERE id = %s", (issue_id,))
-        connection.commit()
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({'success': True, 'message': 'Issue report deleted successfully'})
-        
-    except Exception as e:
-        print(f"Error deleting issue: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'message': 'Internal server error'}), 500
-
-#----------------------------------------------------------------------
-                         #UPLOAD RELATED ROUTES
-#----------------------------------------------------------------------
-
-# Define where to save uploaded files
-UPLOAD_FOLDER = 'static/images/uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-@app.route('/upload_image', methods=['POST'])
-def upload_image():
-    # Check if the POST request has the file part
-    if 'product_image' not in request.files:
-        flash('No file part', 'error')
-        return redirect(request.url)
-
-    file = request.files['product_image']
-
-    # If user does not select a file, browser submits an empty file without a filename
-    if file.filename == '':
-        flash('No selected file', 'error')
-        return redirect(request.url)
-
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        return redirect(url_for('add_new_product'))
-
-    flash('Invalid file format. Only jpg, jpeg, and png allowed.', 'error')
-    return redirect(request.url)
-    
-#----------------------------------------------------------------------
-                         #BUYER RELATED ROUTES
-#----------------------------------------------------------------------
-
-@app.route('/cart')
+@app.route('/cart', methods=['GET'])
 def cart():
     if 'email' not in session:
         return redirect(url_for('login'))
 
-    email = session['email']
+    email     = session['email']
+    user_name = session.get('user_name', '')
     cart_items = []
-    user_name = get_user_name_from_session(default='User')
 
-    # -- PRIMARY: Supabase -----------------------------------------------------
+    # -- PRIMARY: Supabase --------------------------------------------------
     try:
         res = sb_admin.table('cart') \
-            .select('id, email, product_id, name, price, seller_email, variations, size, quantity, image') \
+            .select('id, name, price, quantity, variations, size, image, seller_email, product_id') \
             .eq('email', email) \
-            .order('id', desc=False) \
+            .order('id', desc=True) \
             .execute()
 
         raw_items = res.data or []
-        print(f"? Cart from Supabase: {len(raw_items)} items for {email}")
 
-        # Fetch image_colors for each product to find color-specific image
+        # Enrich items with color-specific images from products table
         product_ids = list({item['product_id'] for item in raw_items if item.get('product_id')})
-        image_colors_map = {}
-        images_map = {}
+        prod_images = {}
         if product_ids:
             try:
-                prod_res = sb_admin.table('products') \
+                pr = sb_admin.table('products') \
                     .select('id, image, image_colors') \
                     .in_('id', product_ids) \
                     .execute()
-                for prod in (prod_res.data or []):
-                    image_colors_map[prod['id']] = prod.get('image_colors', '') or ''
-                    images_map[prod['id']] = prod.get('image', '') or ''
-            except Exception as e:
-                print(f"?? Could not fetch product image_colors: {e}")
+                for p in (pr.data or []):
+                    prod_images[p['id']] = p
+            except Exception:
+                pass
 
         for item in raw_items:
-            item['price'] = float(item.get('price') or 0)
-            item['quantity'] = int(item.get('quantity') or 1)
-
-            pid = item.get('product_id')
+            pid            = item.get('product_id')
             selected_color = (item.get('variations') or '').strip()
-            all_images_str = images_map.get(pid, '') or item.get('image', '') or ''
-            image_colors_str = image_colors_map.get(pid, '')
+            cart_image     = (item.get('image') or '').strip()
+            # Resolve to a web-accessible URL right away
+            first_image_url = product_image_url(cart_image) if cart_image else None
+            all_images      = ''
 
-            # Find the color-specific image using image_colors mapping
-            color_image = _find_color_image(selected_color, image_colors_str, all_images_str)
+            if pid and pid in prod_images:
+                prod = prod_images[pid]
+                color_map = _parse_image_colors_dict(
+                    prod.get('image_colors'), prod.get('image'))
+                if selected_color and selected_color.lower() in color_map:
+                    first_image_url = product_image_url(color_map[selected_color.lower()])
+                all_images = ','.join(product_image_url(v) for v in color_map.values()) if color_map else ''
 
-            item['all_images'] = all_images_str
+            cart_items.append({
+                'id':             item['id'],
+                'name':           item.get('name', ''),
+                'price':          float(item.get('price') or 0),
+                'quantity':       int(item.get('quantity') or 1),
+                'variations':     item.get('variations') or '',
+                'size':           item.get('size') or '',
+                'image':          cart_image,
+                'first_image_url': first_image_url,
+                'all_images':     all_images,
+                'seller_email':   item.get('seller_email') or '',
+                'product_id':     pid,
+            })
 
-            if color_image:
-                if color_image.startswith('http://') or color_image.startswith('https://'):
-                    item['first_image_url'] = color_image
-                    item['first_image'] = ''
-                else:
-                    item['first_image'] = color_image
-                    item['first_image_url'] = ''
-            else:
-                # Fallback to stored cart image
-                raw_img = (item.get('image') or '').strip()
-                first = raw_img.split(',')[0].strip() if raw_img else ''
-                if first.startswith('http://') or first.startswith('https://'):
-                    item['first_image_url'] = first
-                    item['first_image'] = ''
-                else:
-                    item['first_image'] = first
-                    item['first_image_url'] = ''
-
-        cart_items = raw_items
+        print(f"✅ Cart from Supabase: {len(cart_items)} items")
 
     except Exception as sb_err:
-        print(f"?? Supabase cart failed: {sb_err}")
-
-    # -- FALLBACK: MySQL -------------------------------------------------------
-    if not cart_items:
+        print(f"⚠️ Supabase cart failed, trying MySQL fallback: {sb_err}")
+        # -- FALLBACK: MySQL ------------------------------------------------
         try:
-            db = get_db_connection()
+            db     = get_db_connection()
             cursor = db.cursor(dictionary=True)
-            cursor.execute('''
-                SELECT c.*, p.image as all_product_images
-                FROM cart c
-                LEFT JOIN products p ON c.product_id = p.id
-                WHERE c.email = %s
-            ''', (email,))
+            cursor.execute(
+                'SELECT id, name, price, quantity, variations, size, image, seller_email, product_id '
+                'FROM cart WHERE email = %s ORDER BY id DESC',
+                (email,)
+            )
             raw_items = cursor.fetchall()
             cursor.close()
             db.close()
-
             for item in raw_items:
-                item['price'] = float(item.get('price') or 0)
-                item['quantity'] = int(item.get('quantity') or 1)
-                all_images = item.get('all_product_images', '') or item.get('image', '')
-                item['all_images'] = all_images
-                if item.get('image'):
-                    item['first_image'] = item['image'].strip()
-                    item['first_image_url'] = ''
-                else:
-                    images = [i.strip() for i in str(all_images).split(',') if i.strip()]
-                    item['first_image'] = images[0] if images else ''
-                    item['first_image_url'] = ''
-
-            cart_items = raw_items
-            print(f"? Cart from MySQL fallback: {len(cart_items)} items")
+                cart_image = (item.get('image') or '').strip()
+                cart_items.append({
+                    'id':             item['id'],
+                    'name':           item.get('name', ''),
+                    'price':          float(item.get('price') or 0),
+                    'quantity':       int(item.get('quantity') or 1),
+                    'variations':     item.get('variations') or '',
+                    'size':           item.get('size') or '',
+                    'image':          cart_image,
+                    'first_image_url': product_image_url(cart_image) if cart_image else None,
+                    'all_images':     '',
+                    'seller_email':   item.get('seller_email') or '',
+                    'product_id':     item.get('product_id'),
+                })
+            print(f"✅ Cart from MySQL fallback: {len(cart_items)} items")
         except Exception as mysql_err:
-            print(f"?? MySQL cart fallback failed: {mysql_err}")
+            print(f"❌ MySQL cart fallback failed: {mysql_err}")
             cart_items = []
 
     return render_template('cart.html', cart_items=cart_items, user_name=user_name, user_email=email)
@@ -13184,12 +10634,18 @@ def checkout():
             prod = prod_map.get(pid, {})
             original_price = float(prod.get('price') or item['price'])
 
-            # Resolve color-specific image
+            # Resolve color-specific image — always prefer image_colors mapping
             image = item.get('image') or ''
-            if not image and prod:
+            color_key = (item.get('variations') or '').strip().lower()
+            if prod:
                 color_map = _parse_image_colors_dict(prod.get('image_colors'), prod.get('image'))
-                color_key = (item.get('variations') or '').strip().lower()
-                image = color_map.get(color_key) or (prod.get('image') or '').split(',')[0].strip()
+                if color_key and color_key in color_map:
+                    image = color_map[color_key]  # exact color match wins
+                elif not image:
+                    image = (prod.get('image') or '').split(',')[0].strip()
+            # Resolve to full URL if it's just a filename
+            if image and not image.startswith('http') and not image.startswith('/'):
+                image = f"/static/images/uploads/{image.split('/')[-1]}"
 
             checkout_items.append({
                 'id':                  item['id'],
@@ -15250,25 +12706,12 @@ def clear_cart():
 
 @app.route('/clear_checkout', methods=['POST'])
 def clear_checkout():
-    user_email = session.get('email')
-    
-    connection = get_db_connection()
-    cursor = connection.cursor()
-
     try:
-        cursor.execute("DELETE FROM checkout WHERE email = %s", (user_email,))
-        connection.commit()
-        
-        # Clear the checkout source session flag
+        session.pop('checkout_items', None)
         session.pop('checkout_source', None)
-        
         return jsonify(success=True)
-    except mysql.connector.Error as err:
-        connection.rollback()
-        return jsonify(success=False, error=str(err)), 500
-    finally:
-        cursor.close()
-        connection.close()
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
 
 @app.route('/update_address', methods=['POST'])
 def update_address():
@@ -15327,76 +12770,37 @@ def update_address():
 
 @app.route('/api/product/<int:product_id>')
 def get_product_details(product_id):
-    """API endpoint to get product details for modal view"""
+    """API: product details for modal — Supabase"""
     if 'user_id' not in session:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get product details with seller information - use * to get all columns
-        cursor.execute("""
-            SELECT p.*, 
-                   u.first_name, u.last_name, u.business_name, u.email as seller_email,
-                   COALESCE(u.business_name, CONCAT(u.first_name, ' ', u.last_name)) as seller_name
-            FROM products p
-            LEFT JOIN users u ON p.seller_email = u.email
-            WHERE p.id = %s
-        """, (product_id,))
-        
-        product = cursor.fetchone()
-        cursor.close()
-        connection.close()
-        
-        if product:
-            # Convert types for JSON serialization
-            try:
-                if product.get('price'):
-                    product['price'] = float(product['price'])
-            except (ValueError, TypeError) as e:
-                print(f"Error converting price: {e}")
-                product['price'] = 0.0
-            
-            try:
-                if product.get('quantity') is not None:
-                    product['quantity'] = int(product['quantity'])
-            except (ValueError, TypeError) as e:
-                print(f"Error converting quantity: {e}")
-                product['quantity'] = 0
-            
-            try:
-                if product.get('stock_quantity') is not None:
-                    product['stock_quantity'] = int(product['stock_quantity'])
-            except (ValueError, TypeError) as e:
-                print(f"Error converting stock_quantity: {e}")
-                product['stock_quantity'] = 0
-            
-            # Convert datetime objects to strings
-            try:
-                if product.get('created_at'):
-                    product['created_at'] = product['created_at'].isoformat()
-            except Exception as e:
-                print(f"Error converting created_at: {e}")
-                product['created_at'] = None
-            
-            try:
-                if product.get('updated_at'):
-                    product['updated_at'] = product['updated_at'].isoformat()
-            except Exception as e:
-                print(f"Error converting updated_at: {e}")
-                product['updated_at'] = None
-            
-            return jsonify({'success': True, 'product': product})
-        else:
+        prod_res = sb_admin.table('products').select('*').eq('id', product_id).limit(1).execute()
+        if not prod_res.data:
             return jsonify({'success': False, 'error': 'Product not found'}), 404
-            
-    except Exception as e:
-        print(f"Error fetching product details: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
 
+        product = dict(prod_res.data[0])
+
+        # Attach seller name
+        seller_email = product.get('seller_email', '')
+        if seller_email:
+            usr = sb_admin.table('users').select('first_name, last_name, business_name').eq('email', seller_email).limit(1).execute()
+            if usr.data:
+                u = usr.data[0]
+                biz = (u.get('business_name') or '').strip()
+                fn  = (u.get('first_name')    or '').strip()
+                ln  = (u.get('last_name')     or '').strip()
+                product['seller_name'] = biz or f'{fn} {ln}'.strip() or seller_email
+            else:
+                product['seller_name'] = seller_email
+        else:
+            product['seller_name'] = 'Unknown'
+
+        product['price']    = float(product.get('price') or 0)
+        product['quantity'] = int(product.get('quantity') or 0)
+
+        return jsonify({'success': True, 'product': product})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
 def delete_product(product_id):
     if 'email' not in session:
@@ -15471,560 +12875,214 @@ def delete_product(product_id):
 
 @app.route('/flag_product/<int:product_id>', methods=['POST'])
 def flag_product(product_id):
-    """Admin route to flag a product for violation"""
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    # Check if user is admin
-    if session.get('user_type') != 'Admin':
-        return jsonify({'success': False, 'error': 'Unauthorized. Admin access required.'}), 403
-    
+    """Admin: flag a product for violation — Supabase"""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get request data
-        data = request.get_json()
-        reason = data.get('reason', '').strip()
+        data       = request.get_json() or {}
+        reason     = (data.get('reason') or '').strip()
         send_email = data.get('send_email', True)
-        
         if not reason:
             return jsonify({'success': False, 'error': 'Reason is required'}), 400
-        
-        # Get product and seller details
-        cursor.execute("""
-            SELECT p.id, p.name, p.seller_email, 
-                   u.first_name, u.last_name, u.email as seller_email_confirm
-            FROM products p
-            JOIN users u ON p.seller_email = u.email
-            WHERE p.id = %s
-        """, (product_id,))
-        
-        product = cursor.fetchone()
-        
-        if not product:
-            return jsonify({'success': False, 'error': 'Product not found'}), 404
-        
-        # Add flag_reason and flagged_at columns to products table if they don't exist
-        # This is a safe operation that will only add columns if they don't exist
-        try:
-            cursor.execute("""
-                ALTER TABLE products 
-                ADD COLUMN IF NOT EXISTS flag_reason TEXT,
-                ADD COLUMN IF NOT EXISTS flagged_at TIMESTAMP NULL,
-                ADD COLUMN IF NOT EXISTS flagged_by VARCHAR(255),
-                ADD COLUMN IF NOT EXISTS is_flagged BOOLEAN DEFAULT FALSE
-            """)
-        except:
-            # If the above syntax doesn't work (older MySQL), try individual statements
-            try:
-                cursor.execute("ALTER TABLE products ADD COLUMN flag_reason TEXT")
-            except:
-                pass
-            try:
-                cursor.execute("ALTER TABLE products ADD COLUMN flagged_at TIMESTAMP NULL")
-            except:
-                pass
-            try:
-                cursor.execute("ALTER TABLE products ADD COLUMN flagged_by VARCHAR(255)")
-            except:
-                pass
-            try:
-                cursor.execute("ALTER TABLE products ADD COLUMN is_flagged BOOLEAN DEFAULT FALSE")
-            except:
-                pass
-        
-        # Update product with flag information
-        cursor.execute("""
-            UPDATE products 
-            SET flag_reason = %s, 
-                flagged_at = NOW(),
-                flagged_by = %s,
-                is_flagged = TRUE
-            WHERE id = %s
-        """, (reason, session['email'], product_id))
-        
-        connection.commit()
-        
-        # Create in-app notification for seller
-        try:
-            seller_email = product['seller_email']
-            product_name = product['name']
-            
-            notification_message = f"?? Your product '{product_name}' has been flagged for policy violation. Reason: {reason}. Please review and take appropriate action."
-            
-            cursor.execute("""
-                INSERT INTO notifications (seller_email, message, type, is_read, created_at)
-                VALUES (%s, %s, %s, FALSE, NOW())
-            """, (seller_email, notification_message, 'product_flagged'))
-            
-            connection.commit()
-            print(f"? In-app notification created for seller: {seller_email}")
-            
-        except Exception as notif_error:
-            print(f"Error creating in-app notification: {notif_error}")
-            # Don't fail the request if notification fails
-        
-        # Send email notification to seller if requested
-        if send_email:
-            try:
-                seller_name = f"{product['first_name']} {product['last_name']}"
-                product_name = product['name']
-                seller_email = product['seller_email']
-                
-                # Create and send email
-                msg = Message(
-                    subject=f"?? Product Flagged for Policy Violation - {product_name}",
-                    sender=app.config["MAIL_DEFAULT_SENDER"],
-                    recipients=[seller_email]
-                )
-                
-                msg.html = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                        .header h1 {{ margin: 0; font-size: 24px; }}
-                        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                        .warning-box {{ background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 5px; }}
-                        .reason-box {{ background: white; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 5px; }}
-                        .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
-                        .button {{ display: inline-block; padding: 12px 30px; background: #2c3e50; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>?? Product Flagged for Policy Violation</h1>
-                        </div>
-                        <div class="content">
-                            <p>Dear {seller_name},</p>
-                            
-                            <div class="warning-box">
-                                <strong>?? Important Notice</strong><br>
-                                Your product has been flagged by our admin team for policy violation.
-                            </div>
-                            
-                            <p><strong>Product Name:</strong> {product_name}</p>
-                            
-                            <div class="reason-box">
-                                <strong>Reason for Flagging:</strong><br>
-                                {reason}
-                            </div>
-                            
-                            <p><strong>What This Means:</strong></p>
-                            <ul>
-                                <li>Your product is currently under review</li>
-                                <li>It may be hidden from buyers until the issue is resolved</li>
-                                <li>Repeated violations may result in account suspension</li>
-                            </ul>
-                            
-                            <p><strong>Next Steps:</strong></p>
-                            <ol>
-                                <li>Review our platform policies and terms of service</li>
-                                <li>Take appropriate action to address the violation</li>
-                                <li>Contact our support team if you believe this is a mistake</li>
-                            </ol>
-                            
-                            <p>If you have any questions or concerns, please don't hesitate to reach out to our support team.</p>
-                            
-                            <p>Best regards,<br>
-                            <strong>MStyle E-Commerce Team</strong></p>
-                        </div>
-                        <div class="footer">
-                            <p>This is an automated message from MStyle E-Commerce Platform</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                mail.send(msg)
-                print(f"? Email notification sent to seller: {seller_email}")
-                
-            except Exception as email_error:
-                print(f"? Error sending email: {email_error}")
-                import traceback
-                traceback.print_exc()
-                # Don't fail the request if email fails
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Product has been flagged successfully. Seller has been notified via email and in-app notification.',
-            'product_id': product_id
-        })
-        
-    except Exception as e:
-        print(f"Error flagging product: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
+        prod = sb_admin.table('products').select('id, name, seller_email').eq('id', product_id).limit(1).execute()
+        if not prod.data:
+            return jsonify({'success': False, 'error': 'Product not found'}), 404
+
+        from datetime import datetime as _dt
+        sb_admin.table('products').update({
+            'flag_reason': reason,
+            'flagged_at':  _dt.now().isoformat(),
+            'flagged_by':  session['email'],
+            'is_flagged':  True,
+        }).eq('id', product_id).execute()
+
+        seller_email = prod.data[0].get('seller_email', '')
+        product_name = prod.data[0].get('name', '')
+
+        if seller_email:
+            try:
+                sb_admin.table('notifications').insert({
+                    'seller_email': seller_email,
+                    'message':      f"Your product '{product_name}' has been flagged for policy violation. Reason: {reason}",
+                    'type':         'product_flagged',
+                    'is_read':      False,
+                }).execute()
+            except Exception:
+                pass
+
+            if send_email:
+                try:
+                    msg = Message(
+                        subject=f"Product Flagged for Policy Violation - {product_name}",
+                        sender=app.config['MAIL_DEFAULT_SENDER'],
+                        recipients=[seller_email],
+                    )
+                    msg.body = (
+                        f"Dear Seller,\n\n"
+                        f"Your product '{product_name}' has been flagged for policy violation.\n\n"
+                        f"Reason: {reason}\n\n"
+                        f"Please review our platform policies and take appropriate action.\n\n"
+                        f"MStyle E-Commerce Team"
+                    )
+                    mail.send(msg)
+                except Exception as email_err:
+                    print(f"Flag email failed: {email_err}")
+
+        return jsonify({'success': True, 'message': 'Product flagged successfully.', 'product_id': product_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 @app.route('/clear_product_flag/<int:product_id>', methods=['POST'])
 def clear_product_flag(product_id):
-    """Admin route to clear a product flag and mark it as safe"""
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    # Check if user is admin
-    if session.get('user_type') != 'Admin':
-        return jsonify({'success': False, 'error': 'Unauthorized. Admin access required.'}), 403
-    
+    """Admin: clear a product flag — Supabase"""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check if product exists and is flagged
-        cursor.execute("""
-            SELECT id, name, flagged_at, flag_reason
-            FROM products
-            WHERE id = %s
-        """, (product_id,))
-        
-        product = cursor.fetchone()
-        
-        if not product:
+        prod = sb_admin.table('products').select('id, flagged_at').eq('id', product_id).limit(1).execute()
+        if not prod.data:
             return jsonify({'success': False, 'error': 'Product not found'}), 404
-        
-        if not product.get('flagged_at'):
+        if not prod.data[0].get('flagged_at'):
             return jsonify({'success': False, 'error': 'Product is not flagged'}), 400
-        
-        # Clear the flag by setting flag fields to NULL
-        cursor.execute("""
-            UPDATE products 
-            SET flag_reason = NULL, 
-                flagged_at = NULL,
-                flagged_by = NULL,
-                is_flagged = FALSE
-            WHERE id = %s
-        """, (product_id,))
-        
-        connection.commit()
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Product flag has been cleared successfully',
-            'product_id': product_id
-        })
-        
-    except Exception as e:
-        print(f"Error clearing product flag: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
+        sb_admin.table('products').update({
+            'flag_reason': None, 'flagged_at': None,
+            'flagged_by':  None, 'is_flagged':  False,
+        }).eq('id', product_id).execute()
+
+        return jsonify({'success': True, 'message': 'Product flag cleared successfully', 'product_id': product_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 @app.route('/toggle_product_status/<int:product_id>', methods=['POST'])
 def toggle_product_status(product_id):
-    """Admin route to activate or deactivate a product"""
-    if 'user_id' not in session:
-        return jsonify({'success': False, 'error': 'Not logged in'}), 401
-    
-    # Check if user is admin
-    if session.get('user_type') != 'Admin':
-        return jsonify({'success': False, 'error': 'Unauthorized. Admin access required.'}), 403
-    
+    """Admin: activate or deactivate a product — Supabase"""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get request data
-        data = request.get_json()
+        data      = request.get_json() or {}
         is_active = data.get('is_active', True)
-        reason = data.get('reason', '').strip()
-        
-        # Check if product exists and get seller info
-        cursor.execute("""
-            SELECT p.id, p.name, p.seller_email,
-                   u.first_name, u.last_name
-            FROM products p
-            JOIN users u ON p.seller_email = u.email
-            WHERE p.id = %s
-        """, (product_id,))
-        product = cursor.fetchone()
-        
-        if not product:
-            return jsonify({'success': False, 'error': 'Product not found'}), 404
-        
-        # Add is_active column to products table if it doesn't exist
-        try:
-            cursor.execute("SHOW COLUMNS FROM products LIKE 'is_active'")
-            if not cursor.fetchone():
-                cursor.execute("""
-                    ALTER TABLE products 
-                    ADD COLUMN is_active BOOLEAN DEFAULT TRUE
-                """)
-                connection.commit()
-        except Exception as e:
-            print(f"Error checking/adding is_active column: {e}")
-        
-        # Update product status
-        cursor.execute("""
-            UPDATE products 
-            SET is_active = %s
-            WHERE id = %s
-        """, (is_active, product_id))
-        
-        connection.commit()
-        
-        status_text = 'activated' if is_active else 'deactivated'
-        
-        # Send notification to seller
-        try:
-            seller_email = product['seller_email']
-            product_name = product['name']
-            seller_name = f"{product['first_name']} {product['last_name']}"
-            
-            if is_active:
-                notification_message = f"? Your product '{product_name}' has been activated by admin and is now visible to buyers."
-                notification_type = "product_activated"
-                email_subject = f"? Product Activated - {product_name}"
-                email_title = "Product Activated"
-                email_icon = "?"
-                email_color = "#28a745"
-                reason_text = ""
-            else:
-                notification_message = f"?? Your product '{product_name}' has been deactivated by admin and is no longer visible to buyers."
-                if reason:
-                    notification_message += f" Reason: {reason}"
-                notification_type = "product_deactivated"
-                email_subject = f"?? Product Deactivated - {product_name}"
-                email_title = "Product Deactivated"
-                email_icon = "??"
-                email_color = "#dc3545"
-                reason_text = f"<p><strong>Reason:</strong> {reason}</p>" if reason else ""
-            
-            # Create in-app notification
-            cursor.execute("""
-                INSERT INTO notifications (seller_email, message, type, is_read, created_at)
-                VALUES (%s, %s, %s, FALSE, NOW())
-            """, (seller_email, notification_message, notification_type))
-            
-            connection.commit()
-            print(f"? In-app notification created for seller: {seller_email}")
-            
-            # Send email notification
-            try:
-                msg = Message(
-                    subject=email_subject,
-                    sender=app.config["MAIL_DEFAULT_SENDER"],
-                    recipients=[seller_email]
-                )
-                
-                msg.html = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background: linear-gradient(135deg, {email_color} 0%, {email_color}dd 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                        .header h1 {{ margin: 0; font-size: 24px; }}
-                        .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                        .info-box {{ background: white; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 5px; }}
-                        .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 12px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>{email_icon} {email_title}</h1>
-                        </div>
-                        <div class="content">
-                            <p>Dear {seller_name},</p>
-                            
-                            <div class="info-box">
-                                <p><strong>Product Name:</strong> {product_name}</p>
-                                <p><strong>Status:</strong> {status_text.capitalize()}</p>
-                                {reason_text}
-                            </div>
-                            
-                            <p>Your product has been {status_text} by our admin team.</p>
-                            {f'<p><strong>Reason provided:</strong> {reason}</p>' if reason else ''}
-                            
-                            <p>If you have any questions or concerns, please contact our support team.</p>
-                            
-                            <p>Best regards,<br>
-                            <strong>MStyle E-Commerce Team</strong></p>
-                        </div>
-                        <div class="footer">
-                            <p>This is an automated message from MStyle E-Commerce Platform</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                mail.send(msg)
-                print(f"? Email notification sent to seller: {seller_email}")
-                
-            except Exception as email_error:
-                print(f"? Error sending email: {email_error}")
-                import traceback
-                traceback.print_exc()
-                
-        except Exception as notif_error:
-            print(f"? Error creating notification: {notif_error}")
-            import traceback
-            traceback.print_exc()
-            # Don't fail the request if notification fails
-        
-        return jsonify({
-            'success': True, 
-            'message': f'Product has been {status_text} successfully. Seller has been notified via email and in-app notification.',
-            'product_id': product_id,
-            'is_active': is_active
-        })
-        
-    except Exception as e:
-        print(f"Error toggling product status: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+        reason    = (data.get('reason') or '').strip()
 
+        prod = sb_admin.table('products').select('id, name, seller_email').eq('id', product_id).limit(1).execute()
+        if not prod.data:
+            return jsonify({'success': False, 'error': 'Product not found'}), 404
+
+        sb_admin.table('products').update({'is_active': is_active}).eq('id', product_id).execute()
+
+        seller_email = prod.data[0].get('seller_email', '')
+        product_name = prod.data[0].get('name', '')
+        status_text  = 'activated' if is_active else 'deactivated'
+
+        if seller_email:
+            msg = f"Your product '{product_name}' has been {status_text} by admin."
+            if not is_active and reason:
+                msg += f" Reason: {reason}"
+            try:
+                sb_admin.table('notifications').insert({
+                    'seller_email': seller_email,
+                    'message':      msg,
+                    'type':         'product_activated' if is_active else 'product_deactivated',
+                    'is_read':      False,
+                }).execute()
+            except Exception:
+                pass
+
+        return jsonify({'success': True,
+                        'message': f'Product has been {status_text} successfully.',
+                        'product_id': product_id, 'is_active': is_active})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 @app.route('/checkout_single_product', methods=['POST'])
 def checkout_single_product():
     if 'email' not in session:
         return jsonify({'success': False, 'error': 'Please log in to checkout'})
 
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-
-        # Get product details from the form
-        product_id = request.form.get('product_id')
+        product_id     = request.form.get('product_id')
+        selected_color = request.form.get('product_variation', '')
+        color_image    = request.form.get('product_image', '')
+        size           = request.form.get('size', '')
+        product_price  = request.form.get('product_price')
         try:
             quantity = int(request.form.get('quantity', '1'))
         except ValueError:
             return jsonify({'success': False, 'error': 'Invalid quantity value'})
-            
-        size = request.form.get('size')
-        selected_color = request.form.get('product_variation', '')  # Get the selected color
-        color_specific_image = request.form.get('product_image', '')  # Get the color-specific image
-        
-        # Get promotional pricing information from form
-        product_price = request.form.get('product_price')  # This is the promotional price if promotion exists
-        original_price = request.form.get('original_price')
-        has_promotion = request.form.get('has_promotion', 'False') == 'True'
-        discount_amount = request.form.get('discount_amount', '0')
-        
-        # Validate inputs
+
         if not product_id or quantity < 1:
             return jsonify({'success': False, 'error': 'Invalid product or quantity'})
 
-        # Get product details
-        cursor.execute("SELECT * FROM products WHERE id = %s", (product_id,))
-        product = cursor.fetchone()
-
-        if not product:
+        # Fetch product from Supabase
+        prod_res = sb_admin.table('products').select('*').eq('id', int(product_id)).execute()
+        if not prod_res.data:
             return jsonify({'success': False, 'error': 'Product not found'})
+        product = prod_res.data[0]
 
-        # Convert product quantity to integer for comparison
-        product_quantity = int(product['quantity'])
-        
-        # Check if product is in stock
-        if product_quantity < quantity:
+        # Check stock
+        if int(product.get('quantity') or 0) < quantity:
             return jsonify({'success': False, 'error': 'Insufficient stock'})
 
-        # Clear any existing checkout items for this user
-        cursor.execute("DELETE FROM checkout WHERE email = %s", (session['email'],))
-
-        # Use promotional price if provided, otherwise fall back to product price
+        # Resolve price
         try:
-            if product_price and product_price.strip():
-                price = float(product_price)  # Use promotional price from form
-            else:
-                price = float(product['price']) if product['price'] is not None else 0.0  # Fallback to regular price
+            price = float(product_price) if product_price and str(product_price).strip() else float(product.get('price') or 0)
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid product price'})
 
-        # Use color-specific image if provided, otherwise fall back to first product image
-        if color_specific_image:
-            checkout_image = color_specific_image
-        elif product['image']:
-            checkout_image = product['image'].split(',')[0].strip()
+        # Resolve image — prefer color_image from form (already resolved by view_product.html JS)
+        # then fall back to image_colors mapping, then first product image
+        if color_image and color_image.strip():
+            checkout_image = color_image.strip()
         else:
-            checkout_image = ''
-        
-        # Debug logging
-        print(f"DEBUG - Checkout Single Product:")
-        print(f"  Selected Color: {selected_color}")
-        print(f"  Color Specific Image: {color_specific_image}")
-        print(f"  Final Checkout Image: {checkout_image}")
-        print(f"  All Product Images: {product['image']}")
+            # Try image_colors mapping for the selected color
+            color_map = _parse_image_colors_dict(
+                product.get('image_colors'), product.get('image'))
+            color_key = selected_color.strip().lower()
+            if color_key and color_key in color_map:
+                checkout_image = color_map[color_key]
+            elif product.get('image'):
+                checkout_image = product['image'].split(',')[0].strip()
+            else:
+                checkout_image = ''
 
-        # Check if product has free shipping promotion
-        shipping_fee = 50  # Default shipping fee
-        cursor.execute("""
-            SELECT pr.type 
-            FROM promotions pr
-            LEFT JOIN promotion_products pp ON pr.id = pp.promotion_id
-            LEFT JOIN promotion_categories pc ON pr.id = pc.promotion_id
-            LEFT JOIN products p ON (pp.product_id = p.id OR pc.category = p.category)
-            WHERE pr.seller_email = %s
-            AND pr.type = 'free_shipping'
-            AND pr.is_active = 1
-            AND CURDATE() BETWEEN pr.start_date AND pr.end_date
-            AND (pp.product_id = %s OR pc.category = (SELECT category FROM products WHERE id = %s))
-            LIMIT 1
-        """, (product['seller_email'], product_id, product_id))
-        free_shipping_promo = cursor.fetchone()
-        if free_shipping_promo:
-            shipping_fee = 0
-            print(f"DEBUG - Free shipping applied for product: {product['name']}")
+        # Check free shipping promotion via Supabase
+        shipping_fee = 50
+        try:
+            from datetime import date
+            today = date.today().isoformat()
+            promo_res = sb_admin.table('promotions') \
+                .select('id') \
+                .eq('seller_email', product['seller_email']) \
+                .eq('type', 'free_shipping') \
+                .eq('is_active', True) \
+                .lte('start_date', today) \
+                .gte('end_date', today) \
+                .limit(1) \
+                .execute()
+            if promo_res.data:
+                shipping_fee = 0
+        except Exception:
+            pass
 
-        # Add the single product to checkout
-        cursor.execute("""
-            INSERT INTO checkout 
-            (id, name, price, quantity, variations, image, size, email, address, seller_email, product_id, shipping_fee) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            product_id,
-            product['name'],
-            price,
-            quantity,
-            selected_color,  # Use selected color instead of all variations
-            checkout_image,  # Use color-specific image
-            size,
-            session['email'],
-            session.get('address', ''),  # Add address from session
-            product['seller_email'],
-            product_id,
-            shipping_fee
-        ))
-
-        connection.commit()
-        
-        # Set session flag to indicate this came from Buy Now
+        # Store checkout item in session (no DB needed for single-product buy now)
+        session['checkout_items'] = [{
+            'id':           product_id,
+            'name':         product['name'],
+            'price':        price,
+            'quantity':     quantity,
+            'variations':   selected_color,
+            'image':        checkout_image,
+            'size':         size,
+            'email':        session['email'],
+            'seller_email': product.get('seller_email', ''),
+            'product_id':   product_id,
+            'shipping_fee': shipping_fee,
+        }]
         session['checkout_source'] = 'buy_now'
-        
+
         return jsonify({'success': True})
 
-    except mysql.connector.Error as err:
-        return jsonify({'success': False, 'error': f'Database error: {str(err)}'})
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({'success': False, 'error': f'An error occurred: {str(e)}'})
-    finally:
-        if 'connection' in locals():
-            cursor.close()
-            connection.close()
+
 
 @app.route('/about')
 def about():
@@ -16391,183 +13449,110 @@ def mark_buyer_notification_read():
     """Mark a specific buyer notification as read"""
     buyer_email = session.get('email')
     user_type = session.get('user_type')
-    
+
     if not buyer_email or (user_type and user_type.lower() != 'buyer'):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
-    
-    connection = None
-    cursor = None
+
     try:
         data = request.get_json()
         notification_id = data.get('notification_id')
-        
+
         if not notification_id:
             return jsonify({'success': False, 'error': 'Notification ID required'}), 400
-        
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Mark notification as read (only if it belongs to this buyer)
-        cursor.execute("""
-            UPDATE buyer_notifications 
-            SET is_read = TRUE 
-            WHERE id = %s AND buyer_email = %s
-        """, (notification_id, buyer_email))
-        
-        affected_rows = cursor.rowcount
-        connection.commit()
-        
-        print(f"? Buyer notification {notification_id} marked as read")
-        return jsonify({'success': True, 'affected_rows': affected_rows})
-        
+
+        sb_admin.table('buyer_notifications') \
+            .update({'is_read': True}) \
+            .eq('id', notification_id) \
+            .eq('buyer_email', buyer_email) \
+            .execute()
+
+        print(f"✅ Buyer notification {notification_id} marked as read")
+        return jsonify({'success': True})
+
     except Exception as e:
-        print(f"? Error marking buyer notification as read: {str(e)}")
-        if connection:
-            try:
-                connection.rollback()
-            except:
-                pass
+        print(f"❌ Error marking buyer notification as read: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+
 
 @app.route('/api/buyer/notifications/mark-all-read', methods=['POST'])
 def mark_all_buyer_notifications_read():
     """Mark all notifications as read for the logged-in buyer"""
     buyer_email = session.get('email')
     user_type = session.get('user_type')
-    
+
     if not buyer_email or (user_type and user_type.lower() != 'buyer'):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
-    
-    connection = None
-    cursor = None
+
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Mark all notifications as read for this buyer
-        cursor.execute("""
-            UPDATE buyer_notifications 
-            SET is_read = TRUE 
-            WHERE buyer_email = %s AND is_read = FALSE
-        """, (buyer_email,))
-        
-        affected_rows = cursor.rowcount
-        connection.commit()
-        
-        print(f"? Marked {affected_rows} buyer notifications as read")
-        return jsonify({'success': True, 'affected_rows': affected_rows})
-        
+        sb_admin.table('buyer_notifications') \
+            .update({'is_read': True}) \
+            .eq('buyer_email', buyer_email) \
+            .eq('is_read', False) \
+            .execute()
+
+        print(f"✅ All buyer notifications marked as read for {buyer_email}")
+        return jsonify({'success': True})
+
     except Exception as e:
-        print(f"Error marking all buyer notifications as read: {str(e)}")
-        if connection:
-            try:
-                connection.rollback()
-            except:
-                pass
+        print(f"❌ Error marking all buyer notifications as read: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+
 
 @app.route('/api/buyer/notifications/delete', methods=['POST'])
 def delete_buyer_notification():
     """Delete a specific buyer notification"""
     buyer_email = session.get('email')
     user_type = session.get('user_type')
-    
+
     if not buyer_email or (user_type and user_type.lower() != 'buyer'):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
-    
-    connection = None
-    cursor = None
+
     try:
         data = request.get_json()
         notification_id = data.get('notification_id')
-        
+
         if not notification_id:
             return jsonify({'success': False, 'error': 'Notification ID required'}), 400
-        
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Delete notification (only if it belongs to this buyer)
-        cursor.execute("""
-            DELETE FROM buyer_notifications 
-            WHERE id = %s AND buyer_email = %s
-        """, (notification_id, buyer_email))
-        
-        deleted_count = cursor.rowcount
-        
-        # Check if any row was affected
+
+        result = sb_admin.table('buyer_notifications') \
+            .delete() \
+            .eq('id', notification_id) \
+            .eq('buyer_email', buyer_email) \
+            .execute()
+
+        deleted_count = len(result.data) if result.data else 0
         if deleted_count == 0:
             return jsonify({'success': False, 'error': 'Notification not found or unauthorized'}), 404
-        
-        connection.commit()
-        
-        print(f"? Buyer notification {notification_id} deleted for buyer: {buyer_email}")
+
+        print(f"✅ Buyer notification {notification_id} deleted for {buyer_email}")
         return jsonify({'success': True, 'deleted_count': deleted_count})
-        
+
     except Exception as e:
-        print(f"? Error deleting buyer notification: {str(e)}")
-        if connection:
-            try:
-                connection.rollback()
-            except:
-                pass
+        print(f"❌ Error deleting buyer notification: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
 @app.route('/api/buyer/notifications/delete-all', methods=['POST'])
 def delete_all_buyer_notifications():
     """Delete all notifications for the logged-in buyer"""
     buyer_email = session.get('email')
     user_type = session.get('user_type')
-    
+
     if not buyer_email or (user_type and user_type.lower() != 'buyer'):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
-    
-    connection = None
-    cursor = None
+
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-        
-        # Delete all notifications for this buyer
-        cursor.execute("""
-            DELETE FROM buyer_notifications 
-            WHERE buyer_email = %s
-        """, (buyer_email,))
-        
-        deleted_count = cursor.rowcount
-        connection.commit()
-        
-        print(f"? {deleted_count} buyer notifications deleted for buyer: {buyer_email}")
+        result = sb_admin.table('buyer_notifications') \
+            .delete() \
+            .eq('buyer_email', buyer_email) \
+            .execute()
+
+        deleted_count = len(result.data) if result.data else 0
+        print(f"✅ {deleted_count} buyer notifications deleted for buyer: {buyer_email}")
         return jsonify({'success': True, 'deleted_count': deleted_count})
-        
+
     except Exception as e:
-        print(f"? Error deleting all buyer notifications: {str(e)}")
-        if connection:
-            try:
-                connection.rollback()
-            except:
-                pass
+        print(f"❌ Error deleting all buyer notifications: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
 def _create_order_notification_supabase(seller_email, order_details):
     """Create a seller notification in Supabase when an order is placed."""
@@ -17667,271 +14652,202 @@ def admin_auto_complete_orders():
 
 @app.route('/order_monitoring')
 def order_monitoring():
-    """Admin route to monitor all orders"""
-    # Check if user is admin
+    """Admin: monitor all orders  Supabase"""
     if 'email' not in session or session.get('user_type') != 'Admin':
         flash('Access denied. Admin privileges required.', 'danger')
         return redirect(url_for('login'))
-    
+
+    search_query  = request.args.get('search',    '').strip().lower()
+    status_filter = request.args.get('status',    '').strip().lower()
+    date_from     = request.args.get('date_from', '').strip()
+    date_to       = request.args.get('date_to',   '').strip()
+    page          = request.args.get('page', 1, type=int)
+    per_page      = 20
+
+    empty_stats = {'total_orders': 0, 'pending_orders': 0, 'shipped_orders': 0,
+                   'delivered_orders': 0, 'completed_orders': 0, 'cancelled_orders': 0}
+
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get filter parameters
-        search_query = request.args.get('search', '').strip()
-        status_filter = request.args.get('status', '')
-        payment_method_filter = request.args.get('payment_method', '')
-        date_from = request.args.get('date_from', '')
-        date_to = request.args.get('date_to', '')
-        page = request.args.get('page', 1, type=int)
-        per_page = 20
-        
-        # Build query with filters
-        query = """
-            SELECT 
-                o.id as order_id,
-                o.date as order_date,
-                COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'Unknown Buyer') as buyer_name,
-                COALESCE(CONCAT(s.first_name, ' ', s.last_name), 'Unknown Seller') as seller_name,
-                CAST(o.total_price AS DECIMAL(10,2)) as total_amount,
-                o.payment_method,
-                o.status as order_status,
-                COALESCE(CONCAT(r.first_name, ' ', r.last_name), NULL) as rider_name,
-                o.delivered_at,
-                o.received_at,
-                o.auto_complete_at,
-                o.is_auto_completed
-            FROM orders o
-            LEFT JOIN users u ON o.email = u.email
-            LEFT JOIN users s ON o.seller_email = s.email
-            LEFT JOIN users r ON o.rider_email = r.email
-            WHERE 1=1
-        """
-        
-        params = []
-        
-        # Apply search filter
-        if search_query:
-            query += """ AND (
-                o.id LIKE %s OR
-                CONCAT(u.first_name, ' ', u.last_name) LIKE %s OR
-                u.email LIKE %s OR
-                CONCAT(s.first_name, ' ', s.last_name) LIKE %s OR
-                s.email LIKE %s
-            )"""
-            search_pattern = f"%{search_query}%"
-            params.extend([search_pattern, search_pattern, search_pattern, search_pattern, search_pattern])
-        
+        from datetime import datetime as _dt
+
+        # Fetch all orders
+        all_res = sb_admin.table('orders') \
+            .select('id, date, email, seller_email, rider_email, total_price, payment_method, status, delivered_at, received_at, auto_complete_at, is_auto_completed, address') \
+            .order('date', desc=True) \
+            .execute()
+        all_orders = all_res.data or []
+
+        # Batch-fetch user info (buyers + sellers + riders)
+        emails = set()
+        for o in all_orders:
+            for f in ('email', 'seller_email', 'rider_email'):
+                if o.get(f): emails.add(o[f])
+        user_map = {}
+        if emails:
+            usr_res = sb_admin.table('users') \
+                .select('email, first_name, last_name, business_name, phone') \
+                .in_('email', list(emails)).execute()
+            for u in (usr_res.data or []):
+                fn  = (u.get('first_name')    or '').strip()
+                ln  = (u.get('last_name')     or '').strip()
+                biz = (u.get('business_name') or '').strip()
+                user_map[u['email']] = {
+                    'name':  biz or f'{fn} {ln}'.strip() or u['email'],
+                    'phone': (u.get('phone') or '').strip(),
+                }
+
+        def _name(email): return user_map.get(email, {}).get('name', email or 'Unknown')
+
+        # Parse dates + attach names
+        def _parse_dt(val):
+            if not val: return None
+            try: return _dt.fromisoformat(str(val).replace('Z','+00:00').replace('+00:00',''))
+            except: return None
+
+        for o in all_orders:
+            o['buyer_name']  = _name(o.get('email', ''))
+            o['seller_name'] = _name(o.get('seller_email', ''))
+            o['rider_name']  = _name(o.get('rider_email', '')) if o.get('rider_email') else None
+            o['total_amount'] = float(o.get('total_price') or 0)
+            o['order_date']   = _parse_dt(o.get('date'))
+            o['received_at']  = _parse_dt(o.get('received_at'))
+            o['auto_complete_at'] = _parse_dt(o.get('auto_complete_at'))
+            o['delivered_at'] = _parse_dt(o.get('delivered_at'))
+            o['order_id']     = o['id']
+            o['order_status'] = o.get('status', '')
+
+        # Stats (from all orders, no filter)
+        stats = {
+            'total_orders':     len(all_orders),
+            'pending_orders':   sum(1 for o in all_orders if (o.get('status') or '').lower() == 'pending'),
+            'shipped_orders':   sum(1 for o in all_orders if (o.get('status') or '').lower() in ('shipped','in transit','out for delivery','heading to seller','for pickup')),
+            'delivered_orders': sum(1 for o in all_orders if (o.get('status') or '').lower() == 'delivered'),
+            'completed_orders': sum(1 for o in all_orders if o.get('received_at') or o.get('auto_complete_at') or (o.get('status') or '').lower() == 'completed'),
+            'cancelled_orders': sum(1 for o in all_orders if (o.get('status') or '').lower() in ('cancelled','rejected')),
+        }
+
         # Apply filters
+        filtered = all_orders
+        if search_query:
+            filtered = [o for o in filtered if
+                search_query in str(o.get('id', '')).lower() or
+                search_query in (o['buyer_name']).lower() or
+                search_query in (o.get('email') or '').lower() or
+                search_query in (o['seller_name']).lower() or
+                search_query in (o.get('seller_email') or '').lower()]
+
         if status_filter:
             if status_filter == 'completed':
-                # Completed means received_at or auto_complete_at is not null
-                query += " AND (o.received_at IS NOT NULL OR o.auto_complete_at IS NOT NULL)"
+                filtered = [o for o in filtered if o.get('received_at') or o.get('auto_complete_at') or (o.get('status') or '').lower() == 'completed']
             elif status_filter == 'cancelled':
-                # Cancelled includes both 'rejected' and 'cancelled' status (case-insensitive)
-                query += " AND LOWER(o.status) IN ('rejected', 'cancelled')"
+                filtered = [o for o in filtered if (o.get('status') or '').lower() in ('cancelled','rejected')]
             else:
-                query += " AND LOWER(o.status) = LOWER(%s)"
-                params.append(status_filter)
-        
-        if payment_method_filter:
-            query += " AND o.payment_method = %s"
-            params.append(payment_method_filter)
-        
+                filtered = [o for o in filtered if (o.get('status') or '').lower() == status_filter]
+
         if date_from:
-            query += " AND DATE(o.date) >= %s"
-            params.append(date_from)
-        
+            try:
+                df = _dt.strptime(date_from, '%Y-%m-%d')
+                filtered = [o for o in filtered if o['order_date'] and o['order_date'] >= df]
+            except: pass
         if date_to:
-            query += " AND DATE(o.date) <= %s"
-            params.append(date_to)
-        
-        # Get total count for pagination
-        count_query = f"SELECT COUNT(*) as total FROM ({query}) as filtered_orders"
-        cursor.execute(count_query, params)
-        total_orders = cursor.fetchone()['total']
-        
-        # Calculate pagination
-        total_pages = max(1, (total_orders + per_page - 1) // per_page)
-        offset = (page - 1) * per_page
-        
-        # Add ordering and pagination
-        query += " ORDER BY o.date DESC LIMIT %s OFFSET %s"
-        params.extend([per_page, offset])
-        
-        # Execute main query
-        cursor.execute(query, params)
-        orders = cursor.fetchall()
-        
-        print(f"DEBUG: Found {len(orders)} orders")
-        print(f"DEBUG: Total pages: {total_pages}, Current page: {page}")
-        
-        # Get order statistics
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_orders,
-                SUM(CASE WHEN LOWER(status) = 'pending' THEN 1 ELSE 0 END) as pending_orders,
-                SUM(CASE WHEN LOWER(status) = 'shipped' THEN 1 ELSE 0 END) as shipped_orders,
-                SUM(CASE WHEN LOWER(status) = 'delivered' THEN 1 ELSE 0 END) as delivered_orders,
-                SUM(CASE WHEN received_at IS NOT NULL OR auto_complete_at IS NOT NULL THEN 1 ELSE 0 END) as completed_orders,
-                SUM(CASE WHEN LOWER(status) IN ('rejected', 'cancelled') THEN 1 ELSE 0 END) as cancelled_orders
-            FROM orders
-        """)
-        stats = cursor.fetchone()
-        
-        # Debug: Check actual status values
-        cursor.execute("SELECT DISTINCT status FROM orders")
-        distinct_statuses = cursor.fetchall()
-        print(f"DEBUG: Distinct order statuses in database: {[s['status'] for s in distinct_statuses]}")
-        print(f"DEBUG: Stats - Total: {stats['total_orders']}, Cancelled: {stats['cancelled_orders']}")
-        
-        # Get available riders for assignment
-        cursor.execute("""
-            SELECT id, CONCAT(first_name, ' ', last_name) as name, email,
-                   CASE 
-                       WHEN email IN (SELECT DISTINCT rider_email FROM orders WHERE status IN ('Shipped', 'Out for Delivery'))
-                       THEN 'Busy'
-                       ELSE 'Available'
-                   END as status
-            FROM users 
-            WHERE UPPER(user_type) = 'RIDER'
-            ORDER BY first_name, last_name
-        """)
-        riders = cursor.fetchall()
-        
-        cursor.close()
-        connection.close()
-        
+            try:
+                dt_ = _dt.strptime(date_to, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                filtered = [o for o in filtered if o['order_date'] and o['order_date'] <= dt_]
+            except: pass
+
+        # Pagination
+        total_orders = len(filtered)
+        total_pages  = max(1, (total_orders + per_page - 1) // per_page)
+        page         = max(1, min(page, total_pages))
+        offset       = (page - 1) * per_page
+        orders       = filtered[offset: offset + per_page]
+
         return render_template('order_monitoring.html',
-                             orders=orders,
-                             riders=riders,
-                             stats=stats,
-                             current_page=page,
-                             total_pages=total_pages,
-                             prev_page=page - 1 if page > 1 else None,
-                             next_page=page + 1 if page < total_pages else None)
-        
+                               orders=orders, riders=[], stats=stats,
+                               current_page=page, total_pages=total_pages,
+                               prev_page=page-1 if page > 1 else None,
+                               next_page=page+1 if page < total_pages else None)
+
     except Exception as e:
-        print(f"?? MySQL unavailable in order_monitoring: {e}")
-        import traceback
-        traceback.print_exc()
-
-        try:
-            if 'cursor' in locals() and cursor:
-                cursor.close()
-            if 'connection' in locals() and connection:
-                connection.close()
-        except:
-            pass
-
-        empty_stats = {'total_orders': 0, 'pending_orders': 0, 'shipped_orders': 0,
-                       'delivered_orders': 0, 'completed_orders': 0, 'cancelled_orders': 0}
+        print(f"order_monitoring Supabase error: {e}")
+        import traceback; traceback.print_exc()
         return render_template('order_monitoring.html',
-                             orders=[], riders=[], stats=empty_stats,
-                             current_page=1, total_pages=1,
-                             prev_page=None, next_page=None)
-
+                               orders=[], riders=[], stats=empty_stats,
+                               current_page=1, total_pages=1,
+                               prev_page=None, next_page=None)
 @app.route('/admin/order/<int:order_id>/details')
 def admin_get_order_details(order_id):
-    """Get detailed information about a specific order"""
+    """Admin: get order details for modal  Supabase"""
     if 'email' not in session or session.get('user_type') != 'Admin':
         return jsonify({'error': 'Unauthorized'}), 403
-    
     try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get order details
-        cursor.execute("""
-            SELECT 
-                o.id as order_id,
-                o.date as order_date,
-                o.status,
-                o.delivered_at,
-                o.received_at,
-                o.auto_complete_at,
-                o.is_auto_completed,
-                COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'Unknown Buyer') as buyer_name,
-                u.email as buyer_email,
-                u.phone_number as buyer_phone,
-                o.address as delivery_address,
-                COALESCE(CONCAT(s.first_name, ' ', s.last_name), 'Unknown Seller') as seller_name,
-                s.email as seller_email,
-                s.phone_number as seller_phone,
-                o.total_price,
-                o.payment_method,
-                COALESCE(CONCAT(r.first_name, ' ', r.last_name), NULL) as rider_name,
-                r.email as rider_email,
-                r.phone_number as rider_phone,
-                o.name as product_name,
-                o.quantity,
-                o.image as product_image,
-                o.variations,
-                o.size
-            FROM orders o
-            LEFT JOIN users u ON o.email = u.email
-            LEFT JOIN users s ON o.seller_email = s.email
-            LEFT JOIN users r ON o.rider_email = r.email
-            WHERE o.id = %s
-        """, (order_id,))
-        
-        order = cursor.fetchone()
-        
-        if not order:
-            return jsonify({'error': 'Order not found'}), 404
-        
-        # Format the response - handle varchar to numeric conversion
-        try:
-            total_amount = float(order['total_price']) if order['total_price'] else 0.0
-        except (ValueError, TypeError):
-            total_amount = 0.0
-            
-        try:
-            quantity = int(order['quantity']) if order['quantity'] else 1
-        except (ValueError, TypeError):
-            quantity = 1
-        
-        response = {
-            'order_id': order['order_id'],
-            'order_date': order['order_date'].strftime('%Y-%m-%d %H:%M:%S') if order['order_date'] else '',
-            'status': order['status'],
-            'delivered_at': order['delivered_at'].strftime('%Y-%m-%d %H:%M:%S') if order['delivered_at'] else None,
-            'received_at': order['received_at'].strftime('%Y-%m-%d %H:%M:%S') if order['received_at'] else None,
-            'auto_complete_at': order['auto_complete_at'].strftime('%Y-%m-%d %H:%M:%S') if order['auto_complete_at'] else None,
-            'is_auto_completed': order['is_auto_completed'],
-            'buyer_name': order['buyer_name'],
-            'buyer_email': order['buyer_email'],
-            'buyer_phone': order['buyer_phone'] or 'N/A',
-            'delivery_address': order['delivery_address'] or 'N/A',
-            'seller_name': order['seller_name'],
-            'seller_email': order['seller_email'],
-            'seller_phone': order['seller_phone'] or 'N/A',
-            'total_amount': f"{total_amount:.2f}",
-            'payment_method': order['payment_method'],
-            'rider_name': order['rider_name'] or 'Not Assigned',
-            'rider_email': order['rider_email'] or 'N/A',
-            'rider_phone': order['rider_phone'] or 'N/A',
-            'items': [{
-                'product_name': order['product_name'],
-                'quantity': quantity,
-                'price': f"{total_amount / quantity:.2f}" if quantity > 0 else "0.00",
-                'subtotal': f"{total_amount:.2f}",
-                'variations': order['variations'] or 'N/A',
-                'size': order['size'] or 'N/A'
-            }]
-        }
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify(response)
-        
-    except Exception as e:
-        print(f"Error getting order details: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': 'Internal server error'}), 500
+        from datetime import datetime as _dt
 
+        ord_res = sb_admin.table('orders').select('*').eq('id', order_id).limit(1).execute()
+        if not ord_res.data:
+            return jsonify({'error': 'Order not found'}), 404
+        o = ord_res.data[0]
+
+        # Batch-fetch user info
+        emails = {e for e in [o.get('email'), o.get('seller_email'), o.get('rider_email')] if e}
+        user_map = {}
+        if emails:
+            usr_res = sb_admin.table('users') \
+                .select('email, first_name, last_name, business_name, phone') \
+                .in_('email', list(emails)).execute()
+            for u in (usr_res.data or []):
+                fn  = (u.get('first_name')    or '').strip()
+                ln  = (u.get('last_name')     or '').strip()
+                biz = (u.get('business_name') or '').strip()
+                user_map[u['email']] = {
+                    'name':  biz or f'{fn} {ln}'.strip() or u['email'],
+                    'phone': (u.get('phone') or 'N/A').strip(),
+                }
+
+        def _name(e):  return user_map.get(e, {}).get('name',  e or 'Unknown')
+        def _phone(e): return user_map.get(e, {}).get('phone', 'N/A')
+
+        def _fmt_dt(val):
+            if not val: return None
+            try: return str(_dt.fromisoformat(str(val).replace('Z','+00:00').replace('+00:00','')))[:19].replace('T',' ')
+            except: return str(val)[:19]
+
+        total_amount = float(o.get('total_price') or 0)
+        quantity     = int(o.get('quantity') or 1)
+        unit_price   = total_amount / quantity if quantity > 0 else total_amount
+
+        return jsonify({
+            'order_id':        o['id'],
+            'order_date':      _fmt_dt(o.get('date')),
+            'status':          o.get('status', ''),
+            'delivered_at':    _fmt_dt(o.get('delivered_at')),
+            'received_at':     _fmt_dt(o.get('received_at')),
+            'auto_complete_at':_fmt_dt(o.get('auto_complete_at')),
+            'is_auto_completed': bool(o.get('is_auto_completed')),
+            'buyer_name':      _name(o.get('email', '')),
+            'buyer_email':     o.get('email', 'N/A'),
+            'buyer_phone':     _phone(o.get('email', '')),
+            'delivery_address':o.get('address', 'N/A'),
+            'seller_name':     _name(o.get('seller_email', '')),
+            'seller_email':    o.get('seller_email', 'N/A'),
+            'seller_phone':    _phone(o.get('seller_email', '')),
+            'total_amount':    f"{total_amount:.2f}",
+            'payment_method':  o.get('payment_method', 'N/A'),
+            'rider_name':      _name(o.get('rider_email', '')) if o.get('rider_email') else 'Not Assigned',
+            'rider_email':     o.get('rider_email', 'N/A'),
+            'rider_phone':     _phone(o.get('rider_email', '')) if o.get('rider_email') else 'N/A',
+            'items': [{
+                'product_name': o.get('name', 'N/A'),
+                'quantity':     quantity,
+                'price':        f"{unit_price:.2f}",
+                'subtotal':     f"{total_amount:.2f}",
+                'variations':   o.get('variations', 'N/A'),
+                'size':         o.get('size', 'N/A'),
+            }],
+        })
+    except Exception as e:
+        print(f"admin_get_order_details error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 @app.route('/admin/order/update-status', methods=['POST'])
 def admin_update_order_status():
     """Update order status"""

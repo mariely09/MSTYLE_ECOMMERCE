@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/MStyle Logos/MStyle_logo1.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Checkout</title>
@@ -42,12 +43,10 @@
                     <div class="item-image-container">
                         {% set selected_color = item.variations.split(',')[0].strip() if item.variations else '' %}
                         {% if item.image %}
-                        <img src="{{ item.image|product_img }}"
+                        <img src="{{ item.image if (item.image.startswith('http') or item.image.startswith('/')) else item.image|product_img }}"
                             alt="{{ item.name }}" class="product-image"
-                            data-all-images="{{ item.all_product_images or item.image }}"
-                            data-selected-color="{{ selected_color }}" id="checkout-image-{{ item.id }}"
-                            style="border: 2px solid var(--secondary-color, #d4af37); border-radius: 8px;"
-                            title="{{ selected_color + ' variant' if selected_color else item.name }}"
+                            style="border: 2px solid var(--secondary-color, #d4af37); border-radius: 8px; width: 80px; height: 80px; object-fit: cover;"
+                            title="{{ item.variations + ' variant' if item.variations else item.name }}"
                             onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
                         {% else %}
                         <div class="product-image-placeholder" id="checkout-image-{{ item.id }}">
@@ -259,12 +258,7 @@
         document.addEventListener('DOMContentLoaded', function () {
             calculateTotalPrice();
 
-            // Set product images with a small delay to ensure DOM is ready
-            setTimeout(() => {
-                console.log('✅ Checkout page initialized - images pre-processed by server!');
-                setProductImages();
-                validateImageColorMatching();
-            }, 100);
+            // Images are already resolved server-side via image_colors mapping — no JS override needed
         });
 
 

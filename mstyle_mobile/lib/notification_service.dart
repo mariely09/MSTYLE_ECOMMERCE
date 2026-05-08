@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
@@ -8,6 +9,7 @@ class NotificationService {
   static const _oneSignalAppId = 'd340ecba-5d1c-4864-a4b9-5895e0cf5a85';
 
   static Future<void> init() async {
+    if (kIsWeb) return; // not supported on web
     if (_initialized) return;
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
@@ -21,6 +23,7 @@ class NotificationService {
   }
 
   static Future<void> setupOneSignal() async {
+    if (kIsWeb) return; // not supported on web
     await init();
 
     OneSignal.initialize(_oneSignalAppId);
@@ -38,6 +41,7 @@ class NotificationService {
   }
 
   static Future<String?> getPlayerId() async {
+    if (kIsWeb) return null;
     return OneSignal.User.pushSubscription.id;
   }
 
@@ -46,6 +50,7 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
+    if (kIsWeb) return;
     await init();
     const details = NotificationDetails(
       android: AndroidNotificationDetails(

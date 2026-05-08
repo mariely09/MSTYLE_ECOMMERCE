@@ -326,7 +326,7 @@ class BuyerService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
-  /// Place a new order directly via Supabase service role (no Flask needed)
+  /// Place a new order via Flask API (handles stock decrement server-side)
   static Future<void> placeOrder({
     required String email,
     required String name,
@@ -355,108 +355,40 @@ class BuyerService {
       } catch (_) {}
     }
 
-    final now = DateTime.now().toUtc().toIso8601String();
-    final orderRow = {
-      'email':          email,
-      'name':           name,
-      'product_id':     productId > 0 ? productId : null,
-      'total_price':    totalPrice,
-      'quantity':       quantity,
-      'address':        address,
-      'seller_email':   resolvedSellerEmail,
-      'payment_method': paymentMethod,
-      'status':         'Pending',
-      'variations':     color ?? '',
-      'size':           size ?? '',
-      'image':          image ?? '',
-      'shipping_fee':   shippingFee,
-      'date':           now,
-    };
+    final unitPrice = (totalPrice - shippingFee) / quantity;
+    final uri = Uri.parse('$kFlaskBaseUrl/api/mobile/place_order');
+    final response = await _http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email':          email,
+        'payment_method': paymentMethod,
+        'address':        address,
+        'items': [
+          {
+            'name':         name,
+            'product_id':   productId > 0 ? productId : null,
+            'price':        unitPrice,
+            'quantity':     quantity,
+            'color':        color ?? '',
+            'size':         size ?? '',
+            'image':        image ?? '',
+            'seller_email': resolvedSellerEmail,
+            'shipping_fee': shippingFee,
+          }
+        ],
+      }),
+    ).timeout(const Duration(seconds: 30));
 
-    // Insert using service role to bypass RLS
-    final uri = Uri.parse('$supabaseUrl/rest/v1/orders');
-    final resp = await http.post(uri,
-      headers: {
-        'apikey':        supabaseServiceRole,
-        'Authorization': 'Bearer $supabaseServiceRole',
-        'Content-Type':  'application/json',
-        'Prefer':        'return=representation',
-      },
-      body: jsonEncode(orderRow),
-    );
-    if (resp.statusCode != 200 && resp.statusCode != 201) {
-      throw Exception('Failed to place order (${resp.statusCode}): ${resp.body}');
+    // If Flask is unreachable, fall back to direct Supabase insert (no stock decrement)
+    if (response.statusCode == 0) {
+      throw Exception('Cannot reach server. Please check your connection.');
     }
 
-    final inserted = jsonDecode(resp.body);
-    final orderId = inserted is List && inserted.isNotEmpty
-        ? inserted[0]['id'] : null;
-
-    // Decrement variant stock (best-effort)
-    if (productId > 0 && (color?.isNotEmpty == true || size?.isNotEmpty == true)) {
-      try {
-        final vi = await supabaseAdminSelect(
-          table: 'variant_inventory',
-          select: 'id, stock_quantity',
-          filters: {
-            'product_id': '$productId',
-            'color': color ?? '',
-            'size': size ?? '',
-          },
-          limit: 1,
-        );
-        if (vi.isNotEmpty) {
-          final newStock = ((vi[0]['stock_quantity'] as int? ?? 0) - quantity).clamp(0, 999999);
-          final viUri = Uri.parse('$supabaseUrl/rest/v1/variant_inventory?id=eq.${vi[0]['id']}');
-          await http.patch(viUri,
-            headers: {
-              'apikey': supabaseServiceRole,
-              'Authorization': 'Bearer $supabaseServiceRole',
-              'Content-Type': 'application/json',
-              'Prefer': 'return=minimal',
-            },
-            body: jsonEncode({'stock_quantity': newStock}),
-          );
-        }
-      } catch (_) {}
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || body['success'] != true) {
+      throw Exception(body['error'] ?? 'Failed to place order (${response.statusCode})');
     }
-
-    // Update product quantity + sold (best-effort)
-    if (productId > 0) {
-      try {
-        final pr = await supabaseAdminSelect(
-          table: 'products', select: 'quantity, sold',
-          filters: {'id': '$productId'}, limit: 1,
-        );
-        if (pr.isNotEmpty) {
-          final newQty  = ((pr[0]['quantity'] as int? ?? 0) - quantity).clamp(0, 999999);
-          final newSold = (pr[0]['sold'] as int? ?? 0) + quantity;
-          final pUri = Uri.parse('$supabaseUrl/rest/v1/products?id=eq.$productId');
-          await http.patch(pUri,
-            headers: {
-              'apikey': supabaseServiceRole,
-              'Authorization': 'Bearer $supabaseServiceRole',
-              'Content-Type': 'application/json',
-              'Prefer': 'return=minimal',
-            },
-            body: jsonEncode({'quantity': newQty, 'sold': newSold}),
-          );
-        }
-      } catch (_) {}
-    }
-
-    // Remove from cart (best-effort)
-    try {
-      await supabaseAdminDelete(
-        table: 'cart',
-        filters: {
-          'email': email,
-          'product_id': '$productId',
-          'variations': color ?? '',
-          'size': size ?? '',
-        },
-      );
-    } catch (_) {}
   }
 
   /// Cancel an order
@@ -796,12 +728,53 @@ class BuyerService {
       final list = List<Map<String, dynamic>>.from(res as List);
 
       // Client-side filter: exclude flagged and inactive products
-      return list.where((p) {
+      final filtered = list.where((p) {
         if (p['is_active'] == false) return false;
         final flaggedAt = p['flagged_at'];
         if (flaggedAt != null && flaggedAt.toString().isNotEmpty) return false;
         return true;
       }).toList();
+
+      // Compute live average ratings from the reviews table
+      if (filtered.isNotEmpty) {
+        try {
+          final productIds = filtered.map((p) => p['id']).whereType<int>().toList();
+          if (productIds.isNotEmpty) {
+            final reviewsRes = await supabase
+                .from('reviews')
+                .select('product_id, rating')
+                .inFilter('product_id', productIds);
+
+            // Build rating map: productId → list of ratings
+            final ratingMap = <int, List<double>>{};
+            for (final r in (reviewsRes as List)) {
+              final pid = r['product_id'] as int?;
+              final rat = (r['rating'] as num?)?.toDouble();
+              if (pid != null && rat != null) {
+                ratingMap.putIfAbsent(pid, () => []).add(rat);
+              }
+            }
+
+            // Attach computed average to each product
+            for (final p in filtered) {
+              final pid = p['id'] as int?;
+              if (pid == null) continue;
+              final ratings = ratingMap[pid];
+              if (ratings != null && ratings.isNotEmpty) {
+                final avg = ratings.reduce((a, b) => a + b) / ratings.length;
+                p['rating'] = double.parse(avg.toStringAsFixed(1));
+                p['review_count'] = ratings.length;
+              } else {
+                p['review_count'] = 0;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('BuyerService.getProducts rating fetch error: $e');
+        }
+      }
+
+      return filtered;
     } catch (e) {
       debugPrint('BuyerService.getProducts error: $e');
       return [];
@@ -840,7 +813,7 @@ class BuyerService {
     try {
       final reviewsRes = await supabase
           .from('reviews')
-          .select('rating, review_text, customer_email, created_at')
+          .select('rating, review_text, customer_email, created_at, seller_response')
           .eq('product_id', productId)
           .order('created_at', ascending: false);
       productData['reviews'] = reviewsRes;

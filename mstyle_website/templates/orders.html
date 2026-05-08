@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/MStyle Logos/MStyle_logo1.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Orders</title>
@@ -58,7 +59,7 @@
 
         {% if orders %}
         {% for order in orders %}
-        <div class="order-card" data-status="{{ order.status|lower }}">
+        <div class="order-card" data-order-id="{{ order.id }}" data-status="{{ order.status|lower }}">
             <!-- ── Top: image + details ── -->
             <div class="order-main">
                 <!-- Product image with status dot -->
@@ -1117,7 +1118,51 @@
     </script>
     <script src="{{ url_for('static', filename='js/logout.js') }}"></script>
 
-    
+    <script>
+    // ── Auto-sync: poll buyer order statuses every 20 seconds ────────────────
+    (function initBuyerOrderPolling() {
+      const knownStatuses = {};
+
+      // Initialise from current DOM — each order card has data-order-id and data-status
+      document.querySelectorAll('.order-card[data-order-id]').forEach(card => {
+        const id = card.dataset.orderId;
+        const status = card.dataset.status;
+        if (id && status) knownStatuses[id] = status.toLowerCase();
+      });
+
+      async function pollBuyerStatuses() {
+        try {
+          const resp = await fetch('/api/orders/buyer-statuses', { credentials: 'same-origin' });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          if (!data.success || !Array.isArray(data.orders)) return;
+
+          let anyChanged = false;
+          data.orders.forEach(({ id, status }) => {
+            const sid = String(id);
+            if (knownStatuses[sid] !== undefined &&
+                knownStatuses[sid] !== status.toLowerCase()) {
+              anyChanged = true;
+            }
+            knownStatuses[sid] = status.toLowerCase();
+          });
+
+          if (anyChanged) {
+            console.log('🔄 Order status changed — reloading orders page');
+            window.location.reload();
+          }
+        } catch (e) {
+          // Silent fail
+        }
+      }
+
+      setTimeout(() => {
+        pollBuyerStatuses();
+        setInterval(pollBuyerStatuses, 20000); // every 20 s
+      }, 3000);
+    })();
+    </script>
+
     {% include 'buyer_rider_chat.html' %}
     {% include 'buyer_seller_chat_order.html' %}
 </body>

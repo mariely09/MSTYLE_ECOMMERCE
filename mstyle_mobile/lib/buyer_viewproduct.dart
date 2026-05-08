@@ -150,6 +150,7 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
         date: r['created_at'] != null
             ? DateTime.parse(r['created_at']).toLocal().toString().split(' ')[0]
             : '',
+        sellerResponse: r['seller_response'] as String?,
       )).toList();
 
       // Average rating from actual reviews if available, else use stored rating

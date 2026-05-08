@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/MStyle Logos/MStyle_logo1.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order History</title>
@@ -110,8 +111,9 @@
                                 </td>
                                 <td>
                                     <div class="product-info">
-                                        <img src="{{ url_for('static', filename='images/uploads/' + order.image) }}"
-                                            alt="{{ order.name }}" class="product-image">
+                                        <img src="{{ order.image|product_img }}"
+                                            alt="{{ order.name }}" class="product-image"
+                                            onerror="this.onerror=null;this.src='/static/images/placeholder.png'">
                                         <div class="product-name">{{ order.name }}</div>
                                     </div>
                                 </td>

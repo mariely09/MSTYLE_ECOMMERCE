@@ -225,7 +225,19 @@ class _ProductCardState extends State<ProductCard> {
                 s < rating.floor() ? Icons.star : (s < rating ? Icons.star_half : Icons.star_border),
                 color: kGold, size: 11)),
               const SizedBox(width: 4),
-              Text('(${rating.toStringAsFixed(1)})', style: const TextStyle(color: kTextLight, fontSize: 10)),
+              Builder(builder: (_) {
+                final reviewCount = (widget.product['review_count'] as num?)?.toInt();
+                if (reviewCount != null && reviewCount > 0) {
+                  return Text('${rating.toStringAsFixed(1)} ($reviewCount)',
+                    style: const TextStyle(color: kTextLight, fontSize: 10));
+                }
+                if (rating > 0) {
+                  return Text(rating.toStringAsFixed(1),
+                    style: const TextStyle(color: kTextLight, fontSize: 10));
+                }
+                return const Text('No reviews',
+                  style: TextStyle(color: kTextLight, fontSize: 10));
+              }),
               const Spacer(),
               Text('$sold sold', style: const TextStyle(color: kTextLight, fontSize: 10)),
             ]),

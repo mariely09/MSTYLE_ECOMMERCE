@@ -1402,3 +1402,66 @@ function contactRider() {
     );
 }
 
+
+// ── Auto-sync: poll order statuses every 20 seconds ──────────────────────────
+(function initSellerOrderPolling() {
+  // Map of status → badge CSS class (mirrors the template's status classes)
+  const statusClassMap = {
+    'pending':           'status-pending',
+    'confirmed':         'status-confirmed',
+    'preparing':         'status-preparing',
+    'waiting for pickup':'status-waiting-for-pickup',
+    'for pickup':        'status-for-pickup',
+    'heading to seller': 'status-heading-to-seller',
+    'shipped':           'status-shipped',
+    'in transit':        'status-in-transit',
+    'out for delivery':  'status-out-for-delivery',
+    'delivered':         'status-delivered',
+    'completed':         'status-completed',
+    'rejected':          'status-rejected',
+    'cancelled':         'status-cancelled',
+  };
+
+  // Track last-known statuses so we only update DOM on actual changes
+  const knownStatuses = {};
+
+  // Initialise from current DOM
+  document.querySelectorAll('tr[data-order-id], .order-card[data-order-id]').forEach(el => {
+    const id = el.dataset.orderId;
+    const status = el.dataset.status;
+    if (id && status) knownStatuses[id] = status.toLowerCase();
+  });
+
+  async function pollSellerStatuses() {
+    try {
+      const resp = await fetch('/api/orders/seller-statuses', { credentials: 'same-origin' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.success || !Array.isArray(data.orders)) return;
+
+      let anyChanged = false;
+      data.orders.forEach(({ id, status }) => {
+        const sid = String(id);
+        if (knownStatuses[sid] && knownStatuses[sid].toLowerCase() !== status.toLowerCase()) {
+          anyChanged = true;
+        }
+        knownStatuses[sid] = status;
+      });
+
+      // If any status changed, reload the page so the full order card re-renders
+      // (avoids complex DOM surgery for action buttons, status chips, etc.)
+      if (anyChanged) {
+        console.log('🔄 Order status changed — reloading order list');
+        window.location.reload();
+      }
+    } catch (e) {
+      // Silent fail — polling is best-effort
+    }
+  }
+
+  // Start polling after a short delay so the page finishes loading first
+  setTimeout(() => {
+    pollSellerStatuses();
+    setInterval(pollSellerStatuses, 20000); // every 20 s
+  }, 3000);
+})();

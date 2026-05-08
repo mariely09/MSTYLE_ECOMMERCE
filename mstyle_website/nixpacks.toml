@@ -5,4 +5,4 @@ nixPkgs = ["python311", "gcc", "freetype", "libpng", "pkg-config"]
 cmds = ["pip install -r requirements.txt"]
 
 [start]
-cmd = "gunicorn mstyle:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 120"
+cmd = "gunicorn mstyle:app --bind 0.0.0.0:5000 --workers 2 --timeout 120"

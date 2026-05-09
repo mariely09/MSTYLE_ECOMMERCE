@@ -5627,12 +5627,18 @@ def orders_list():
             o.setdefault('discount_amount', 0)
             o.setdefault('discount_percentage', 0)
 
-            # Date � keep as string for template (already formatted or ISO)
+            # Date - format to readable PHT (UTC+8)
             raw_date = o.get('date')
             if raw_date:
                 try:
-                    dt = _dt.datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
-                    o['date'] = dt.strftime('%Y-%m-%d %H:%M')
+                    from datetime import datetime as _datetime, timezone, timedelta
+                    dt = _datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
+                    pht = timezone(timedelta(hours=8))
+                    if dt.tzinfo is not None:
+                        dt = dt.astimezone(pht)
+                    else:
+                        dt = dt.replace(tzinfo=timezone.utc).astimezone(pht)
+                    o['date'] = dt.strftime('%b %d, %Y %I:%M %p')
                 except Exception:
                     o['date'] = str(raw_date)[:16]
             else:

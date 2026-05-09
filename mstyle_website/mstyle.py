@@ -3574,17 +3574,47 @@ def products():
             p['price'] = float(p.get('price') or 0)
             p['quantity'] = int(p.get('quantity') or 0)
             p['sold'] = int(p.get('sold') or 0)
+            p['low_stock_threshold'] = int(p.get('low_stock_threshold') or 5)
+            p['review_count'] = 0
+            if not p.get('rating'):
+                p['rating'] = 0
+
+        # Get distinct categories for filter dropdown
+        all_cats_res = sb_admin.table('products').select('category').eq('seller_email', seller_email).execute()
+        categories = sorted({p['category'] for p in (all_cats_res.data or []) if p.get('category')})
+
     except Exception as e:
         print(f"products route error: {e}")
         seller_products = []
+        categories = []
+
+    # Pagination
+    page_num = request.args.get('page', 1, type=int)
+    per_page = 12
+    total_products = len(seller_products)
+    total_pages = max(1, (total_products + per_page - 1) // per_page)
+    page_num = max(1, min(page_num, total_pages))
+    offset = (page_num - 1) * per_page
+    paged_products = seller_products[offset:offset + per_page]
+
+    # Pagination window
+    start_page = max(1, page_num - 2)
+    end_page   = min(total_pages, page_num + 2)
 
     return render_template('products.html',
-                           products=seller_products,
+                           products=paged_products,
                            user_name=seller_name,
                            user_email=seller_email,
                            search=search,
                            category=category,
-                           status=status)
+                           selected_category=category,
+                           status=status,
+                           categories=categories,
+                           page=page_num,
+                           total_pages=total_pages,
+                           total_products=total_products,
+                           start_page=start_page,
+                           end_page=end_page)
 
 
 @app.route('/variant_inventory')

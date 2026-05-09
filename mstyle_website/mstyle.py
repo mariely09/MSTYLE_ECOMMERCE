@@ -5710,7 +5710,7 @@ def seller_order_history():
                 order['total_price'] = 0.0
 
             # Format date — use the most accurate timestamp for the order status
-            from datetime import datetime, timezone
+            from datetime import datetime, timezone, timedelta
 
             def _fmt_dt(raw):
                 if not raw:
@@ -5720,14 +5720,16 @@ def seller_order_history():
                         dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                     else:
                         dt = raw
-                    # Convert UTC to Philippine Time (UTC+8)
-                    from datetime import timedelta
-                    pht_offset = timedelta(hours=8)
+                    # Convert to Philippine Time (UTC+8)
+                    pht = timezone(timedelta(hours=8))
                     if dt.tzinfo is not None:
-                        dt = dt.utctimetuple()
-                        dt = datetime(*dt[:6]) + pht_offset
+                        dt = dt.astimezone(pht)
+                    else:
+                        # Assume UTC if no timezone info
+                        dt = dt.replace(tzinfo=timezone.utc).astimezone(pht)
                     return dt.strftime('%b %d, %Y %I:%M %p')
-                except Exception:
+                except Exception as e:
+                    print(f"_fmt_dt error for {raw!r}: {e}")
                     return str(raw)[:16]
 
             status_lower = (order.get('status') or '').lower()

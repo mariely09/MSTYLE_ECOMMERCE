@@ -9,6 +9,8 @@ import 'profile.dart';
 import 'buyer_notifications.dart';
 import 'buyer_service.dart';
 import 'product_image_carousel.dart';
+import 'buyer_viewproduct.dart';
+import 'buyer_view_shop.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -232,14 +234,17 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
 
   Widget _cartItemTile(Map<String, dynamic> item) {
     final selected = item['_selected'] == true;
-    final name     = item['name'] as String? ?? '';
-    final price    = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
-    final color    = item['variations'] as String?;
-    final size     = item['size'] as String?;
-    final qty      = item['quantity'] as int? ?? 1;
-    final imageRaw = item['image'] as String?;
-    final pid      = item['product_id'];
-    final imageUrl = imageRaw != null && imageRaw.trim().isNotEmpty
+    final name       = item['name'] as String? ?? '';
+    final price      = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
+    final color      = item['variations'] as String?;
+    final size       = item['size'] as String?;
+    final qty        = item['quantity'] as int? ?? 1;
+    final imageRaw   = item['image'] as String?;
+    final pid        = item['product_id'];
+    final sellerEmail = item['seller_email'] as String? ?? '';
+    final sellerName  = item['seller_name'] as String? ?? sellerEmail;
+    final productId  = pid is int ? pid : int.tryParse('$pid');
+    final imageUrl   = imageRaw != null && imageRaw.trim().isNotEmpty
         ? buildImageUrl(imageRaw.split(',').first.trim())
         : null;
 
@@ -268,18 +273,59 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
             ),
           ),
           const SizedBox(width: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: imageUrl != null
-                ? Image.network(imageUrl, width: 72, height: 72, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _imagePlaceholder())
-                : _imagePlaceholder(),
+          // ── Clickable product image ──────────────────────────────────
+          GestureDetector(
+            onTap: productId != null
+                ? () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => BuyerViewProductPage(
+                      userEmail: widget.userEmail,
+                      productId: productId,
+                    )))
+                : null,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: imageUrl != null
+                  ? Image.network(imageUrl, width: 72, height: 72, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _imagePlaceholder())
+                  : _imagePlaceholder(),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name, style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 14),
-                maxLines: 2, overflow: TextOverflow.ellipsis),
+              // ── Seller name (clickable) ────────────────────────────────
+              if (sellerEmail.isNotEmpty)
+                GestureDetector(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => BuyerViewShopPage(
+                        userEmail: widget.userEmail,
+                        sellerEmail: sellerEmail,
+                      ))),
+                  child: Text(
+                    sellerName,
+                    style: const TextStyle(
+                      color: _textLight,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              if (sellerEmail.isNotEmpty) const SizedBox(height: 2),
+              // ── Clickable product name ─────────────────────────────────
+              GestureDetector(
+                onTap: productId != null
+                    ? () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => BuyerViewProductPage(
+                          userEmail: widget.userEmail,
+                          productId: productId,
+                        )))
+                    : null,
+                child: Text(name,
+                  style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 14),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
               const SizedBox(height: 4),
               Text('₱${price.toStringAsFixed(2)}',
                 style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
@@ -302,7 +348,7 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
               const SizedBox(height: 10),
               _CartQtyRow(
                 itemId: item['id'] as int,
-                productId: pid is int ? pid : int.tryParse('$pid'),
+                productId: productId,
                 color: color ?? '',
                 size: size ?? '',
                 initialQty: qty,

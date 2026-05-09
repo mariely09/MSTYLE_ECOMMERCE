@@ -24,29 +24,69 @@ class BuyerService {
       final items = List<Map<String, dynamic>>.from(res as List);
       debugPrint('getCartItems: found ${items.length} items for $email');
 
-      // For each item, fetch the product's image_colors to find the color-specific image
-      for (final item in items) {
-        final pid = item['product_id'];
-        final selectedColor = (item['variations'] as String? ?? '').trim();
-        if (pid != null && selectedColor.isNotEmpty) {
-          try {
-            final prodRes = await supabase
-                .from('products')
-                .select('image, image_colors')
-                .eq('id', pid)
-                .limit(1);
-            if ((prodRes as List).isNotEmpty) {
-              final prod = prodRes[0];
-              final colorImg = parseColorImages(
-                prod['image_colors'] as String?,
-                prod['image'] as String?,
-              )[selectedColor.toLowerCase()];
-              if (colorImg != null && colorImg.isNotEmpty) {
-                item['image'] = colorImg; // override with color-specific image
+      // Batch-fetch product image_colors for color-specific images
+      final productIds = items.map((i) => i['product_id']).whereType<int>().toSet().toList();
+      if (productIds.isNotEmpty) {
+        try {
+          final prodRes = await supabase
+              .from('products')
+              .select('id, image, image_colors')
+              .inFilter('id', productIds);
+          final prodMap = <int, Map<String, dynamic>>{};
+          for (final p in (prodRes as List)) {
+            prodMap[p['id'] as int] = p as Map<String, dynamic>;
+          }
+          for (final item in items) {
+            final pid = item['product_id'] as int?;
+            final selectedColor = (item['variations'] as String? ?? '').trim();
+            if (pid != null && selectedColor.isNotEmpty) {
+              final prod = prodMap[pid];
+              if (prod != null) {
+                final colorImg = parseColorImages(
+                  prod['image_colors'] as String?,
+                  prod['image'] as String?,
+                )[selectedColor.toLowerCase()];
+                if (colorImg != null && colorImg.isNotEmpty) {
+                  item['image'] = colorImg;
+                }
               }
             }
-          } catch (_) { /* keep original image */ }
-        }
+          }
+        } catch (_) { /* keep original images */ }
+      }
+
+      // Batch-fetch seller names (business_name) for all unique seller emails
+      final sellerEmails = items
+          .map((i) => i['seller_email'] as String?)
+          .whereType<String>()
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+      if (sellerEmails.isNotEmpty) {
+        try {
+          final sellerRes = await supabase
+              .from('users')
+              .select('email, business_name, first_name, last_name')
+              .inFilter('email', sellerEmails);
+          final sellerMap = <String, String>{};
+          for (final s in (sellerRes as List)) {
+            final email = s['email'] as String? ?? '';
+            final biz   = (s['business_name'] as String? ?? '').trim();
+            final first = (s['first_name']    as String? ?? '').trim();
+            final last  = (s['last_name']     as String? ?? '').trim();
+            sellerMap[email] = biz.isNotEmpty
+                ? biz
+                : '$first $last'.trim().isNotEmpty
+                    ? '$first $last'.trim()
+                    : email;
+          }
+          for (final item in items) {
+            final se = item['seller_email'] as String? ?? '';
+            if (se.isNotEmpty && sellerMap.containsKey(se)) {
+              item['seller_name'] = sellerMap[se];
+            }
+          }
+        } catch (_) { /* seller_name stays null */ }
       }
 
       return items;

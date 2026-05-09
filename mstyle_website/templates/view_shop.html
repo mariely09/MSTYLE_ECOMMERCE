@@ -15,6 +15,17 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
     <script src="{{ url_for('static', filename='js/logout.js') }}"></script>
+    <style>
+        .seller-name-link {
+            color: inherit;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .seller-name-link:hover {
+            color: #d4af37;
+            text-decoration: underline;
+        }
+    </style>
 </head>
 
 <body>
@@ -39,7 +50,9 @@
                         </div>
                     </div>
                     <div class="seller-details">
-                        <h1 class="seller-name">{{ seller_name }}</h1>
+                        <h1 class="seller-name">
+                            <a href="{{ url_for('view_shop', seller_email=seller_email) }}" class="seller-name-link">{{ seller_name }}</a>
+                        </h1>
                         <p class="seller-tagline">Official Store</p>
                     </div>
                 </div>

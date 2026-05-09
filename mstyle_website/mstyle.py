@@ -9921,6 +9921,48 @@ def update_address():
     except Exception as e:
         return jsonify({'success': False, 'error': f'An error occurred: {str(e)}'}), 500
 
+
+@app.route('/api/product/<int:product_id>/variant-stock')
+def get_product_variant_stock(product_id):
+    """API: get variant inventory stock for a product (used by view_product page)."""
+    try:
+        vi_res = sb_admin.table('variant_inventory') \
+            .select('color, size, stock_quantity, low_stock_threshold') \
+            .eq('product_id', product_id) \
+            .execute()
+        variants = vi_res.data or []
+
+        # If no variant_inventory rows, fall back to product.quantity
+        if not variants:
+            prod_res = sb_admin.table('products').select('quantity, variations, sizes').eq('id', product_id).limit(1).execute()
+            if prod_res.data:
+                p = prod_res.data[0]
+                total_qty = int(p.get('quantity') or 0)
+                colors = [c.strip() for c in (p.get('variations') or '').split(',') if c.strip()]
+                sizes  = [s.strip() for s in (p.get('sizes') or '').split(',') if s.strip()]
+                # Create synthetic variants so the UI doesn't show everything as out of stock
+                for color in colors:
+                    for size in sizes:
+                        variants.append({
+                            'color': color,
+                            'size': size,
+                            'stock_quantity': total_qty,
+                            'low_stock_threshold': 5,
+                        })
+                if not colors and not sizes:
+                    variants.append({
+                        'color': '',
+                        'size': '',
+                        'stock_quantity': total_qty,
+                        'low_stock_threshold': 5,
+                    })
+
+        return jsonify({'success': True, 'variants': variants})
+    except Exception as e:
+        print(f"get_product_variant_stock error: {e}")
+        return jsonify({'success': False, 'error': str(e), 'variants': []}), 500
+
+
 @app.route('/api/product/<int:product_id>')
 def get_product_details(product_id):
     """API: product details for modal — Supabase"""

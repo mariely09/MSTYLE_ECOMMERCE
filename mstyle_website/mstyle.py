@@ -5629,6 +5629,7 @@ def orders_list():
 
             # Date - format to readable PHT (UTC+8)
             raw_date = o.get('date')
+            print(f"[orders_list] order {o.get('id')} raw date: {raw_date!r}")
             if raw_date:
                 try:
                     from datetime import datetime as _datetime, timezone, timedelta

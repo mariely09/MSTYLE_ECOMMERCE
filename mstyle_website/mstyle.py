@@ -7801,16 +7801,53 @@ def cart():
     try:
         res = sb_admin.table('cart').select('id, name, price, quantity, variations, size, image, seller_email, product_id').eq('email', user_email).order('id', desc=True).execute()
         raw_items = res.data or []
+
+        # Batch-fetch product images for color matching
+        product_ids = list({item.get('product_id') for item in raw_items if item.get('product_id')})
+        prod_img_map = {}
+        if product_ids:
+            try:
+                pr = sb_admin.table('products').select('id, image, image_colors').in_('id', product_ids).execute()
+                for p in (pr.data or []):
+                    prod_img_map[p['id']] = {'image': p.get('image',''), 'image_colors': p.get('image_colors','')}
+            except Exception:
+                pass
+
         for item in raw_items:
             cart_image = (item.get('image') or '').strip()
+            pid = item.get('product_id')
+            selected_color = (item.get('variations') or '').strip().lower()
+
+            # Resolve color-matched image
+            first_image_url = ''
+            if cart_image.startswith('http://') or cart_image.startswith('https://'):
+                first_image_url = cart_image
+            elif pid and pid in prod_img_map:
+                prod = prod_img_map[pid]
+                color_map = _parse_image_colors_dict(prod.get('image_colors',''), prod.get('image',''))
+                matched = color_map.get(selected_color) if selected_color else None
+                if not matched and selected_color:
+                    for k, v in color_map.items():
+                        if selected_color in k or k in selected_color:
+                            matched = v; break
+                if matched:
+                    first_image_url = matched if matched.startswith('http') else f"https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/{matched.split('/')[-1]}"
+                elif prod.get('image'):
+                    first_img = prod['image'].split(',')[0].strip()
+                    first_image_url = first_img if first_img.startswith('http') else f"https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/{first_img.split('/')[-1]}"
+            elif cart_image:
+                first_image_url = f"https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/{cart_image.split('/')[-1]}"
+
             cart_items.append({
                 'id': item['id'], 'name': item.get('name',''),
                 'price': float(item.get('price') or 0),
                 'quantity': int(item.get('quantity') or 1),
                 'variations': item.get('variations',''), 'size': item.get('size',''),
                 'image': cart_image, 'seller_email': item.get('seller_email',''),
-                'product_id': item.get('product_id'),
-                'image_url': cart_image if cart_image.startswith('http') else '',
+                'product_id': pid,
+                'image_url': first_image_url,
+                'first_image_url': first_image_url,
+                'all_images': prod_img_map.get(pid, {}).get('image', '') if pid else '',
             })
     except Exception as e:
         print(f"cart Supabase error: {e}")

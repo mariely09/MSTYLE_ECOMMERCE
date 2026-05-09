@@ -48,16 +48,23 @@
                             data-id="{{ item.id }}">
                     </div>
                     <div class="item-content">
+                        {% set view_url = url_for('view_product', product_id=item.product_id) if item.product_id else '#' %}
                         {% if item.first_image_url %}
+                        <a href="{{ view_url }}" title="View product">
                         <img src="{{ item.first_image_url }}"
                             alt="{{ item.name }}" class="item-image" id="item-image-{{ item.id }}"
                             data-all-images="{{ item.all_images or '' }}"
-                            data-selected-color="{{ item.variations or '' }}">
+                            data-selected-color="{{ item.variations or '' }}"
+                            style="cursor:pointer;">
+                        </a>
                         {% elif item.image %}
+                        <a href="{{ view_url }}" title="View product">
                         <img src="{{ item.image | product_img }}"
                             alt="{{ item.name }}" class="item-image" id="item-image-{{ item.id }}"
                             data-all-images="{{ item.all_images or '' }}"
-                            data-selected-color="{{ item.variations or '' }}">
+                            data-selected-color="{{ item.variations or '' }}"
+                            style="cursor:pointer;">
+                        </a>
                         {% else %}
                         <div class="item-image-placeholder" id="item-image-{{ item.id }}">
                             <i class="bi bi-image"></i>
@@ -65,7 +72,7 @@
                         </div>
                         {% endif %}
                         <div class="item-details">
-                            <h3 class="item-name">{{ item.name }}</h3>
+                            <h3 class="item-name"><a href="{{ view_url }}" style="color:inherit;text-decoration:none;">{{ item.name }}</a></h3>
                             <p class="item-price">₱{{ "%.2f"|format(item.price) }}</p>
                             {% if item.variations or item.size %}
                             <div class="item-specifications">

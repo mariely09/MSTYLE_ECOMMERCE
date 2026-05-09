@@ -45,7 +45,7 @@ def product_image_url(image_value):
     Convert a stored image value to a web-accessible URL.
     - Full URL (http/https): return as-is  [Supabase Storage]
     - Already a /static/ path: return as-is
-    - Plain filename: prepend /static/images/uploads/  [legacy local files]
+    - Plain filename: try Supabase Storage first, fallback to /static/images/uploads/
     - Empty/None: return empty string
     """
     if not image_value:
@@ -55,7 +55,9 @@ def product_image_url(image_value):
         return s
     if s.startswith('/'):
         return s  # already a rooted path like /static/images/uploads/...
-    return f'/static/images/uploads/{s}'
+    # Plain filename — serve from Supabase Storage
+    fname = s.split('/')[-1]
+    return f'https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/{fname}'
 
 app.jinja_env.filters['product_img'] = product_image_url
 app.jinja_env.globals['product_image_url'] = product_image_url

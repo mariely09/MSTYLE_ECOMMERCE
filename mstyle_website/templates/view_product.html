@@ -792,7 +792,9 @@
             if (!value) return '';
             const s = value.trim();
             if (s.startsWith('http://') || s.startsWith('https://')) return s;
-            return '/static/images/uploads/' + s;
+            // Plain filename — build Supabase Storage URL
+            const fname = s.split('/').pop();
+            return `https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/${fname}`;
         }
 
         function _updateDisplayImage(src, imageIndex) {

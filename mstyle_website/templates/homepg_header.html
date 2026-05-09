@@ -653,17 +653,16 @@
         cartItem.className = 'cart-item';
         cartItem.setAttribute('data-item-id', item.id);
 
-        // Construct image URL similar to cart template
-        let itemImage = '/static/images/cart-icon.svg'; // default fallback
+        // Construct image URL — use full Supabase URL if available
+        let itemImage = '';
         if (item.image_url) {
-            // If image_url is provided, construct the full path
             const imagePath = item.image_url.trim();
-            if (imagePath.startsWith('static/')) {
-                itemImage = `/${imagePath}`;
-            } else if (imagePath.startsWith('/')) {
+            if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
                 itemImage = imagePath;
-            } else {
-                itemImage = `/static/images/uploads/${imagePath}`;
+            } else if (imagePath) {
+                // Plain filename — build Supabase Storage URL
+                const fname = imagePath.split('/').pop();
+                itemImage = `https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/${fname}`;
             }
         }
         const itemPrice = parseFloat(item.price || 0);
@@ -672,7 +671,12 @@
 
         cartItem.innerHTML = `
             <div class="cart-item-image">
-                <img src="${itemImage}" alt="${item.name}" onerror="this.src='/static/images/cart-icon.svg'">
+                <img src="${itemImage}" alt="${item.name}" 
+                     style="width:50px;height:50px;object-fit:cover;border-radius:6px;"
+                     onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
+                <div style="display:none;width:50px;height:50px;background:#f0f0f0;border-radius:6px;align-items:center;justify-content:center;">
+                    <i class="bi bi-image" style="color:#adb5bd;"></i>
+                </div>
             </div>
             <div class="cart-item-content">
                 <div class="cart-item-name">${item.name || 'Unknown Product'}</div>

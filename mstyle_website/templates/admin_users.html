@@ -190,7 +190,7 @@
                             </td>
                             <td class="user-joined">
                                 {% if user.get('created_at') %}
-                                <span class="date">{{ user.created_at.strftime('%b %d, %Y') }}</span>
+                                <span class="date">{{ user.created_at[:10] }}</span>
                                 {% else %}
                                 <span class="no-date">Date not available</span>
                                 {% endif %}

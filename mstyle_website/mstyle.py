@@ -3668,6 +3668,84 @@ def add_product():
     return redirect(url_for('add_new_product'))
 
 
+@app.route('/api/seller/products-with-variants')
+def seller_products_with_variants():
+    """API: return seller's products with their variant inventory data."""
+    if 'email' not in session or session.get('user_type', '').lower() != 'seller':
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+    seller_email = session['email']
+    try:
+        # Fetch all products for this seller
+        prod_res = sb_admin.table('products').select(
+            'id, name, category, image, image_colors, variations, sizes, '
+            'price, quantity, sold, low_stock_threshold, is_active, seller_email'
+        ).eq('seller_email', seller_email).order('id', desc=True).execute()
+        products = prod_res.data or []
+
+        if not products:
+            return jsonify({'success': True, 'products': []})
+
+        product_ids = [p['id'] for p in products]
+
+        # Fetch variant inventory for all products
+        vi_res = sb_admin.table('variant_inventory').select(
+            'id, product_id, color, size, stock_quantity, low_stock_threshold'
+        ).in_('product_id', product_ids).execute()
+        all_variants = vi_res.data or []
+
+        # Group variants by product_id
+        from collections import defaultdict
+        variants_by_product = defaultdict(list)
+        for v in all_variants:
+            variants_by_product[v['product_id']].append({
+                'id':                 v['id'],
+                'color':              v.get('color', ''),
+                'size':               v.get('size', ''),
+                'stock_quantity':     int(v.get('stock_quantity') or 0),
+                'low_stock_threshold': int(v.get('low_stock_threshold') or 5),
+            })
+
+        # Build response
+        result = []
+        for p in products:
+            pid = p['id']
+            variants = variants_by_product.get(pid, [])
+            total_qty = sum(v['stock_quantity'] for v in variants) if variants else int(p.get('quantity') or 0)
+
+            # Parse colors and sizes from variations/sizes fields
+            colors = list({v['color'] for v in variants if v.get('color')})
+            sizes  = list({v['size']  for v in variants if v.get('size')})
+            if not colors and p.get('variations'):
+                colors = [c.strip() for c in p['variations'].split(',') if c.strip()]
+            if not sizes and p.get('sizes'):
+                sizes = [s.strip() for s in p['sizes'].split(',') if s.strip()]
+
+            result.append({
+                'id':                  pid,
+                'name':                p.get('name', ''),
+                'category':            p.get('category', ''),
+                'image':               p.get('image', ''),
+                'image_colors':        p.get('image_colors', ''),
+                'price':               float(p.get('price') or 0),
+                'quantity':            int(p.get('quantity') or 0),
+                'total_quantity':      total_qty,
+                'sold':                int(p.get('sold') or 0),
+                'low_stock_threshold': int(p.get('low_stock_threshold') or 5),
+                'is_active':           p.get('is_active', True),
+                'colors':              colors,
+                'sizes':               sizes,
+                'variants':            variants,
+            })
+
+        return jsonify({'success': True, 'products': result})
+
+    except Exception as e:
+        print(f"seller_products_with_variants error: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/seller_reviews')
 def seller_reviews():
     """Seller Reviews & Ratings page - powered by Supabase"""

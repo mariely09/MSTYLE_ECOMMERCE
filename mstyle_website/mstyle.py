@@ -10310,6 +10310,27 @@ def wishlist():
         if product_ids:
             prod_res = sb_admin.table('products').select('*').in_('id', product_ids).execute()
             wishlist_items = prod_res.data or []
+
+            # Batch-fetch ratings from reviews table
+            if wishlist_items:
+                rev_res = sb_admin.table('reviews').select('product_id, rating').in_('product_id', product_ids).execute()
+                from collections import defaultdict
+                rating_map = defaultdict(list)
+                for r in (rev_res.data or []):
+                    rating_map[r['product_id']].append(r['rating'])
+
+                for p in wishlist_items:
+                    ratings = rating_map.get(p['id'], [])
+                    if ratings:
+                        p['rating'] = round(sum(ratings) / len(ratings), 1)
+                        p['review_count'] = len(ratings)
+                    else:
+                        p['rating'] = p.get('rating') or 0
+                        p['review_count'] = 0
+                    # Normalize numeric fields
+                    p['price'] = float(p.get('price') or 0)
+                    p['quantity'] = int(p.get('quantity') or 0)
+                    p['sold'] = int(p.get('sold') or 0)
         promotional_products = get_promotional_products()
     except Exception as e:
         import traceback; traceback.print_exc()

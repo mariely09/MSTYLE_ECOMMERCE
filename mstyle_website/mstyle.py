@@ -1178,6 +1178,22 @@ def test_supabase():
                          #LOGIN RELATED ROUTES
 #----------------------------------------------------------------------
 
+
+@app.route('/debug-admin-users')
+def debug_admin_users():
+    """Debug: show raw Supabase users data"""
+    if session.get('user_type') != 'Admin':
+        return 'Admin only', 403
+    try:
+        res = sb_admin.table('users').select('*').limit(5).execute()
+        count = len(res.data or [])
+        cols = list(res.data[0].keys()) if res.data else []
+        return f"<pre>Count: {count}\nColumns: {cols}\n\nData:\n{res.data}</pre>"
+    except Exception as e:
+        import traceback
+        return f"<pre>Error: {e}\n{traceback.format_exc()}</pre>"
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':

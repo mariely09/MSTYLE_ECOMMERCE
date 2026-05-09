@@ -5679,7 +5679,7 @@ def seller_order_history():
     try:
         # Fetch completed + cancelled orders from Supabase
         res = sb_admin.table('orders') \
-            .select('id, name, quantity, date, total_price, shipping_fee, payment_method, status, email, address, seller_email, product_id, image, variations, size') \
+            .select('id, name, quantity, date, delivered_at, received_at, cancelled_at, total_price, shipping_fee, payment_method, status, email, address, seller_email, product_id, image, variations, size') \
             .eq('seller_email', seller_email) \
             .in_('status', ['Completed', 'Cancelled']) \
             .order('date', desc=True) \
@@ -5709,19 +5709,41 @@ def seller_order_history():
             except (ValueError, TypeError):
                 order['total_price'] = 0.0
 
-            # Format date to readable format
-            raw_date = order.get('date') or ''
-            if raw_date:
+            # Format date — use the most accurate timestamp for the order status
+            from datetime import datetime, timezone
+
+            def _fmt_dt(raw):
+                if not raw:
+                    return None
                 try:
-                    from datetime import datetime, timezone
-                    if isinstance(raw_date, str):
-                        dt = datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+                    if isinstance(raw, str):
+                        dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                     else:
-                        dt = raw_date
-                    # Convert to local-friendly format
-                    order['date'] = dt.strftime('%b %d, %Y %I:%M %p')
+                        dt = raw
+                    # Convert UTC to Philippine Time (UTC+8)
+                    from datetime import timedelta
+                    pht_offset = timedelta(hours=8)
+                    if dt.tzinfo is not None:
+                        dt = dt.utctimetuple()
+                        dt = datetime(*dt[:6]) + pht_offset
+                    return dt.strftime('%b %d, %Y %I:%M %p')
                 except Exception:
-                    order['date'] = str(raw_date)[:10]  # fallback: just the date part
+                    return str(raw)[:16]
+
+            status_lower = (order.get('status') or '').lower()
+            if status_lower == 'completed':
+                # Use received_at > delivered_at > date
+                display_date = _fmt_dt(order.get('received_at')) or \
+                               _fmt_dt(order.get('delivered_at')) or \
+                               _fmt_dt(order.get('date'))
+            elif status_lower == 'cancelled':
+                # Use cancelled_at > date
+                display_date = _fmt_dt(order.get('cancelled_at')) or \
+                               _fmt_dt(order.get('date'))
+            else:
+                display_date = _fmt_dt(order.get('date'))
+
+            order['date'] = display_date or 'N/A'
 
             order['original_price']      = order['total_price']
             order['promotion_type']      = ''

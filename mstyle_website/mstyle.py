@@ -5643,43 +5643,48 @@ def orders_list():
             _pid    = o.get('product_id')
             selected_color = (o.get('variations') or '').strip().lower()
 
+            def _resolve_img(img_val):
+                """Convert filename or URL to a displayable URL."""
+                if not img_val:
+                    return ''
+                s = str(img_val).strip()
+                if s.startswith('http://') or s.startswith('https://'):
+                    return s
+                # Plain filename — build Supabase Storage URL
+                fname = s.split('/')[-1]  # get just the filename
+                return f"{SUPABASE_URL}/storage/v1/object/public/product-images/products/{fname}"
+
             resolved_url = ''
 
             if raw_img.startswith('http://') or raw_img.startswith('https://'):
-                # Order already has a full URL image
                 resolved_url = raw_img
             elif _pid and int(_pid) in product_image_map:
                 prod_data = product_image_map[int(_pid)]
                 image_colors_raw = prod_data.get('image_colors') or ''
                 all_images_raw   = prod_data.get('image') or ''
 
-                # Try to find color-matched image using _parse_image_colors_dict
+                # Try color-matched image
                 if selected_color and image_colors_raw:
                     color_map = _parse_image_colors_dict(image_colors_raw, all_images_raw)
                     matched = color_map.get(selected_color)
                     if not matched:
-                        # Try partial match
                         for k, v in color_map.items():
                             if selected_color in k or k in selected_color:
                                 matched = v
                                 break
                     if matched:
-                        resolved_url = matched
+                        resolved_url = _resolve_img(matched)
 
                 # Fallback: use first image
                 if not resolved_url and all_images_raw:
                     first_img = all_images_raw.split(',')[0].strip()
-                    resolved_url = first_img
+                    resolved_url = _resolve_img(first_img)
+            elif raw_img:
+                # Order has a filename — convert to Supabase Storage URL
+                resolved_url = _resolve_img(raw_img)
 
-            if resolved_url.startswith('http://') or resolved_url.startswith('https://'):
-                o['image_url'] = resolved_url
-                o['image']     = ''
-            elif resolved_url:
-                o['image_url'] = ''
-                o['image']     = resolved_url
-            else:
-                o['image_url'] = ''
-                # keep raw filename for url_for fallback
+            o['image_url'] = resolved_url
+            o['image']     = ''  # always use image_url
 
             # product_sizes fallback
             o.setdefault('product_sizes', '')

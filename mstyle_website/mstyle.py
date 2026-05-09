@@ -3746,6 +3746,30 @@ def seller_products_with_variants():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/seller/sync-stock', methods=['POST'])
+def seller_sync_stock():
+    """Sync products.quantity = sum of variant_inventory for all seller products."""
+    if 'email' not in session or session.get('user_type', '').lower() != 'seller':
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+    seller_email = session['email']
+    try:
+        # Get all products for this seller
+        prod_res = sb_admin.table('products').select('id').eq('seller_email', seller_email).execute()
+        products = prod_res.data or []
+        synced = 0
+        for p in products:
+            pid = p['id']
+            vi_res = sb_admin.table('variant_inventory').select('stock_quantity').eq('product_id', pid).execute()
+            variants = vi_res.data or []
+            if variants:
+                total = sum(int(v.get('stock_quantity') or 0) for v in variants)
+                sb_admin.table('products').update({'quantity': total}).eq('id', pid).execute()
+                synced += 1
+        return jsonify({'success': True, 'message': f'Synced {synced} products', 'synced': synced})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/seller/update-variants', methods=['POST'])
 def seller_update_variants():
     """API: update variant inventory stock quantities and sync products.quantity."""

@@ -114,78 +114,89 @@
             {% if reviews %}
                 {% for review in reviews %}
                 <div class="review-card">
-                    <div class="review-header">
-                        <div class="reviewer-info">
-                            <div class="reviewer-avatar">
-                                {{ review.customer_first_name[0] if review.customer_first_name else '?' }}
+                    <div class="review-card-body">
+                        <div class="review-header">
+                            <div class="reviewer-info">
+                                <div class="reviewer-avatar">
+                                    {{ review.customer_first_name[0] if review.customer_first_name else '?' }}
+                                </div>
+                                <div class="reviewer-details">
+                                    <h4>{{ review.customer_name }}</h4>
+                                    <div class="review-rating">{{ review.rating_stars }}</div>
+                                    <div class="review-time">{{ review.time_ago }}</div>
+                                </div>
                             </div>
-                            <div class="reviewer-details">
-                                <h4>{{ review.customer_name }}</h4>
-                                <div class="review-rating">{{ review.rating_stars }}</div>
-                                <div class="review-time">{{ review.time_ago }}</div>
+                            <div class="review-badge">
+                                {% if review.rating >= 4 %}
+                                    <span class="badge badge-positive"><i class="bi bi-emoji-smile-fill"></i> Positive</span>
+                                {% elif review.rating == 3 %}
+                                    <span class="badge badge-neutral"><i class="bi bi-emoji-neutral-fill"></i> Neutral</span>
+                                {% else %}
+                                    <span class="badge badge-negative"><i class="bi bi-emoji-frown-fill"></i> Negative</span>
+                                {% endif %}
                             </div>
                         </div>
-                    </div>
 
-                    <div class="product-info">
-                        {% set img_raw = review.product_image.split(',')[0].strip() if review.product_image else '' %}
-                        {% if img_raw.startswith('http://') or img_raw.startswith('https://') %}
-                            <img src="{{ img_raw }}"
-                                 alt="{{ review.product_name }}"
-                                 class="product-image"
-                                 onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
-                        {% elif img_raw %}
-                            <img src="{{ url_for('static', filename='images/uploads/' + img_raw) }}"
-                                 alt="{{ review.product_name }}"
-                                 class="product-image"
-                                 onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                        <div class="product-info">
+                            {% set img_raw = review.product_image.split(',')[0].strip() if review.product_image else '' %}
+                            {% if img_raw.startswith('http://') or img_raw.startswith('https://') %}
+                                <img src="{{ img_raw }}"
+                                     alt="{{ review.product_name }}"
+                                     class="product-image"
+                                     onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                            {% elif img_raw %}
+                                <img src="{{ url_for('static', filename='images/uploads/' + img_raw) }}"
+                                     alt="{{ review.product_name }}"
+                                     class="product-image"
+                                     onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                            {% else %}
+                                <div class="product-image" style="background:#f0f0f0;display:flex;align-items:center;justify-content:center;">
+                                    <i class="bi bi-image" style="font-size:1.5rem;color:#aaa;"></i>
+                                </div>
+                            {% endif %}
+                            <div class="product-details">
+                                <h5>{{ review.product_name }}</h5>
+                                <span class="price">₱{{ "%.2f"|format(review.product_price|float) }}</span>
+                            </div>
+                        </div>
+
+                        <div class="review-text">
+                            <strong>Customer Review:</strong>
+                            <p>{{ review.review_text }}</p>
+                        </div>
+
+                        <!-- Seller Response Section -->
+                        {% if review.seller_response %}
+                        <div class="seller-response">
+                            <div class="response-header">
+                                <i class="bi bi-shop"></i>
+                                <strong>Your Response</strong>
+                                <span class="response-date">{{ review.response_time_ago if review.response_time_ago else '' }}</span>
+                            </div>
+                            <div class="response-text">
+                                {{ review.seller_response }}
+                            </div>
+                        </div>
                         {% else %}
-                            <div class="product-image" style="background:#f0f0f0;display:flex;align-items:center;justify-content:center;">
-                                <i class="bi bi-image" style="font-size:1.5rem;color:#aaa;"></i>
+                        <div class="response-form" id="response-form-{{ review.id }}">
+                            <textarea 
+                                class="response-textarea" 
+                                id="response-text-{{ review.id }}" 
+                                placeholder="Write your response to this review..."
+                                rows="3"></textarea>
+                            <div class="response-actions">
+                                <button class="btn btn-primary" onclick="submitResponse({{ review.id }})">
+                                    <i class="bi bi-send"></i> Post Response
+                                </button>
                             </div>
+                        </div>
                         {% endif %}
-                        <div class="product-details">
-                            <h5>{{ review.product_name }}</h5>
-                            <span class="price">₱{{ "%.2f"|format(review.product_price|float) }}</span>
-                        </div>
-                    </div>
 
-                    <div class="review-text">
-                        <strong>Customer Review:</strong>
-                        <p>{{ review.review_text }}</p>
-                    </div>
-
-                    <!-- Seller Response Section -->
-                    {% if review.seller_response %}
-                    <div class="seller-response">
-                        <div class="response-header">
-                            <i class="bi bi-shop"></i>
-                            <strong>Your Response</strong>
-                            <span class="response-date">{{ review.response_time_ago if review.response_time_ago else '' }}</span>
-                        </div>
-                        <div class="response-text">
-                            {{ review.seller_response }}
-                        </div>
-                    </div>
-                    {% else %}
-                    <div class="response-form" id="response-form-{{ review.id }}">
-                        <textarea 
-                            class="response-textarea" 
-                            id="response-text-{{ review.id }}" 
-                            placeholder="Write your response to this review..."
-                            rows="3"></textarea>
-                        <div class="response-actions">
-                            <button class="btn btn-primary" onclick="submitResponse({{ review.id }})">
-                                <i class="bi bi-send"></i> Post Response
+                        <div class="review-actions">
+                            <button class="btn btn-primary" onclick="viewOrder({{ review.order_id }})">
+                                <i class="bi bi-box-seam"></i> View Order
                             </button>
                         </div>
-                    </div>
-                    {% endif %}
-
-                    <div class="review-actions">
-                        <button class="btn btn-primary" onclick="viewOrder({{ review.order_id }})">
-                            <i class="bi bi-box-seam"></i> View Order
-                        </button>
                     </div>
                 </div>
                 {% endfor %}

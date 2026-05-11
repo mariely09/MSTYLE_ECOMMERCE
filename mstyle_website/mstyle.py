@@ -3870,7 +3870,7 @@ def seller_reviews():
 
         # 1. Fetch all reviews for this seller
         rev_res = sb_admin.table('reviews') \
-            .select('id, order_id, product_id, customer_email, rating, review_text, seller_response, response_date, created_at') \
+            .select('id, order_id, product_id, customer_email, rating, review_text, review_images, seller_response, response_date, created_at') \
             .eq('seller_email', seller_email) \
             .order('created_at', desc=True) \
             .execute()
@@ -3937,6 +3937,7 @@ def seller_reviews():
                 'rating':               rating,
                 'rating_stars':         '\u2605' * rating + '\u2606' * (5 - rating),
                 'review_text':          r.get('review_text', ''),
+                'review_images':        r.get('review_images') or '',
                 'seller_response':      r.get('seller_response'),
                 'response_time_ago':    _time_ago(r.get('response_date')),
                 'time_ago':             _time_ago(r.get('created_at')),

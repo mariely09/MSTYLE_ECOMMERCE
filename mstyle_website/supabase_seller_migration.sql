@@ -419,3 +419,46 @@ CREATE POLICY "seller can update own pending record"
   ON pending_sellers FOR UPDATE TO authenticated
   USING (supabase_uid = auth.uid())
   WITH CHECK (supabase_uid = auth.uid());
+
+-- ============================================================
+-- Storage: review-images bucket
+-- Run this in Supabase Dashboard → SQL Editor
+-- ============================================================
+
+-- Create the public bucket for review images (safe to re-run)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'review-images',
+  'review-images',
+  TRUE,
+  5242880,   -- 5 MB per file
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO UPDATE
+  SET public             = TRUE,
+      file_size_limit    = 5242880,
+      allowed_mime_types = ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+
+-- Allow anyone to read (view) review images
+DROP POLICY IF EXISTS "review images are publicly readable" ON storage.objects;
+CREATE POLICY "review images are publicly readable"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'review-images');
+
+-- Allow authenticated users to upload review images
+DROP POLICY IF EXISTS "authenticated users can upload review images" ON storage.objects;
+CREATE POLICY "authenticated users can upload review images"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'review-images');
+
+-- Allow service role to upload (used by the Flutter app via REST)
+DROP POLICY IF EXISTS "service role can upload review images" ON storage.objects;
+CREATE POLICY "service role can upload review images"
+  ON storage.objects FOR INSERT TO service_role
+  WITH CHECK (bucket_id = 'review-images');
+
+-- Allow service role to upsert (x-upsert: true header)
+DROP POLICY IF EXISTS "service role can upsert review images" ON storage.objects;
+CREATE POLICY "service role can upsert review images"
+  ON storage.objects FOR UPDATE TO service_role
+  USING (bucket_id = 'review-images');

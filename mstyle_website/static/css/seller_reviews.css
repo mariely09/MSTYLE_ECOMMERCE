@@ -911,110 +911,210 @@ body {
 }
 
 
-/* Seller Response Styles */
+/* Seller Response Styles - Modern Card Design */
 .seller-response {
-    background: linear-gradient(135deg, #e8f5e9 0%, #f1f8f4 100%);
-    border-left: 4px solid var(--success-color);
-    border-radius: 10px;
-    padding: 15px 20px;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fffe 100%);
+    border-radius: 16px;
+    padding: 20px 24px;
     margin-bottom: 20px;
+    box-shadow: 0 4px 20px rgba(39, 174, 96, 0.08);
+    border: 1px solid rgba(39, 174, 96, 0.15);
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition);
+}
+
+.seller-response::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--success-color), #2ecc71);
+    border-radius: 16px 16px 0 0;
+}
+
+.seller-response:hover {
+    box-shadow: 0 8px 30px rgba(39, 174, 96, 0.12);
+    transform: translateY(-2px);
 }
 
 .response-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    color: var(--success-color);
-    font-size: 0.9rem;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(39, 174, 96, 0.1);
 }
 
 .response-header i {
-    font-size: 1.1rem;
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--success-color), #2ecc71);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 12px rgba(39, 174, 96, 0.2);
 }
 
 .response-header strong {
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--success-color);
+    font-size: 0.92rem;
+    letter-spacing: 0.3px;
 }
 
 .response-date {
     margin-left: auto;
     color: var(--text-light);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.response-date::before {
+    content: '•';
+    color: var(--success-color);
+    font-size: 1rem;
 }
 
 .response-text {
-    color: var(--text-color);
-    line-height: 1.6;
-    font-size: 0.95rem;
+    color: #2d3748;
+    line-height: 1.7;
+    font-size: 0.94rem;
+    padding: 4px 0;
 }
 
+/* Response Form - Modern Input Design */
 .response-form {
-    background: linear-gradient(135deg, #fff8e1 0%, #fffbf0 100%);
-    border-left: 4px solid var(--secondary-color);
-    border-radius: 10px;
-    padding: 20px;
+    background: linear-gradient(135deg, #ffffff 0%, #fffef8 100%);
+    border-radius: 16px;
+    padding: 24px;
     margin-bottom: 20px;
+    box-shadow: 0 4px 20px rgba(212, 175, 55, 0.08);
+    border: 1px solid rgba(212, 175, 55, 0.15);
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition);
+}
+
+.response-form::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--secondary-color), #f4d03f);
+    border-radius: 16px 16px 0 0;
+}
+
+.response-form:hover {
+    box-shadow: 0 8px 30px rgba(212, 175, 55, 0.12);
 }
 
 .response-textarea {
     width: 100%;
-    padding: 12px 15px;
+    padding: 16px 18px;
     border: 2px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 12px;
     font-family: inherit;
-    font-size: 0.95rem;
-    line-height: 1.6;
+    font-size: 0.94rem;
+    line-height: 1.7;
     resize: vertical;
+    min-height: 120px;
     transition: var(--transition);
     background: white;
+    color: var(--text-color);
+}
+
+.response-textarea:hover {
+    border-color: rgba(212, 175, 55, 0.4);
 }
 
 .response-textarea:focus {
     outline: none;
     border-color: var(--secondary-color);
-    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
+    box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.1);
+    background: #fffef8;
 }
 
 .response-textarea::placeholder {
-    color: var(--text-light);
+    color: #a0aec0;
+    font-style: italic;
 }
 
 .response-actions {
-    margin-top: 15px;
+    margin-top: 18px;
     display: flex;
     justify-content: flex-end;
+    gap: 12px;
 }
 
 .response-actions .btn {
-    min-width: 150px;
+    min-width: 160px;
+    padding: 13px 28px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    box-shadow: 0 6px 20px rgba(44, 62, 80, 0.15);
+}
+
+.response-actions .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(44, 62, 80, 0.25);
+}
+
+.response-actions .btn i {
+    font-size: 1rem;
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .response-form {
-        padding: 15px;
+        padding: 18px;
     }
     
     .response-actions {
         justify-content: stretch;
+        flex-direction: column;
     }
     
     .response-actions .btn {
         width: 100%;
+        min-width: unset;
     }
     
     .seller-response {
-        padding: 12px 15px;
+        padding: 16px 18px;
     }
     
     .response-header {
         flex-wrap: wrap;
+        gap: 8px;
     }
     
     .response-date {
         margin-left: 0;
         width: 100%;
-        margin-top: 5px;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(39, 174, 96, 0.1);
+    }
+    
+    .response-date::before {
+        display: none;
+    }
+    
+    .response-textarea {
+        padding: 14px 16px;
+        font-size: 0.9rem;
     }
 }

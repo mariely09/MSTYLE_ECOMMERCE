@@ -112,6 +112,8 @@ class _ReviewBottomSheetState extends State<_ReviewBottomSheet> {
         final ts  = DateTime.now().millisecondsSinceEpoch + i; // unique per iteration
         final path = 'reviews/${_orderId}_${i}_$ts.$ext';
 
+        debugPrint('Uploading image $i → bucket=$bucket path=$path size=${entry.bytes.length}B');
+
         // Upload via REST with service-role key (bypasses storage RLS)
         final uploadUri = Uri.parse(
           '$supabaseUrl/storage/v1/object/$bucket/$path',
@@ -127,18 +129,32 @@ class _ReviewBottomSheetState extends State<_ReviewBottomSheet> {
           body: entry.bytes,
         );
 
+        debugPrint('Upload response [${uploadResp.statusCode}]: ${uploadResp.body}');
+
         if (uploadResp.statusCode == 200 || uploadResp.statusCode == 201) {
           // Build public URL
           final publicUrl = '$supabaseUrl/storage/v1/object/public/$bucket/$path';
           urls.add(publicUrl);
-          debugPrint('Review image uploaded: $publicUrl');
+          debugPrint('✅ Review image uploaded: $publicUrl');
         } else {
-          debugPrint('Review image upload failed [${uploadResp.statusCode}]: ${uploadResp.body}');
+          debugPrint('❌ Review image upload failed [${uploadResp.statusCode}]: ${uploadResp.body}');
+          // Surface the error so the user knows something went wrong
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Photo ${i + 1} upload failed (${uploadResp.statusCode}): ${uploadResp.body}'),
+                backgroundColor: Colors.orange.shade700,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         }
-      } catch (e) {
-        debugPrint('Review image upload error (index $i): $e');
+      } catch (e, st) {
+        debugPrint('❌ Review image upload error (index $i): $e\n$st');
       }
     }
+
+    debugPrint('_uploadImages done — ${urls.length}/${_images.length} uploaded');
     return urls;
   }
 

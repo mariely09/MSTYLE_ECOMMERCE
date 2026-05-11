@@ -301,12 +301,28 @@
                         </div>
                     </div>
                     <div class="review-text">{{ review.review_text }}</div>
-                    
+
+                    <!-- Review Images -->
+                    {% if review.review_images %}
+                    <div class="review-images-grid">
+                        {% for img_url in review.review_images.split(',') %}
+                            {% set img = img_url.strip() %}
+                            {% if img %}
+                            <img src="{{ img }}"
+                                 alt="Review photo"
+                                 class="review-photo"
+                                 onclick="openReviewImageViewer('{{ img }}')"
+                                 onerror="this.style.display='none'">
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
                     <!-- Seller Response -->
                     {% if review.seller_response %}
                     <div class="seller-response-section">
                         <div class="seller-response-header">
-                            <i class="fas fa-store"></i>
+                            <div class="seller-response-icon"><i class="fas fa-store"></i></div>
                             <strong>Seller Response</strong>
                             {% if review.response_date %}
                             <span class="response-date">{{ review.response_date.strftime('%B %d, %Y') }}</span>
@@ -348,6 +364,14 @@
     </div>
 
     {% include 'footer.html' %}
+
+    <!-- Review Image Viewer Overlay -->
+    <div id="reviewImageOverlay" onclick="closeReviewImageViewer()">
+        <button class="review-img-close" onclick="closeReviewImageViewer()">
+            <i class="fas fa-times"></i>
+        </button>
+        <img id="reviewImageFull" src="" alt="Review photo" onclick="event.stopPropagation()">
+    </div>
 
     <script>
         // Store variant stock data
@@ -1225,9 +1249,22 @@
 
 
 
+        // ── Review image viewer ───────────────────────────────────────────────
+        function openReviewImageViewer(src) {
+            const overlay = document.getElementById('reviewImageOverlay');
+            const img     = document.getElementById('reviewImageFull');
+            img.src = src;
+            overlay.classList.add('active');
+        }
+        function closeReviewImageViewer() {
+            document.getElementById('reviewImageOverlay').classList.remove('active');
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeReviewImageViewer();
+        });
+
         // Reviews section animations
-        document.addEventListener('DOMContentLoaded', function () {
-            // Animate rating bars when they come into view
+        document.addEventListener('DOMContentLoaded', function () {            // Animate rating bars when they come into view
             const ratingBars = document.querySelectorAll('.rating-fill');
 
             const observerOptions = {

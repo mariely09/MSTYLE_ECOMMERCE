@@ -2534,7 +2534,7 @@ def view_product(product_id):
             # Get reviews
             try:
                 rev_res = sb_admin.table('reviews').select(
-                    'rating, review_text, customer_email, created_at, seller_response, response_date'
+                    'rating, review_text, review_images, customer_email, created_at, seller_response, response_date'
                 ).eq('product_id', product_id).order('created_at', desc=True).execute()
 
                 raw_reviews = rev_res.data or []

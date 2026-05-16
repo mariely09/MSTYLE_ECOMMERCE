@@ -498,8 +498,9 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            // Set minimum date to today
-            const today = new Date().toISOString().split('T')[0];
+            // Set minimum date to today using local time (not UTC)
+            const now = new Date();
+            const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
             document.getElementById('startDate').min = today;
             document.getElementById('endDate').min = today;
 
@@ -535,15 +536,16 @@
                     // Reset form when modal opens for create
                     resetPromotionModal();
 
-                    // Auto-fill start date with today and start time with current time
+                    // Auto-fill start date and time using LOCAL time (not UTC)
                     const now = new Date();
-                    const todayStr = now.toISOString().split('T')[0];
-                    const hours = String(now.getHours()).padStart(2, '0');
+                    const year  = now.getFullYear();
+                    const month = String(now.getMonth() + 1).padStart(2, '0');
+                    const day   = String(now.getDate()).padStart(2, '0');
+                    const hours   = String(now.getHours()).padStart(2, '0');
                     const minutes = String(now.getMinutes()).padStart(2, '0');
-                    const currentTime = `${hours}:${minutes}`;
 
-                    document.getElementById('startDate').value = todayStr;
-                    document.getElementById('startTime').value = currentTime;
+                    document.getElementById('startDate').value = `${year}-${month}-${day}`;
+                    document.getElementById('startTime').value = `${hours}:${minutes}`;
                 }
             });
 

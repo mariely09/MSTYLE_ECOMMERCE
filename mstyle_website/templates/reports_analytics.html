@@ -284,8 +284,9 @@
                                                 <td>
                                                     {% if order.order_date %}
                                                     <div class="date-time-cell">
-                                                        <div class="date-part">{{ order.order_date.strftime('%b %d, %Y') }}</div>
-                                                        <div class="time-part">{{ order.order_date.strftime('%I:%M %p') }}</div>
+                                                        {% set od = order.order_date if order.order_date is not string else order.order_date|string %}
+                                                        <div class="date-part">{{ od[:10] }}</div>
+                                                        <div class="time-part">{{ od[11:16] if od|length > 10 else '' }}</div>
                                                     </div>
                                                     {% else %}
                                                     N/A
@@ -294,8 +295,9 @@
                                                 <td>
                                                     {% if order.completion_date %}
                                                     <div class="date-time-cell">
-                                                        <div class="date-part">{{ order.completion_date.strftime('%b %d, %Y') }}</div>
-                                                        <div class="time-part">{{ order.completion_date.strftime('%I:%M %p') }}</div>
+                                                        {% set cd = order.completion_date if order.completion_date is not string else order.completion_date|string %}
+                                                        <div class="date-part">{{ cd[:10] }}</div>
+                                                        <div class="time-part">{{ cd[11:16] if cd|length > 10 else '' }}</div>
                                                     </div>
                                                     {% else %}
                                                     <span class="text-muted">-</span>
@@ -390,8 +392,10 @@
                                                 </td>
                                                 <td>
                                                     <small>
-                                                        {{ promo.start_date.strftime('%b %d, %Y') if promo.start_date else 'N/A' }}<br>
-                                                        to {{ promo.end_date.strftime('%b %d, %Y') if promo.end_date else 'N/A' }}
+                                                        {% set sd = promo.start_date|string if promo.start_date else 'N/A' %}
+                                                        {% set ed = promo.end_date|string if promo.end_date else 'N/A' %}
+                                                        {{ sd[:10] }}<br>
+                                                        to {{ ed[:10] }}
                                                     </small>
                                                 </td>
                                                 <td class="text-center">
@@ -466,8 +470,9 @@
                                                 <td>
                                                     {% if item.date_completed %}
                                                     <div class="date-time-cell">
-                                                        <div class="date-part">{{ item.date_completed.strftime('%b %d, %Y') }}</div>
-                                                        <div class="time-part">{{ item.date_completed.strftime('%I:%M %p') }}</div>
+                                                        {% set dc = item.date_completed|string %}
+                                                        <div class="date-part">{{ dc[:10] }}</div>
+                                                        <div class="time-part">{{ dc[11:16] if dc|length > 10 else '' }}</div>
                                                     </div>
                                                     {% else %}
                                                     <span class="text-muted">-</span>
@@ -1230,7 +1235,7 @@
             csv += 'Product Name,Quantity,Status,Order Date,Completion Date,Total Amount,Buyer Name\n';
             {% if order_details %}
             {% for order in order_details %}
-            csv += '"{{ order.product_name|replace('"', '""') }}",{{ order.quantity }},{{ order.status }},"=""{{ order.order_date.strftime("%Y-%m-%d %I:%M %p") if order.order_date else "N/A" }}""","=""{{ order.completion_date.strftime("%Y-%m-%d %I:%M %p") if order.completion_date else "N/A" }}""",{{ "%.2f"|format(order.total_amount) }},"{{ order.buyer_name }}"\n';
+            csv += '"{{ order.product_name|replace('"', '""') }}",{{ order.quantity }},{{ order.status }},"{{ (order.order_date|string)[:16] if order.order_date else "N/A" }}","{{ (order.completion_date|string)[:16] if order.completion_date else "N/A" }}",{{ "%.2f"|format(order.total_amount) }},"{{ order.buyer_name }}"\n';
             {% endfor %}
             {% endif %}
             csv += '\n';
@@ -1240,7 +1245,7 @@
             csv += 'Promo Name,Promo Type,Discount Value,Start Date,End Date,Number of Uses,Revenue Generated,Status\n';
             {% if promotion_performance %}
             {% for promo in promotion_performance %}
-            csv += '"{{ promo.name|replace('"', '""') }}",{{ promo.type }},{% if promo.type == "percentage" %}{{ promo.discount_value }}%{% elif promo.type == "fixed_amount" %}{{ "%.2f"|format(promo.discount_value) }}{% else %}Free Shipping{% endif %},"=""{{ promo.start_date.strftime("%Y-%m-%d") if promo.start_date else "N/A" }}""","=""{{ promo.end_date.strftime("%Y-%m-%d") if promo.end_date else "N/A" }}""",{{ promo.usage_count }},{{ "%.2f"|format(promo.revenue_generated) }},{{ promo.status }}\n';
+            csv += '"{{ promo.name|replace('"', '""') }}",{{ promo.type }},{% if promo.type == "percentage" %}{{ promo.discount_value }}%{% elif promo.type == "fixed_amount" %}{{ "%.2f"|format(promo.discount_value) }}{% else %}Free Shipping{% endif %},"{{ (promo.start_date|string)[:10] if promo.start_date else "N/A" }}","{{ (promo.end_date|string)[:10] if promo.end_date else "N/A" }}",{{ promo.usage_count }},{{ "%.2f"|format(promo.revenue_generated) }},{{ promo.status }}\n';
             {% endfor %}
             {% endif %}
             csv += '\n';
@@ -1250,7 +1255,7 @@
             csv += 'Order ID,Date Completed,Product Name,Product Sales,Discounts,Net Sales,Shipping Fee,Platform Commission (5%),Net Earnings\n';
             {% if financial_summary %}
             {% for item in financial_summary %}
-            csv += '{{ item.order_id }},"=""{{ item.date_completed.strftime("%Y-%m-%d %I:%M %p") if item.date_completed else "N/A" }}""","{{ item.product_name|replace('"', '""') }}",{{ "%.2f"|format(item.product_sales) }},{{ "%.2f"|format(item.discounts) }},{{ "%.2f"|format(item.net_sales) }},{{ "%.2f"|format(item.shipping_fee_collected) }},{{ "%.2f"|format(item.platform_commission if item.platform_commission is defined else (item.net_sales * 0.05)) }},{{ "%.2f"|format(item.net_earnings) }}\n';
+            csv += '{{ item.order_id }},"{{ (item.date_completed|string)[:16] if item.date_completed else "N/A" }}","{{ item.product_name|replace('"', '""') }}",{{ "%.2f"|format(item.product_sales) }},{{ "%.2f"|format(item.discounts) }},{{ "%.2f"|format(item.net_sales) }},{{ "%.2f"|format(item.shipping_fee_collected) }},{{ "%.2f"|format(item.platform_commission if item.platform_commission is defined else (item.net_sales * 0.05)) }},{{ "%.2f"|format(item.net_earnings) }}\n';
             {% endfor %}
             {% endif %}
 

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
 import 'seller_dashboard.dart';
 import 'seller_add_product.dart';
 import 'seller_orderlists.dart';
 import 'seller_analytics.dart';
 import 'seller_notifications.dart';
 import 'profile.dart';
+import 'product_image_carousel.dart';
 import 'supabase_client.dart';
 
 const Color _primary   = Color(0xFF1a1a1a);
@@ -37,6 +37,7 @@ class SellerProduct {
   final bool isActive;
   final bool isFlagged;
   final bool isLowStock;
+  final String? image; // raw comma-separated image string from DB
 
   const SellerProduct({
     required this.id,
@@ -49,22 +50,11 @@ class SellerProduct {
     this.isActive = true,
     this.isFlagged = false,
     this.isLowStock = false,
+    this.image,
   });
 
   bool get isOutOfStock => stock <= 0;
 }
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-final _mockProducts = [
-  const SellerProduct(id: 1, name: 'Classic Black Suit',    category: 'SUITS',      price: 5999.0, stock: 12, sold: 22, rating: 4.9),
-  const SellerProduct(id: 2, name: 'Oxford Button-Down',    category: 'SHIRTS',     price: 999.0,  stock: 3,  sold: 41, rating: 4.8, isLowStock: true),
-  const SellerProduct(id: 3, name: 'Slim Chino Pants',      category: 'PANTS',      price: 1299.0, stock: 0,  sold: 28, rating: 4.6),
-  const SellerProduct(id: 4, name: 'Leather Biker Jacket',  category: 'JACKETS',    price: 4999.0, stock: 8,  sold: 24, rating: 4.9),
-  const SellerProduct(id: 5, name: 'Performance Tee',       category: 'ACTIVEWEAR', price: 899.0,  stock: 20, sold: 34, rating: 4.8),
-  const SellerProduct(id: 6, name: 'Oxford Derby Shoes',    category: 'SHOES',      price: 3499.0, stock: 5,  sold: 29, rating: 4.9, isLowStock: true),
-  const SellerProduct(id: 7, name: 'Premium Face Wash',     category: 'GROOMING',   price: 599.0,  stock: 45, sold: 63, rating: 4.8),
-  const SellerProduct(id: 8, name: 'Wool Overcoat',         category: 'OUTERWEAR',  price: 6299.0, stock: 6,  sold: 14, rating: 4.8, isFlagged: true),
-];
 
 class SellerProductsPage extends StatefulWidget {
   final String sellerEmail;
@@ -110,7 +100,7 @@ class _SellerProductsPageState extends State<SellerProductsPage> {
     try {
       final data = await supabase
           .from('products')
-          .select()
+          .select('id, name, category, price, quantity, sold, rating, is_active, is_flagged, low_stock_threshold, image')
           .eq('seller_email', widget.sellerEmail)
           .order('created_at', ascending: false);
       if (mounted) {
@@ -128,6 +118,7 @@ class _SellerProductsPageState extends State<SellerProductsPage> {
             isLowStock: ((p['quantity'] as num?)?.toInt() ?? 0) > 0 &&
                         ((p['quantity'] as num?)?.toInt() ?? 0) <=
                         ((p['low_stock_threshold'] as num?)?.toInt() ?? 5),
+            image:      p['image'] as String?,
           )).toList();
           _loadingProducts = false;
         });
@@ -414,16 +405,24 @@ class _SellerProductsPageState extends State<SellerProductsPage> {
       // Image area
       Expanded(
         child: Stack(children: [
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
-                colors: [Color(0xFFECEFF1), Color(0xFFE9ECEF)]),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              color: p.isActive ? null : Colors.grey.shade200,
+          // Actual product image via carousel
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: ProductImageCarousel(
+              imageString: p.image,
+              height: double.infinity,
+              borderRadius: 16,
+              placeholder: Icons.inventory_2_outlined,
             ),
-            child: Center(child: Icon(Icons.image_outlined, size: 44,
-              color: p.isActive ? const Color(0xFFADB5BD) : Colors.grey.shade400)),
           ),
+          // Inactive overlay
+          if (!p.isActive)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Container(color: Colors.black.withOpacity(0.35)),
+              ),
+            ),
           // Status badges
           Positioned(top: 8, left: 8,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

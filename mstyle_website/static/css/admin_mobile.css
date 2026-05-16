@@ -1,0 +1,394 @@
+/* ============================================================
+   Admin Pages — Mobile Responsive Overrides
+   Linked from admin_header.html — applies to ALL admin pages
+   ============================================================ */
+
+/* ── Header: prevent overflow, truncate email ── */
+.top-header {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#user-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+/* ── Dropdown: never clip off-screen on narrow phones ── */
+.profile-dropdown .dropdown-content,
+.dropdown-content {
+    max-width: calc(100vw - 24px);
+}
+
+/* ============================================================
+   BREAKPOINT: ≤ 768px — Mobile
+   ============================================================ */
+@media (max-width: 768px) {
+
+    /* ── Header ── */
+    .top-header {
+        padding: 10px 14px;
+    }
+
+    .brand-text {
+        font-size: 20px !important;
+        letter-spacing: 1px;
+    }
+
+    #user-name {
+        max-width: 100px;
+        font-size: 0.8rem;
+    }
+
+    /* Dropdown opens left-aligned on mobile so it doesn't clip */
+    .profile-dropdown .dropdown-content,
+    .dropdown-content {
+        right: 0;
+        left: auto;
+        min-width: 220px;
+    }
+
+    /* ── Page content padding ── */
+    .main-container {
+        padding: 0.75rem;
+    }
+
+    .page-content {
+        padding: 1rem;
+        border-radius: 12px;
+    }
+
+    /* ── Dashboard header ── */
+    .dashboard-header,
+    .page-header {
+        padding: 1.25rem 1rem 1rem;
+    }
+
+    .dashboard-header h1,
+    .page-header h1,
+    .page-title {
+        font-size: 1.5rem !important;
+    }
+
+    .dashboard-avatar,
+    .page-avatar {
+        width: 70px !important;
+        height: 70px !important;
+    }
+
+    .dashboard-avatar i,
+    .page-avatar i {
+        font-size: 2rem !important;
+    }
+
+    /* ── Stats grids — force single column ── */
+    .stats-grid,
+    .stats-summary,
+    .stats-cards {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+
+    /* ── ALL tables — horizontal scroll ── */
+    .table-container,
+    .table-responsive,
+    .issues-table-wrapper,
+    .users-table-wrapper,
+    .products-table-wrapper {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Make tables scrollable when not already wrapped */
+    table:not(.no-scroll) {
+        min-width: 600px;
+        display: table; /* keep as table for proper rendering */
+    }
+
+    /* Wrap bare tables that aren't inside a .table-responsive */
+    .content-card > table,
+    .page-content > table,
+    .card-body > table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        width: 100%;
+    }
+
+    /* Reduce table font size */
+    .issues-table,
+    .users-table,
+    .products-table,
+    .orders-table,
+    table.table {
+        font-size: 0.8rem !important;
+    }
+
+    table th,
+    table td {
+        padding: 0.6rem 0.5rem !important;
+        white-space: nowrap;
+    }
+
+    /* ── Action buttons in tables — keep inline ── */
+    .action-buttons {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 4px !important;
+        flex-wrap: nowrap;
+    }
+
+    .action-btn,
+    .approve-btn,
+    .reject-btn,
+    .view-btn,
+    .btn-sm {
+        width: 30px !important;
+        height: 30px !important;
+        padding: 0 !important;
+        font-size: 0.75rem !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* ── Filter sections ── */
+    .filter-section,
+    .filter-card,
+    .search-filter-section {
+        padding: 1rem !important;
+    }
+
+    .filter-row,
+    .filter-container,
+    .filter-and-actions-container {
+        flex-direction: column !important;
+        gap: 0.75rem !important;
+    }
+
+    .filter-group,
+    .filter-left,
+    .filter-right {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: unset !important;
+        flex: 1 1 auto !important;
+    }
+
+    .filter-actions,
+    .action-buttons-right {
+        width: 100% !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 0.5rem !important;
+    }
+
+    .filter-actions .btn,
+    .action-buttons-right .btn,
+    .btn-clear,
+    .filter-apply-btn,
+    .filter-clear-btn {
+        flex: 1 !important;
+        justify-content: center !important;
+    }
+
+    /* ── Cards / content cards ── */
+    .content-card,
+    .card {
+        padding: 1rem !important;
+        border-radius: 12px !important;
+    }
+
+    /* ── Quick action cards ── */
+    .quick-actions-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .action-card {
+        flex-direction: column !important;
+        text-align: center !important;
+        gap: 0.75rem !important;
+        padding: 1.25rem !important;
+    }
+
+    .action-arrow {
+        display: none !important;
+    }
+
+    /* ── Modals ── */
+    .modal-content,
+    .modal-overlay .modal-content {
+        width: 95vw !important;
+        max-width: 95vw !important;
+        margin: 2vh auto !important;
+        border-radius: 14px !important;
+        max-height: 92vh;
+        overflow-y: auto;
+    }
+
+    .modal-header {
+        padding: 1rem 1.25rem !important;
+    }
+
+    .modal-body {
+        padding: 1rem 1.25rem !important;
+    }
+
+    .modal-footer {
+        padding: 0.875rem 1.25rem !important;
+        flex-direction: column-reverse !important;
+        gap: 0.5rem !important;
+    }
+
+    .modal-footer .btn {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+
+    /* ── Charts ── */
+    .charts-row,
+    .charts-grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+
+    /* ── Issue reports specific ── */
+    .stats-summary {
+        flex-direction: column !important;
+    }
+
+    .detail-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .detail-actions {
+        flex-direction: column !important;
+    }
+
+    /* ── Pending sellers / users ── */
+    .seller-name,
+    .user-name {
+        flex-direction: column !important;
+        gap: 0.25rem !important;
+    }
+
+    /* ── Order monitoring ── */
+    .order-status-cards {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 0.75rem !important;
+    }
+
+    /* ── Archive page ── */
+    .archive-filters {
+        flex-direction: column !important;
+        gap: 0.75rem !important;
+    }
+
+    /* ── Pagination ── */
+    .pagination {
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        gap: 4px !important;
+    }
+
+    .pagination .page-link {
+        padding: 0.4rem 0.65rem !important;
+        font-size: 0.8rem !important;
+    }
+}
+
+/* ============================================================
+   BREAKPOINT: ≤ 480px — Small phones
+   ============================================================ */
+@media (max-width: 480px) {
+
+    .top-header {
+        padding: 8px 10px;
+    }
+
+    .brand-text {
+        font-size: 16px !important;
+    }
+
+    #user-name {
+        max-width: 70px;
+        font-size: 0.75rem;
+    }
+
+    .main-container {
+        padding: 0.5rem;
+    }
+
+    .page-content {
+        padding: 0.75rem;
+    }
+
+    .dashboard-header h1,
+    .page-title {
+        font-size: 1.25rem !important;
+    }
+
+    /* Single column stats always */
+    .stats-grid,
+    .stats-summary,
+    .order-status-cards {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Tighter table cells */
+    table th,
+    table td {
+        padding: 0.5rem 0.4rem !important;
+        font-size: 0.75rem !important;
+    }
+
+    /* Dropdown full-width on tiny screens */
+    .profile-dropdown .dropdown-content,
+    .dropdown-content {
+        right: -10px;
+        min-width: 200px;
+    }
+
+    .modal-content,
+    .modal-overlay .modal-content {
+        width: 98vw !important;
+        margin: 1vh auto !important;
+        border-radius: 10px !important;
+    }
+}
+
+/* ============================================================
+   BREAKPOINT: 769px – 1024px — Tablet
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1024px) {
+
+    .stats-grid,
+    .stats-summary {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    .order-status-cards {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    .main-container {
+        padding: 1.25rem;
+    }
+
+    .filter-row {
+        flex-wrap: wrap;
+    }
+
+    .filter-group {
+        flex: 1 1 180px;
+    }
+
+    table th,
+    table td {
+        padding: 0.75rem 0.6rem !important;
+        font-size: 0.85rem !important;
+    }
+}

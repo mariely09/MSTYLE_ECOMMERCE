@@ -156,7 +156,10 @@ print(f"Upload folder path: {UPLOAD_FOLDER}")
 # Configure Flask to use this upload folder
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 app.config["MAIL_SERVER"] = 'smtp.gmail.com'
 app.config["MAIL_PORT"] = 587
@@ -770,24 +773,33 @@ Mstyle Team
 def send_approval_email(email, first_name):
     """Send approval notification email to user"""
     try:
+        login_url = os.environ.get('APP_URL', 'https://mstyleecommerce-production.up.railway.app') + '/login'
         msg = Message(
             'Account Approved - Welcome to MStyle!',
             sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[email]
         )
-        msg.body = f"""Hello {first_name}!
-
-Great news! Your MStyle account has been approved by our admin team.
-
-You can now log in to your account and start exploring our premium men's fashion collection.
-
-Login here: http://localhost:5000/login
-
-Thank you for choosing MStyle!
-
-Best regards,
-MStyle Team
-"""
+        msg.html = f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+            <div style="background:linear-gradient(135deg,#1a1a1a,#2c3e50);padding:32px;text-align:center;">
+                <h1 style="color:#d4af37;margin:0;font-size:28px;letter-spacing:2px;">MStyle</h1>
+                <p style="color:rgba(255,255,255,0.7);margin:8px 0 0;font-size:13px;">Premium Men's Fashion</p>
+            </div>
+            <div style="padding:32px;">
+                <h2 style="color:#1a1a1a;margin:0 0 16px;">🎉 Account Approved!</h2>
+                <p style="color:#555;line-height:1.6;">Hello <strong>{first_name}</strong>,</p>
+                <p style="color:#555;line-height:1.6;">Great news! Your MStyle account has been <strong style="color:#28a745;">approved</strong> by our admin team.</p>
+                <p style="color:#555;line-height:1.6;">You can now log in and start exploring our premium men's fashion collection.</p>
+                <div style="text-align:center;margin:32px 0;">
+                    <a href="{login_url}" style="background:linear-gradient(135deg,#d4af37,#f4d03f);color:#1a1a1a;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;display:inline-block;">Login to MStyle</a>
+                </div>
+                <p style="color:#888;font-size:13px;">If the button doesn't work, copy this link: <a href="{login_url}" style="color:#d4af37;">{login_url}</a></p>
+            </div>
+            <div style="background:#f8f9fa;padding:20px;text-align:center;border-top:1px solid #eee;">
+                <p style="color:#aaa;font-size:12px;margin:0;">© MStyle — Premium Men's Fashion</p>
+            </div>
+        </div>"""
+        msg.body = f"Hello {first_name}!\n\nYour MStyle account has been approved. Login here: {login_url}\n\nBest regards,\nMStyle Team"
         mail.send(msg)
         print(f"Approval email sent to {email}")
         return True
@@ -826,31 +838,39 @@ MStyle Team
 def send_seller_approval_email(email, first_name, business_name):
     """Send approval notification email to seller"""
     try:
+        login_url = os.environ.get('APP_URL', 'https://mstyleecommerce-production.up.railway.app') + '/login'
         msg = Message(
             'Congratulations! Your Seller Account Has Been Approved - MStyle',
             sender=app.config['MAIL_DEFAULT_SENDER'],
             recipients=[email]
         )
-        msg.body = f"""Hello {first_name},
-
-?? Congratulations! Your seller application for "{business_name}" has been approved!
-
-You can now:
-- Access your seller dashboard
-- Start listing your products
-- Manage your inventory
-- Track your sales and analytics
-- Communicate with customers
-
-To get started, simply log in to your account and navigate to your seller dashboard.
-
-If you have any questions or need assistance, please don't hesitate to contact our support team.
-
-Welcome to the MStyle seller community!
-
-Best regards,
-MStyle Team
-"""
+        msg.html = f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+            <div style="background:linear-gradient(135deg,#1a1a1a,#2c3e50);padding:32px;text-align:center;">
+                <h1 style="color:#d4af37;margin:0;font-size:28px;letter-spacing:2px;">MStyle</h1>
+                <p style="color:rgba(255,255,255,0.7);margin:8px 0 0;font-size:13px;">Premium Men's Fashion</p>
+            </div>
+            <div style="padding:32px;">
+                <h2 style="color:#1a1a1a;margin:0 0 16px;">🎉 Seller Account Approved!</h2>
+                <p style="color:#555;line-height:1.6;">Hello <strong>{first_name}</strong>,</p>
+                <p style="color:#555;line-height:1.6;">Congratulations! Your seller application for <strong>"{business_name}"</strong> has been <strong style="color:#28a745;">approved</strong>!</p>
+                <p style="color:#555;line-height:1.6;">You can now:</p>
+                <ul style="color:#555;line-height:2;">
+                    <li>Access your seller dashboard</li>
+                    <li>Start listing your products</li>
+                    <li>Manage your inventory and track sales</li>
+                    <li>Communicate with customers</li>
+                </ul>
+                <div style="text-align:center;margin:32px 0;">
+                    <a href="{login_url}" style="background:linear-gradient(135deg,#d4af37,#f4d03f);color:#1a1a1a;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;display:inline-block;">Login to Your Seller Dashboard</a>
+                </div>
+                <p style="color:#888;font-size:13px;">If the button doesn't work, copy this link: <a href="{login_url}" style="color:#d4af37;">{login_url}</a></p>
+            </div>
+            <div style="background:#f8f9fa;padding:20px;text-align:center;border-top:1px solid #eee;">
+                <p style="color:#aaa;font-size:12px;margin:0;">© MStyle — Premium Men's Fashion</p>
+            </div>
+        </div>"""
+        msg.body = f"Hello {first_name},\n\nYour seller application for \"{business_name}\" has been approved!\n\nLogin here: {login_url}\n\nBest regards,\nMStyle Team"
         mail.send(msg)
         print(f"Seller approval email sent to {email}")
         return True
@@ -6736,25 +6756,193 @@ def admin_dashboard():
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('login'))
     try:
-        users_res   = sb_admin.table('users').select('id', count='exact').execute()
-        orders_res  = sb_admin.table('orders').select('id', count='exact').execute()
+        users_res    = sb_admin.table('users').select('id', count='exact').execute()
+        orders_res   = sb_admin.table('orders').select('id', count='exact').execute()
         products_res = sb_admin.table('products').select('id', count='exact').execute()
-        pending_res = sb_admin.table('pending_users').select('id', count='exact').eq('status', 'pending').execute()
-        pending_sellers_res = sb_admin.table('pending_sellers').select('id', count='exact').eq('status', 'pending').execute()
-        total_users    = users_res.count or 0
-        total_orders   = orders_res.count or 0
-        total_products = products_res.count or 0
-        pending_users_count   = pending_res.count or 0
-        pending_sellers_count = pending_sellers_res.count or 0
+        issues_res   = sb_admin.table('order_issues').select('id', count='exact').execute()
+        pending_res  = sb_admin.table('pending_users').select('id', count='exact').eq('status', 'pending').execute()
+        try:
+            pending_sellers_res   = sb_admin.table('pending_sellers').select('id', count='exact').eq('status', 'pending').execute()
+            pending_sellers_count = pending_sellers_res.count or 0
+        except Exception:
+            pending_sellers_count = 0
+        total_users          = users_res.count or 0
+        total_orders         = orders_res.count or 0
+        total_products       = products_res.count or 0
+        total_issues         = issues_res.count or 0
+        pending_users_count  = pending_res.count or 0
+        pending_approvals    = pending_users_count + pending_sellers_count
     except Exception as e:
         print(f"admin_dashboard error: {e}")
-        total_users = total_orders = total_products = pending_users_count = pending_sellers_count = 0
+        total_users = total_orders = total_products = total_issues = pending_approvals = 0
+        pending_users_count = pending_sellers_count = 0
     return render_template('admin_dashboard.html',
                            total_users=total_users,
                            total_orders=total_orders,
                            total_products=total_products,
-                           pending_users=pending_users_count,
-                           pending_sellers=pending_sellers_count)
+                           total_issues=total_issues,
+                           pending_approvals=pending_approvals)
+
+
+@app.route('/api/admin/dashboard_charts')
+def admin_dashboard_charts():
+    """Admin dashboard charts API — returns chart data from Supabase."""
+    if 'user_id' not in session or session.get('user_type') != 'Admin':
+        return jsonify({'error': 'Unauthorized'}), 401
+    try:
+        from datetime import datetime as _dt, timezone
+        from collections import defaultdict
+        import calendar
+
+        # Fetch orders - only columns that actually exist on the orders table
+        orders_res = sb_admin.table('orders').select(
+            'id, status, total_price, date, product_id, quantity, shipping_fee'
+        ).execute()
+        all_orders = orders_res.data or []
+
+        # Fetch products for category data - only columns that exist
+        try:
+            products_res = sb_admin.table('products').select('id, category, sold, quantity').execute()
+            all_products = products_res.data or []
+        except Exception as pe:
+            print(f"[dashboard_charts] products fetch error: {pe}")
+            # Retry without 'sold' in case column doesn't exist
+            try:
+                products_res = sb_admin.table('products').select('id, category, quantity').execute()
+                all_products = products_res.data or []
+            except Exception:
+                all_products = []
+
+        done_statuses = {'delivered', 'completed', 'received'}
+
+        # ── Build last 12 months labels ──────────────────────────────────────
+        now = _dt.now(timezone.utc)
+        months = []
+        for i in range(11, -1, -1):
+            total_months = now.year * 12 + now.month - 1 - i
+            y = total_months // 12
+            m = total_months % 12 + 1
+            months.append((y, m))
+
+        month_labels = [calendar.month_abbr[m] + ' ' + str(y)[-2:] for y, m in months]
+
+        # ── Revenue & Commission per month ───────────────────────────────────
+        revenue_by_month    = defaultdict(float)
+        commission_by_month = defaultdict(float)
+
+        for o in all_orders:
+            if (o.get('status') or '').lower().strip() not in done_statuses:
+                continue
+            raw_date = o.get('date')
+            if not raw_date:
+                continue
+            try:
+                dt = _dt.fromisoformat(str(raw_date).replace('Z', '+00:00'))
+                key = (dt.year, dt.month)
+            except Exception:
+                continue
+            total  = float(o.get('total_price') or 0)
+            fee    = float(o.get('shipping_fee') or 50)
+            revenue_by_month[key]    += total
+            commission_by_month[key] += round(total * 0.05, 2) + round(fee * 0.05, 2)
+
+        revenue_values    = [round(revenue_by_month.get(k, 0), 2)    for k in months]
+        commission_values = [round(commission_by_month.get(k, 0), 2) for k in months]
+
+        # ── Top Selling Categories ────────────────────────────────────────────
+        cat_labels = []
+        cat_values = []
+        try:
+            category_sales = defaultdict(int)
+            for p in all_products:
+                cat  = (p.get('category') or 'Other').strip().upper()
+                sold = int(p.get('sold') or 0)
+                category_sales[cat] += sold
+
+            # Fallback: count from completed orders via product_id → category
+            if sum(category_sales.values()) == 0:
+                prod_cat_map = {p['id']: (p.get('category') or 'Other').strip().upper()
+                               for p in all_products if p.get('id')}
+                for o in all_orders:
+                    if (o.get('status') or '').lower().strip() not in done_statuses:
+                        continue
+                    pid = o.get('product_id')
+                    cat = prod_cat_map.get(pid, 'Other') if pid else 'Other'
+                    qty = int(o.get('quantity') or 1)
+                    category_sales[cat] += qty
+
+            sorted_cats = sorted(
+                [(c, v) for c, v in category_sales.items() if v > 0],
+                key=lambda x: x[1], reverse=True
+            )[:8]
+            cat_labels = [c[0] for c in sorted_cats]
+            cat_values = [c[1] for c in sorted_cats]
+        except Exception as ce:
+            print(f"[dashboard_charts] category error: {ce}")
+
+        # ── Order Status Distribution ─────────────────────────────────────────
+        status_labels = []
+        status_values = []
+        try:
+            status_count = defaultdict(int)
+            status_label_map = {
+                'pending':           'Pending',
+                'confirmed':         'Confirmed',
+                'for pickup':        'For Pickup',
+                'heading to seller': 'Heading to Seller',
+                'shipped':           'Shipped',
+                'delivered':         'Delivered',
+                'completed':         'Completed',
+                'received':          'Received',
+                'cancelled':         'Cancelled',
+                'rejected':          'Cancelled',
+            }
+            for o in all_orders:
+                raw_status = (o.get('status') or 'unknown').lower().strip()
+                label = status_label_map.get(raw_status, raw_status.title())
+                status_count[label] += 1
+
+            sorted_statuses = sorted(
+                [(k, v) for k, v in status_count.items() if v > 0],
+                key=lambda x: x[1], reverse=True
+            )
+            status_labels = [s[0] for s in sorted_statuses]
+            status_values = [s[1] for s in sorted_statuses]
+        except Exception as se:
+            print(f"[dashboard_charts] status error: {se}")
+
+        # ── Debug log ─────────────────────────────────────────────────────────
+        print(f"[dashboard_charts] orders={len(all_orders)}, products={len(all_products)}")
+        print(f"[dashboard_charts] revenue={revenue_values}")
+        print(f"[dashboard_charts] cats={cat_labels}")
+        print(f"[dashboard_charts] statuses={status_labels}")
+        if all_orders:
+            sample = list({(o.get('status') or '') for o in all_orders[:10]})
+            print(f"[dashboard_charts] sample DB statuses: {sample}")
+
+        return jsonify({
+            'revenue': {
+                'labels': month_labels,
+                'values': revenue_values,
+            },
+            'commission': {
+                'labels': month_labels,
+                'values': commission_values,
+            },
+            'categories': {
+                'labels': cat_labels,
+                'values': cat_values,
+            },
+            'orderStatus': {
+                'labels': status_labels,
+                'values': status_values,
+            },
+        })
+
+    except Exception as e:
+        print(f"admin_dashboard_charts error: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/admin_users')
@@ -6871,43 +7059,120 @@ def order_monitoring():
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('login'))
+
+    from datetime import datetime as _dt
+
+    def _parse_dt(val):
+        """Parse an ISO datetime string into a datetime object, or return None."""
+        if not val:
+            return None
+        if isinstance(val, _dt):
+            return val
+        for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z',
+                    '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S',
+                    '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+            try:
+                return _dt.strptime(str(val)[:26], fmt)
+            except ValueError:
+                continue
+        return None
+
+    search     = request.args.get('search', '').strip()
+    status_f   = request.args.get('status', '').strip()
+    date_from  = request.args.get('date_from', '').strip()
+    date_to    = request.args.get('date_to', '').strip()
     try:
-        orders_res = sb_admin.table('orders').select('*').order('date', desc=True).limit(100).execute()
-        orders = orders_res.data or []
-        # Enrich with buyer/seller names
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    per_page = 20
+
+    try:
+        q = sb_admin.table('orders').select('*').order('date', desc=True)
+        if status_f:
+            if status_f in ('cancelled', 'rejected'):
+                q = q.in_('status', ['cancelled', 'rejected'])
+            else:
+                q = q.eq('status', status_f)
+        if date_from:
+            q = q.gte('date', date_from)
+        if date_to:
+            q = q.lte('date', date_to + 'T23:59:59')
+        res = q.execute()
+        all_orders = res.data or []
+
+        # Enrich with buyer/seller/rider names
         emails = set()
-        for o in orders:
+        for o in all_orders:
             for f in ('email', 'seller_email', 'rider_email'):
-                if o.get(f): emails.add(o[f])
+                if o.get(f):
+                    emails.add(o[f])
         user_map = {}
+        phone_map = {}
         if emails:
-            ur = sb_admin.table('users').select('email, first_name, last_name, business_name').in_('email', list(emails)).execute()
+            ur = sb_admin.table('users').select(
+                'email, first_name, last_name, business_name, phone'
+            ).in_('email', list(emails)).execute()
             for u in (ur.data or []):
-                fn = (u.get('first_name') or '').strip()
-                ln = (u.get('last_name') or '').strip()
+                fn  = (u.get('first_name') or '').strip()
+                ln  = (u.get('last_name') or '').strip()
                 biz = (u.get('business_name') or '').strip()
-                user_map[u['email']] = biz or f'{fn} {ln}'.strip() or u['email']
-        for o in orders:
-            o['buyer_name']  = user_map.get(o.get('email', ''), o.get('email', ''))
-            o['seller_name'] = user_map.get(o.get('seller_email', ''), o.get('seller_email', ''))
-            o['total_amount'] = float(o.get('total_price') or 0)
-            o['order_date']   = o.get('date', '')
-            o['order_status'] = o.get('status', '')
-            o['order_id']     = o['id']
+                user_map[u['email']]  = biz or f'{fn} {ln}'.strip() or u['email']
+                phone_map[u['email']] = u.get('phone') or 'N/A'
+
+        for o in all_orders:
+            o['buyer_name']    = user_map.get(o.get('email', ''), o.get('email', ''))
+            o['seller_name']   = user_map.get(o.get('seller_email', ''), o.get('seller_email', ''))
+            o['rider_name']    = user_map.get(o.get('rider_email', ''), None) if o.get('rider_email') else None
+            o['total_amount']  = float(o.get('total_price') or 0)
+            o['order_date']    = _parse_dt(o.get('date'))
+            o['order_status']  = o.get('status', '')
+            o['order_id']      = o['id']
+            o['payment_method'] = o.get('payment_method', '')
+            o['delivered_at']  = _parse_dt(o.get('delivered_at'))
+            o['received_at']   = _parse_dt(o.get('received_at'))
+            o['auto_complete_at'] = _parse_dt(o.get('auto_complete_at'))
+            o['is_auto_completed'] = bool(o.get('is_auto_completed'))
+
+        # Apply search after enrichment so buyer/seller names are searchable
+        if search:
+            sl = search.lower()
+            all_orders = [o for o in all_orders if
+                          sl in str(o.get('id', '')).lower() or
+                          sl in o['buyer_name'].lower() or
+                          sl in o['seller_name'].lower() or
+                          sl in str(o.get('email', '')).lower() or
+                          sl in str(o.get('seller_email', '')).lower()]
+
         stats = {
-            'total_orders':     len(orders),
-            'pending_orders':   sum(1 for o in orders if (o.get('status') or '').lower() == 'pending'),
-            'shipped_orders':   sum(1 for o in orders if (o.get('status') or '').lower() in ('shipped', 'for pickup', 'heading to seller')),
-            'delivered_orders': sum(1 for o in orders if (o.get('status') or '').lower() == 'delivered'),
-            'completed_orders': sum(1 for o in orders if (o.get('status') or '').lower() == 'completed'),
-            'cancelled_orders': sum(1 for o in orders if (o.get('status') or '').lower() == 'cancelled'),
+            'total_orders':     len(all_orders),
+            'pending_orders':   sum(1 for o in all_orders if (o.get('status') or '').lower() == 'pending'),
+            'shipped_orders':   sum(1 for o in all_orders if (o.get('status') or '').lower() in ('shipped', 'for pickup', 'heading to seller')),
+            'delivered_orders': sum(1 for o in all_orders if (o.get('status') or '').lower() == 'delivered'),
+            'completed_orders': sum(1 for o in all_orders if (o.get('status') or '').lower() == 'completed'),
+            'cancelled_orders': sum(1 for o in all_orders if (o.get('status') or '').lower() in ('cancelled', 'rejected')),
         }
+
+        total_orders = len(all_orders)
+        total_pages  = max(1, (total_orders + per_page - 1) // per_page)
+        page         = min(page, total_pages)
+        orders       = all_orders[(page - 1) * per_page: page * per_page]
+        prev_page    = page - 1 if page > 1 else None
+        next_page    = page + 1 if page < total_pages else None
+
     except Exception as e:
         print(f"order_monitoring error: {e}")
         orders = []
-        stats = {k: 0 for k in ['total_orders','pending_orders','shipped_orders','delivered_orders','completed_orders','cancelled_orders']}
+        stats  = {k: 0 for k in ['total_orders', 'pending_orders', 'shipped_orders',
+                                   'delivered_orders', 'completed_orders', 'cancelled_orders']}
+        total_pages = 1
+        prev_page   = None
+        next_page   = None
+
     return render_template('order_monitoring.html', orders=orders, riders=[], stats=stats,
-                           current_page=1, total_pages=1, prev_page=None, next_page=None)
+                           current_page=page, total_pages=total_pages,
+                           total_orders=total_orders,
+                           prev_page=prev_page, next_page=next_page)
 
 
 @app.route('/product_management')
@@ -6921,6 +7186,12 @@ def product_management():
     seller   = request.args.get('seller', '').strip()
     status   = request.args.get('status', '').strip()
     try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    per_page = 20
+
+    try:
         q = sb_admin.table('products').select('*').order('id', desc=True)
         if search:
             q = q.ilike('name', f'%{search}%')
@@ -6933,15 +7204,87 @@ def product_management():
         elif status == 'inactive':
             q = q.eq('is_active', False)
         res = q.execute()
-        products = res.data or []
-        for p in products:
-            p['price'] = float(p.get('price') or 0)
-            p['quantity'] = int(p.get('quantity') or 0)
+        all_products = res.data or []
+
+        # Enrich products
+        seller_emails = list({p.get('seller_email') for p in all_products if p.get('seller_email')})
+        seller_name_map = {}
+        if seller_emails:
+            sr = sb_admin.table('users').select('email, first_name, last_name, business_name').in_('email', seller_emails).execute()
+            for u in (sr.data or []):
+                fn  = (u.get('first_name') or '').strip()
+                ln  = (u.get('last_name') or '').strip()
+                biz = (u.get('business_name') or '').strip()
+                seller_name_map[u['email']] = biz or f'{fn} {ln}'.strip() or u['email']
+
+        from datetime import datetime as _dt
+        def _parse_dt(val):
+            if not val:
+                return None
+            if isinstance(val, _dt):
+                return val
+            for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z',
+                        '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S',
+                        '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                try:
+                    return _dt.strptime(str(val)[:26], fmt)
+                except ValueError:
+                    continue
+            return None
+
+        for p in all_products:
+            p['price']          = float(p.get('price') or 0)
+            p['stock_quantity'] = int(p.get('quantity') or 0)
+            p['quantity']       = p['stock_quantity']
+            p['seller_name']    = seller_name_map.get(p.get('seller_email', ''), p.get('seller_email', ''))
+            p['seller_email']   = p.get('seller_email', '')
+            p['is_active']      = bool(p.get('is_active', True))
+            p['flagged_at']     = _parse_dt(p.get('flagged_at'))
+            p['created_at']     = _parse_dt(p.get('created_at'))
+            p['updated_at']     = _parse_dt(p.get('updated_at'))
+
+        # Apply stock-based status filters after enrichment
+        if status == 'out_of_stock':
+            all_products = [p for p in all_products if p['stock_quantity'] <= 0]
+        elif status == 'low_stock':
+            all_products = [p for p in all_products if 0 < p['stock_quantity'] <= int(p.get('low_stock_threshold') or 5)]
+        elif status == 'flagged':
+            all_products = [p for p in all_products if p.get('flagged_at')]
+
+        # Stats
+        total_products    = len(all_products)
+        low_stock_count   = sum(1 for p in all_products if 0 < p['stock_quantity'] <= int(p.get('low_stock_threshold') or 5))
+        out_of_stock_count = sum(1 for p in all_products if p['stock_quantity'] <= 0)
+
+        # Categories and sellers for filter dropdowns
+        categories = sorted({p.get('category') for p in all_products if p.get('category')})
+        sellers_set = {}
+        for p in all_products:
+            e = p.get('seller_email', '')
+            if e and e not in sellers_set:
+                sellers_set[e] = p.get('seller_name', e)
+        sellers = [{'email': e, 'seller_name': n} for e, n in sellers_set.items()]
+
+        # Pagination
+        total_pages = max(1, (total_products + per_page - 1) // per_page)
+        page        = min(page, total_pages)
+        products    = all_products[(page - 1) * per_page: page * per_page]
+
     except Exception as e:
         print(f"product_management error: {e}")
         products = []
+        total_products = low_stock_count = out_of_stock_count = 0
+        categories = []
+        sellers    = []
+        total_pages = 1
+
     return render_template('product_management.html', products=products,
-                           search=search, category=category, seller=seller, status=status)
+                           search=search, category=category, seller=seller, status=status,
+                           page=page, total_pages=total_pages,
+                           total_products=total_products,
+                           low_stock_count=low_stock_count,
+                           out_of_stock_count=out_of_stock_count,
+                           categories=categories, sellers=sellers)
 
 
 @app.route('/admin_issue_reports')
@@ -6950,13 +7293,81 @@ def admin_issue_reports():
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('login'))
+
+    search_query         = request.args.get('search', '').strip()
+    status_filter        = request.args.get('status', '').strip()
+    reporter_role_filter = request.args.get('reporter_role', '').strip()
+    report_against_filter = request.args.get('report_against', '').strip()
     try:
-        res = sb_admin.table('order_issues').select('*').order('created_at', desc=True).execute()
-        issues = res.data or []
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    per_page = 20
+
+    from datetime import datetime as _dt
+    def _parse_dt(val):
+        if not val:
+            return None
+        if isinstance(val, _dt):
+            return val
+        for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z',
+                    '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S',
+                    '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+            try:
+                return _dt.strptime(str(val)[:26], fmt)
+            except ValueError:
+                continue
+        return None
+
+    try:
+        q = sb_admin.table('order_issues').select('*').order('created_at', desc=True)
+        if status_filter:
+            q = q.eq('status', status_filter)
+        if reporter_role_filter:
+            q = q.eq('reporter_role', reporter_role_filter)
+        if report_against_filter:
+            q = q.eq('reported_against_role', report_against_filter)
+        res = q.execute()
+        all_issues = res.data or []
+
+        if search_query:
+            sl = search_query.lower()
+            all_issues = [i for i in all_issues if
+                          sl in str(i.get('reporter_email', '')).lower() or
+                          sl in str(i.get('issue_description', '')).lower() or
+                          sl in str(i.get('order_id', '')).lower()]
+
+        for i in all_issues:
+            i['created_at'] = _parse_dt(i.get('created_at'))
+
+        stats = {
+            'total_issues':       len(all_issues),
+            'pending_issues':     sum(1 for i in all_issues if (i.get('status') or '') == 'pending'),
+            'in_progress_issues': sum(1 for i in all_issues if (i.get('status') or '') == 'in_progress'),
+            'resolved_issues':    sum(1 for i in all_issues if (i.get('status') or '') in ('resolved', 'closed')),
+        }
+
+        total_issues = len(all_issues)
+        total_pages  = max(1, (total_issues + per_page - 1) // per_page)
+        page         = min(page, total_pages)
+        issues       = all_issues[(page - 1) * per_page: page * per_page]
+
     except Exception as e:
         print(f"admin_issue_reports error: {e}")
         issues = []
-    return render_template('admin_issue_reports.html', issues=issues)
+        stats  = {'total_issues': 0, 'pending_issues': 0, 'in_progress_issues': 0, 'resolved_issues': 0}
+        total_issues = 0
+        total_pages  = 1
+
+    return render_template('admin_issue_reports.html', issues=issues,
+                           stats=stats,
+                           search_query=search_query,
+                           status_filter=status_filter,
+                           reporter_role_filter=reporter_role_filter,
+                           report_against_filter=report_against_filter,
+                           current_page=page,
+                           total_pages=total_pages,
+                           total_issues=total_issues)
 
 
 @app.route('/admin_reports_analytics')
@@ -6991,13 +7402,31 @@ def archive_accounts():
     if 'user_id' not in session or session.get('user_type') != 'Admin':
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('login'))
+
+    from datetime import datetime as _dt
+    def _parse_dt(val):
+        if not val:
+            return None
+        if isinstance(val, _dt):
+            return val
+        for fmt in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z',
+                    '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S',
+                    '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+            try:
+                return _dt.strptime(str(val)[:26], fmt)
+            except ValueError:
+                continue
+        return None
+
     try:
         res = sb_admin.table('archived_users').select('*').order('archived_at', desc=True).execute()
         archived = res.data or []
+        for u in archived:
+            u['archived_at_dt'] = _parse_dt(u.get('archived_at'))
     except Exception as e:
         print(f"archive_accounts error: {e}")
         archived = []
-    return render_template('archive_accounts.html', archived_users=archived)
+    return render_template('archive.html', users=archived)
 
 
 @app.route('/pending_users')
@@ -7734,10 +8163,10 @@ def admin_analytics_api():
         # ── 1. Fetch raw data in parallel batches ─────────────────────────────
         orders_res   = sb_admin.table('orders').select('*').execute()
         products_res = sb_admin.table('products').select('*').execute()
-        users_res    = sb_admin.table('users').select('email,first_name,last_name,business_name,role,phone,vehicle_type,vehicle_plate_number').execute()
+        users_res    = sb_admin.table('users').select('id,email,first_name,last_name,business_name,role,phone').execute()
         reviews_res  = sb_admin.table('reviews').select('product_id,rating').execute()
         cart_res     = sb_admin.table('cart').select('email').execute()
-        wishlist_res = sb_admin.table('wishlist').select('user_email').execute()
+        wishlist_res = sb_admin.table('wishlist').select('user_id').execute()
 
         all_orders   = orders_res.data   or []
         all_products = products_res.data or []
@@ -7746,17 +8175,32 @@ def admin_analytics_api():
         all_cart     = cart_res.data     or []
         all_wishlist = wishlist_res.data or []
 
+        # Fetch rider vehicle info from rider_vehicles table (keyed by user_id)
+        rider_vehicle_map = {}  # user_id -> {vehicle_type, plate_number}
+        try:
+            rv_res = sb_admin.table('rider_vehicles').select('user_id,vehicle_type,plate_number').execute()
+            for rv in (rv_res.data or []):
+                if rv.get('user_id'):
+                    rider_vehicle_map[rv['user_id']] = {
+                        'vehicle_type': rv.get('vehicle_type') or 'N/A',
+                        'plate':        rv.get('plate_number') or 'N/A',
+                    }
+        except Exception as rv_err:
+            print(f"rider_vehicles fetch skipped: {rv_err}")
+
         #  2. Build lookup maps 
         user_map = {}
         for u in all_users:
             fn  = (u.get('first_name')    or '').strip()
             ln  = (u.get('last_name')     or '').strip()
             biz = (u.get('business_name') or '').strip()
+            uid = u.get('id')
+            rv  = rider_vehicle_map.get(uid, {})
             user_map[u['email']] = {
                 'name':         biz or f'{fn} {ln}'.strip() or u['email'],
                 'user_type':    (u.get('role') or '').lower(),
-                'vehicle_type': u.get('vehicle_type') or 'N/A',
-                'plate':        u.get('vehicle_plate_number') or 'N/A',
+                'vehicle_type': rv.get('vehicle_type', 'N/A'),
+                'plate':        rv.get('plate', 'N/A'),
             }
 
         # Rating map: product_id  [ratings]
@@ -7771,10 +8215,14 @@ def admin_analytics_api():
             if c.get('email'): cart_count[c['email']] += 1
 
         # Wishlist count per buyer email
+        # wishlist table stores user_id (numeric), so build a reverse id->email map
+        uid_to_email = {u.get('id'): u.get('email') for u in all_users if u.get('id') and u.get('email')}
         wishlist_count = defaultdict(int)
         for w in all_wishlist:
-            key = w.get('user_email') or w.get('email') or ''
-            if key: wishlist_count[key] += 1
+            uid = w.get('user_id')
+            email = uid_to_email.get(uid, '')
+            if email:
+                wishlist_count[email] += 1
 
         def _fmt_date(val, fmt='%Y-%m-%d'):
             if not val: return None

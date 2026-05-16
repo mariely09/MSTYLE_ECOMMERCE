@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/api/admin/dashboard_charts')
         .then(response => {
             if (!response.ok) {
-                throw new Error('Network response was not ok');
+                throw new Error('Network response was not ok: ' + response.status);
             }
             return response.json();
         })
@@ -147,37 +147,63 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.error) {
                 console.error('API Error:', data.error);
+                showChartError('API Error: ' + data.error);
+                return;
             }
             
-            // Check if data exists before rendering
             if (data.revenue && data.revenue.labels && data.revenue.labels.length > 0) {
                 renderRevenueChart(data.revenue);
             } else {
-                console.warn('No revenue data available');
+                showEmptyChart('revenueChart', 'No revenue data yet');
             }
             
             if (data.commission && data.commission.labels && data.commission.labels.length > 0) {
                 renderCommissionChart(data.commission);
             } else {
-                console.warn('No commission data available');
+                showEmptyChart('commissionChart', 'No commission data yet');
             }
             
             if (data.categories && data.categories.labels && data.categories.labels.length > 0) {
                 renderCategoriesChart(data.categories);
             } else {
-                console.warn('No categories data available');
+                showEmptyChart('categoriesChart', 'No category sales data yet');
             }
             
             if (data.orderStatus && data.orderStatus.labels && data.orderStatus.labels.length > 0) {
                 renderOrderStatusChart(data.orderStatus);
             } else {
-                console.warn('No order status data available');
+                showEmptyChart('orderStatusChart', 'No orders yet');
             }
         })
         .catch(error => {
             console.error('Error fetching chart data:', error);
+            showChartError('Failed to load chart data: ' + error.message);
         });
 });
+
+function showEmptyChart(canvasId, message) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const container = canvas.parentElement;
+    canvas.style.display = 'none';
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:center;justify-content:center;height:200px;color:#aaa;font-size:0.95rem;flex-direction:column;gap:8px;';
+    div.innerHTML = '<i class="fas fa-chart-bar" style="font-size:2rem;opacity:0.3;"></i><span>' + message + '</span>';
+    container.appendChild(div);
+}
+
+function showChartError(message) {
+    ['revenueChart','commissionChart','categoriesChart','orderStatusChart'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
+        const container = canvas.parentElement;
+        canvas.style.display = 'none';
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;align-items:center;justify-content:center;height:200px;color:#e74c3c;font-size:0.85rem;text-align:center;padding:1rem;';
+        div.textContent = message;
+        container.appendChild(div);
+    });
+}
 
 function renderRevenueChart(revenueData) {
     const ctx = document.getElementById('revenueChart').getContext('2d');

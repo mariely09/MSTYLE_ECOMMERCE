@@ -271,7 +271,7 @@
             {% if total_pages > 1 %}
             <div class="pagination-container">
                 <div class="pagination-info">
-                    Showing {{ ((current_page - 1) * 20) + 1 }} to {{ [current_page * 20, orders|length]|min }} of {{ orders|length }} orders
+                    Showing {{ ((current_page - 1) * 20) + 1 }} to {{ [current_page * 20, total_orders]|min }} of {{ total_orders }} orders
                 </div>
                 <div class="pagination">
                     {% if prev_page %}

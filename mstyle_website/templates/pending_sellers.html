@@ -480,17 +480,15 @@
                             <div class="seller-info">
                                 <span class="name">{{ seller.first_name }} {{ seller.last_name }}</span>
                                 <span class="phone">
-                                    {% if seller.phone_number %}
-                                    {% set phone = seller.phone_number|string %}
-                                    {% if phone.startswith('63') and phone|length == 12 %}
-                                    +{{ phone[:2] }} {{ phone[2:5] }} {{ phone[5:8] }} {{ phone[8:] }}
-                                    {% elif phone.startswith('09') and phone|length == 11 %}
-                                    {{ phone[:4] }} {{ phone[4:7] }} {{ phone[7:] }}
-                                    {% elif phone|length >= 10 %}
-                                    {{ phone }}
-                                    {% else %}
-                                    {{ phone }}
-                                    {% endif %}
+                                    {% set phone = seller.phone|string if seller.phone else '' %}
+                                    {% if phone and phone != 'None' %}
+                                        {% if phone.startswith('63') and phone|length == 12 %}
+                                        +{{ phone[:2] }} {{ phone[2:5] }} {{ phone[5:8] }} {{ phone[8:] }}
+                                        {% elif phone.startswith('09') and phone|length == 11 %}
+                                        {{ phone[:4] }} {{ phone[4:7] }} {{ phone[7:] }}
+                                        {% else %}
+                                        {{ phone }}
+                                        {% endif %}
                                     {% else %}
                                     No phone
                                     {% endif %}
@@ -510,17 +508,18 @@
                         </td>
                         <td class="seller-email">{{ seller.email }}</td>
                         <td class="seller-address">
-                            {% if seller.address %}
-                            {% set address_parts = seller.address.split(',') %}
-                            {% if address_parts|length >= 3 %}
+                            {% set street   = seller.house_street or '' %}
+                            {% set barangay = seller.barangay or '' %}
+                            {% set city     = seller.city or '' %}
+                            {% set province = seller.province or '' %}
+                            {% set region   = seller.region or '' %}
+                            {% set zip_code = seller.zip_code or '' %}
+                            {% if street or barangay or city %}
                             <div class="address-full">
-                                <span class="street">{{ address_parts[0] }}</span>
-                                <span class="location">Brgy. {{ address_parts[1].strip() }}, {{ address_parts[2].strip() }}</span>
-                                <span class="city">{{ address_parts[3].strip() }}, {{ address_parts[4].strip() }}</span>
+                                {% if street %}<span class="street">{{ street }}</span>{% endif %}
+                                {% if barangay %}<span class="location">Brgy. {{ barangay }}{% if city %}, {{ city }}{% endif %}</span>{% endif %}
+                                {% if province or region %}<span class="city">{{ province }}{% if region %}, {{ region }}{% endif %}{% if zip_code %} {{ zip_code }}{% endif %}</span>{% endif %}
                             </div>
-                            {% else %}
-                            <span class="address-simple">{{ seller.address }}</span>
-                            {% endif %}
                             {% else %}
                             <span class="no-address">No address provided</span>
                             {% endif %}

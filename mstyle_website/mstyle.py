@@ -7175,6 +7175,13 @@ def get_seller_documents(seller_id):
     def signed_url(storage_path):
         if not storage_path:
             return None
+        # Already a full URL — return as-is
+        if storage_path.startswith('http://') or storage_path.startswith('https://'):
+            return storage_path
+        # Build public URL directly (bucket is public, no signing needed)
+        clean = storage_path.lstrip('/')
+        public = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{clean}"
+        # Try signed URL first (works for private buckets too)
         try:
             result = sb_admin.storage.from_(BUCKET).create_signed_url(storage_path, 3600)
             if isinstance(result, dict):
@@ -7185,9 +7192,7 @@ def get_seller_documents(seller_id):
                 return url
         except Exception as e:
             print(f'seller signed_url error for {storage_path}: {e}')
-        # Fallback: build public URL (works if bucket is public)
-        clean = storage_path.lstrip('/')
-        return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{clean}"
+        return public
 
     # -- Supabase-registered seller (sb_ prefix) --------------------------
     if str(seller_id).startswith('sb_'):
@@ -7202,6 +7207,9 @@ def get_seller_documents(seller_id):
                 if not stored_path:
                     return None, []
                 normalised = stored_path.replace('\\', '/')
+                # Already a full URL — return directly
+                if normalised.startswith('http://') or normalised.startswith('https://'):
+                    return normalised, [normalised]
                 is_local = (
                     'static/images/uploads' in normalised
                     or 'static/uploads' in normalised
@@ -7216,8 +7224,12 @@ def get_seller_documents(seller_id):
                         f"/uploads/{subfolder}/{fn}",
                     ]
                     return variations[0], variations
-                url = signed_url(stored_path)
-                return url, [url] if url else []
+                # Storage path — build both signed URL and public URL
+                su = signed_url(stored_path)
+                clean = stored_path.lstrip('/')
+                pub = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{clean}"
+                variations = list(dict.fromkeys(filter(None, [su, pub])))
+                return variations[0] if variations else None, variations
 
             valid_id_url,  valid_id_vars  = resolve_seller_doc_url_sb(s.get('valid_id_path'),          'seller_docs')
             dti_url,       dti_vars       = resolve_seller_doc_url_sb(s.get('dti_path'),               'seller_docs')
@@ -7321,16 +7333,23 @@ def get_user_documents(user_id):
     SUPABASE_STORAGE_BASE = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}"
     def signed_url(path):
         if not path: return None
+        # Already a full URL — return as-is
+        if path.startswith('http://') or path.startswith('https://'):
+            return path
+        # Build public URL directly (bucket is public)
+        clean = path.lstrip('/')
+        public = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{clean}"
         try:
             result = sb_admin.storage.from_(BUCKET).create_signed_url(path, 3600)
             if isinstance(result, dict):
-                return result.get('signedURL') or result.get('signedUrl') or result.get('signed_url')
-            return getattr(result, 'signed_url', None) or getattr(result, 'signedURL', None)
+                url = result.get('signedURL') or result.get('signedUrl') or result.get('signed_url')
+            else:
+                url = getattr(result, 'signed_url', None) or getattr(result, 'signedURL', None)
+            if url:
+                return url
         except Exception:
             pass
-        # Fallback: public URL
-        clean = path.lstrip('/')
-        return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{clean}"
+        return public
     try:
         record_id = user_id[3:] if str(user_id).startswith('sb_') else user_id
         res = sb_admin.table('pending_users').select('first_name, last_name, email, phone, house_street, barangay, city, province, region, zip_code, role, valid_id_path, supabase_uid').eq('id', str(record_id)).limit(1).execute()
@@ -7344,26 +7363,43 @@ def get_user_documents(user_id):
                 rv_res = sb_admin.table('pending_rider_vehicles').select('*').eq('supabase_uid', uid).limit(1).execute()
                 rv = rv_res.data[0] if rv_res.data else {}
             except Exception: pass
-        valid_id_url = signed_url(u.get('valid_id_path'))
-        or_cr_url = signed_url(rv.get('or_cr_path'))
-        nbi_clearance_url = signed_url(rv.get('nbi_clearance_path'))
-        
+        valid_id_path = u.get('valid_id_path')
+        or_cr_path = rv.get('or_cr_path')
+        nbi_path = rv.get('nbi_clearance_path')
+
+        def make_variations(path):
+            """Return [signed_url, public_url] so frontend can try both."""
+            if not path: return []
+            urls = []
+            su = signed_url(path)
+            if su: urls.append(su)
+            # Always include direct public URL as fallback
+            if not (path.startswith('http://') or path.startswith('https://')):
+                clean = path.lstrip('/')
+                pub = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{clean}"
+                if pub not in urls: urls.append(pub)
+            return urls
+
+        valid_id_url = signed_url(valid_id_path)
+        or_cr_url = signed_url(or_cr_path)
+        nbi_clearance_url = signed_url(nbi_path)
+
         return jsonify({'success': True, 'user': {
             'first_name': u.get('first_name',''), 'last_name': u.get('last_name',''),
             'email': u.get('email',''), 'phone_number': u.get('phone',''),
             'address': ', '.join(filter(None,[u.get('house_street',''),u.get('barangay',''),u.get('city',''),u.get('province',''),u.get('region',''),u.get('zip_code','')])),
             'user_type': u.get('role','buyer'),
             'valid_id_url': valid_id_url,
-            'valid_id_path': u.get('valid_id_path'),
-            'path_variations': [valid_id_url] if valid_id_url else [],
+            'valid_id_path': valid_id_path,
+            'path_variations': make_variations(valid_id_path),
             'vehicle_type': rv.get('vehicle_type'), 'vehicle_model': rv.get('vehicle_model'),
             'vehicle_plate_number': rv.get('plate_number'), 'vehicle_year_model': rv.get('year_model'),
             'or_cr_url': or_cr_url,
-            'or_cr_path': rv.get('or_cr_path'),
-            'or_cr_variations': [or_cr_url] if or_cr_url else [],
+            'or_cr_path': or_cr_path,
+            'or_cr_variations': make_variations(or_cr_path),
             'nbi_clearance_url': nbi_clearance_url,
-            'nbi_clearance_path': rv.get('nbi_clearance_path'),
-            'nbi_variations': [nbi_clearance_url] if nbi_clearance_url else [],
+            'nbi_clearance_path': nbi_path,
+            'nbi_variations': make_variations(nbi_path),
         }})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -7682,7 +7718,7 @@ def admin_analytics_api():
         # ── 1. Fetch raw data in parallel batches ─────────────────────────────
         orders_res   = sb_admin.table('orders').select('*').execute()
         products_res = sb_admin.table('products').select('*').execute()
-        users_res    = sb_admin.table('users').select('email,first_name,last_name,business_name,user_type,phone,vehicle_type,vehicle_plate_number').execute()
+        users_res    = sb_admin.table('users').select('email,first_name,last_name,business_name,role,phone,vehicle_type,vehicle_plate_number').execute()
         reviews_res  = sb_admin.table('reviews').select('product_id,rating').execute()
         cart_res     = sb_admin.table('cart').select('email').execute()
         wishlist_res = sb_admin.table('wishlist').select('user_email').execute()
@@ -7702,7 +7738,7 @@ def admin_analytics_api():
             biz = (u.get('business_name') or '').strip()
             user_map[u['email']] = {
                 'name':         biz or f'{fn} {ln}'.strip() or u['email'],
-                'user_type':    (u.get('user_type') or '').lower(),
+                'user_type':    (u.get('role') or '').lower(),
                 'vehicle_type': u.get('vehicle_type') or 'N/A',
                 'plate':        u.get('vehicle_plate_number') or 'N/A',
             }
@@ -7759,7 +7795,7 @@ def admin_analytics_api():
             })
 
         #  5. Seller Performance 
-        sellers = [u for u in all_users if (u.get('user_type') or '').lower() == 'seller']
+        sellers = [u for u in all_users if (u.get('role') or '').lower() == 'seller']
         seller_orders  = defaultdict(list)
         seller_prods   = defaultdict(list)
         for o in all_orders:
@@ -7788,7 +7824,7 @@ def admin_analytics_api():
         seller_performance.sort(key=lambda x: x['total_revenue'], reverse=True)
 
         #  6. Rider Analytics 
-        riders = [u for u in all_users if (u.get('user_type') or '').lower() == 'rider']
+        riders = [u for u in all_users if (u.get('role') or '').lower() == 'rider']
         rider_orders = defaultdict(list)
         for o in all_orders:
             if o.get('rider_email'): rider_orders[o['rider_email']].append(o)
@@ -7814,7 +7850,7 @@ def admin_analytics_api():
         rider_analytics.sort(key=lambda x: x['total_deliveries'], reverse=True)
 
         #  7. Buyer Insights 
-        buyers = [u for u in all_users if (u.get('user_type') or '').lower() == 'buyer']
+        buyers = [u for u in all_users if (u.get('role') or '').lower() == 'buyer']
         buyer_orders = defaultdict(list)
         for o in all_orders:
             if o.get('email'): buyer_orders[o['email']].append(o)

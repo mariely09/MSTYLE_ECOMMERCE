@@ -513,9 +513,11 @@
         function showUserModal(user) {
             const modalBody = document.getElementById('userModalBody');
 
-            // Use signed URL if available, otherwise fall back to raw path
-            function getDocumentUrl(urlKey, pathKey) {
-                return user[urlKey] || user[pathKey] || null;
+            // Use signed URL if available, otherwise fall back to raw path or variations
+            function getDocumentUrl(urlKey, pathKey, variationsKey) {
+                const primaryUrl = user[urlKey] || user[pathKey] || null;
+                const variations = user[variationsKey] || [];
+                return primaryUrl || (variations.length > 0 ? variations[0] : null);
             }
 
             modalBody.innerHTML = `
@@ -608,22 +610,22 @@
                     <h4><i class="fas fa-file-alt"></i> Documents</h4>
                     <div class="documents-grid">
                         <!-- Valid ID Document -->
-                        <div class="document-card ${getDocumentUrl('valid_id_url', 'valid_id_path') ? 'has-document' : 'no-document'}">
+                        <div class="document-card ${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations') ? 'has-document' : 'no-document'}">
                             <div class="document-header">
                                 <div class="document-icon">
                                     <i class="fas fa-id-card"></i>
                                 </div>
                                 <div class="document-info">
                                     <h5>Valid Government ID</h5>
-                                    <span class="document-status ${getDocumentUrl('valid_id_url', 'valid_id_path') ? 'uploaded' : 'missing'}">
-                                        <i class="fas fa-${getDocumentUrl('valid_id_url', 'valid_id_path') ? 'check-circle' : 'times-circle'}"></i>
-                                        ${getDocumentUrl('valid_id_url', 'valid_id_path') ? 'Uploaded' : 'Not Uploaded'}
+                                    <span class="document-status ${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations') ? 'uploaded' : 'missing'}">
+                                        <i class="fas fa-${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations') ? 'check-circle' : 'times-circle'}"></i>
+                                        ${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations') ? 'Uploaded' : 'Not Uploaded'}
                                     </span>
                                 </div>
                             </div>
-                            ${getDocumentUrl('valid_id_url', 'valid_id_path') ? `
-                                <div class="document-preview clickable-image" onclick="openImageModal('${getDocumentUrl('valid_id_url', 'valid_id_path')}', 'Valid Government ID')">
-                                    <img src="${getDocumentUrl('valid_id_url', 'valid_id_path')}" alt="Valid ID" loading="lazy">
+                            ${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations') ? `
+                                <div class="document-preview clickable-image" onclick="openImageModal('${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations')}', 'Valid Government ID')">
+                                    <img src="${getDocumentUrl('valid_id_url', 'valid_id_path', 'valid_id_variations')}" alt="Valid ID" loading="lazy" onerror="handleImageError(this, ${JSON.stringify(user.valid_id_variations || [])}, 0)">
                                     <div class="preview-overlay">
                                         <i class="fas fa-search-plus"></i>
                                         <span>Click to view full size</span>

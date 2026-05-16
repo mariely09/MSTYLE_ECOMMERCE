@@ -527,7 +527,7 @@
                         </td>
                         <td class="seller-joined">
                             {% if seller.created_at %}
-                            {{ seller.created_at.strftime('%b %d, %Y') }}
+                            {{ seller.created_at|string|truncate(10, True, '') }}
                             {% else %}
                             Unknown
                             {% endif %}

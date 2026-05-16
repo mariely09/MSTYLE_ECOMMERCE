@@ -176,34 +176,12 @@ class _RiderDashboardPageState extends State<RiderDashboardPage> {
       bottomNavigationBar: RiderBottomNavBar(riderEmail: widget.riderEmail, currentPage: RiderPage.dashboard),
       body: CustomScrollView(slivers: [
         RiderAppBar(riderEmail: widget.riderEmail),
-        SliverToBoxAdapter(child: _pageHeader()),
         SliverToBoxAdapter(child: _statsGrid()),
         SliverToBoxAdapter(child: _availableSection()),
         const SliverToBoxAdapter(child: SizedBox(height: 32)),
       ]),
     );
   }
-
-  // ─── Page Header ──────────────────────────────────────────────────────────
-  Widget _pageHeader() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-    decoration: const BoxDecoration(gradient: _premiumGrad),
-    child: Column(children: [
-      Container(
-        width: 56, height: 56,
-        decoration: BoxDecoration(shape: BoxShape.circle, gradient: _goldGrad,
-          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 12)]),
-        child: const Icon(Icons.speed, color: _primary, size: 26),
-      ),
-      const SizedBox(height: 12),
-      const Text('Rider Dashboard',
-        style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-      const SizedBox(height: 4),
-      Text('Track your deliveries and earnings',
-        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
-    ]),
-  );
 
   // ─── Stats Grid ───────────────────────────────────────────────────────────
   Widget _statsGrid() => Padding(

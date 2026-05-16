@@ -170,3 +170,32 @@ DROP POLICY IF EXISTS "buyer can read own notifications" ON buyer_notifications;
 CREATE POLICY "buyer can read own notifications"
   ON buyer_notifications FOR ALL TO authenticated
   USING (buyer_email = auth.jwt() ->> 'email');
+
+-- ============================================================
+-- Rider Withdrawals
+-- Run this in Supabase Dashboard → SQL Editor
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS rider_withdrawals (
+  id            BIGSERIAL    PRIMARY KEY,
+  rider_email   TEXT         NOT NULL,
+  amount        NUMERIC(10,2) NOT NULL,
+  method        TEXT         NOT NULL,   -- 'GCash' | 'Maya' | 'Bank Transfer'
+  account_name  TEXT         NOT NULL,
+  account_number TEXT        NOT NULL,
+  status        TEXT         DEFAULT 'pending',  -- 'pending' | 'approved' | 'rejected'
+  note          TEXT,
+  requested_at  TIMESTAMPTZ  DEFAULT NOW(),
+  processed_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_rider_withdrawals_email  ON rider_withdrawals(rider_email);
+CREATE INDEX IF NOT EXISTS idx_rider_withdrawals_status ON rider_withdrawals(status);
+
+ALTER TABLE rider_withdrawals ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "rider can manage own withdrawals" ON rider_withdrawals;
+CREATE POLICY "rider can manage own withdrawals"
+  ON rider_withdrawals FOR ALL TO authenticated
+  USING (rider_email = auth.jwt() ->> 'email')
+  WITH CHECK (rider_email = auth.jwt() ->> 'email');

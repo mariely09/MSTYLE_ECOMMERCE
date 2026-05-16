@@ -67,7 +67,7 @@
                                         <i class="fas fa-check"></i>
                                     </button>
                                     <button class="action-btn view-btn"
-                                        onclick="viewDocuments('{{ user.id }}')"
+                                        onclick="viewDocuments('sb_{{ user.id }}')"
                                         title="View Documents">
                                         <i class="fas fa-file-alt"></i>
                                     </button>
@@ -526,7 +526,16 @@
             })
             .then(data => {
                 if (data.success) {
-                    showDocumentsModal(data.user, data.documents);
+                    // Backend returns docs embedded in the user object — normalise here
+                    const docs = {
+                        valid_id_url:        data.user.valid_id_url,
+                        path_variations:     data.user.valid_id_url ? [data.user.valid_id_url] : [],
+                        or_cr_url:           data.user.or_cr_url,
+                        or_cr_variations:    data.user.or_cr_url ? [data.user.or_cr_url] : [],
+                        nbi_clearance_url:   data.user.nbi_clearance_url,
+                        nbi_variations:      data.user.nbi_clearance_url ? [data.user.nbi_clearance_url] : [],
+                    };
+                    showDocumentsModal(data.user, docs);
                 } else {
                     showErrorInModal('Error loading documents: ' + (data.error || 'Unknown error'));
                 }

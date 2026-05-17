@@ -150,7 +150,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           slivers: [
             _appBar(),
             SliverToBoxAdapter(child: _heroSection()),
-            SliverToBoxAdapter(child: _featuresStrip()),
             SliverToBoxAdapter(child: _categoriesSection()),
             SliverToBoxAdapter(child: _productsSection()),
             SliverToBoxAdapter(child: _sellerSection()),
@@ -472,18 +471,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             );
           },
         ),
-      ),
-      const SizedBox(height: 20),
-      // Dot indicators
-      Row(mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(4, (i) => Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          width: i == 0 ? 20 : 8, height: 8,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            color: i == 0 ? _gold : _accent.withOpacity(0.2),
-          ),
-        )),
       ),
     ]),
   );

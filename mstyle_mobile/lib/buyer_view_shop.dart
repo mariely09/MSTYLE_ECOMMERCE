@@ -96,6 +96,11 @@ class _BuyerViewShopPageState extends State<BuyerViewShopPage> {
       // Sort by sold desc
       _products.sort((a, b) => ((b['sold'] as num?)?.toInt() ?? 0).compareTo((a['sold'] as num?)?.toInt() ?? 0));
 
+      // Enrich products with active promotion data for this seller
+      if (_products.isNotEmpty) {
+        await _enrichWithPromotions(_products);
+      }
+
       // ── 3. Seller rating from reviews ───────────────────────────────
       try {
         final reviewRows = await supabaseAdminSelect(
@@ -119,6 +124,102 @@ class _BuyerViewShopPageState extends State<BuyerViewShopPage> {
     if (pic == null || pic.isEmpty) return '';
     if (pic.startsWith('http://') || pic.startsWith('https://')) return pic;
     return '$kFlaskBaseUrl/static/uploads/$pic';
+  }
+
+  /// Fetches active promotions for this seller and enriches each product map
+  /// with promotion_type, promotion_discount, promotion_code, and sale_price.
+  Future<void> _enrichWithPromotions(List<Map<String, dynamic>> products) async {
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+
+      // Only fetch promos for this seller
+      final promoRes = await supabase
+          .from('promotions')
+          .select('id, type, discount_value, code, product_scope')
+          .eq('is_active', true)
+          .eq('seller_email', widget.sellerEmail)
+          .lte('start_date', today)
+          .gte('end_date', today);
+
+      final promos = List<Map<String, dynamic>>.from(promoRes as List);
+      if (promos.isEmpty) return;
+
+      // Specific-scope product IDs
+      final specificIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'specific')
+          .map((p) => p['id'] as int).toList();
+      final Map<int, Set<int>> promoProductIds = {};
+      if (specificIds.isNotEmpty) {
+        final ppRes = await supabase
+            .from('promotion_products')
+            .select('promotion_id, product_id')
+            .inFilter('promotion_id', specificIds);
+        for (final row in (ppRes as List)) {
+          final pid    = row['promotion_id'] as int?;
+          final prodId = row['product_id']   as int?;
+          if (pid != null && prodId != null) {
+            promoProductIds.putIfAbsent(pid, () => {}).add(prodId);
+          }
+        }
+      }
+
+      // Category-scope categories
+      final categoryIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'category')
+          .map((p) => p['id'] as int).toList();
+      final Map<int, Set<String>> promoCategoryNames = {};
+      if (categoryIds.isNotEmpty) {
+        final pcRes = await supabase
+            .from('promotion_categories')
+            .select('promotion_id, category')
+            .inFilter('promotion_id', categoryIds);
+        for (final row in (pcRes as List)) {
+          final pid = row['promotion_id'] as int?;
+          final cat = (row['category'] as String? ?? '').toUpperCase();
+          if (pid != null && cat.isNotEmpty) {
+            promoCategoryNames.putIfAbsent(pid, () => {}).add(cat);
+          }
+        }
+      }
+
+      // Match each product to its best promotion
+      for (final product in products) {
+        final productId = product['id'] as int?;
+        if (productId == null) continue;
+        final category  = (product['category'] as String? ?? '').toUpperCase();
+        final basePrice = (product['price'] as num?)?.toDouble() ?? 0;
+
+        for (final promo in promos) {
+          final scope = promo['product_scope'] as String? ?? 'all';
+          bool qualifies = false;
+          if (scope == 'all') {
+            qualifies = true;
+          } else if (scope == 'specific') {
+            qualifies = promoProductIds[promo['id'] as int]?.contains(productId) ?? false;
+          } else if (scope == 'category') {
+            qualifies = promoCategoryNames[promo['id'] as int]?.contains(category) ?? false;
+          }
+
+          if (qualifies) {
+            final promoType     = promo['type'] as String? ?? '';
+            final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
+            double? salePrice;
+            if (promoType == 'percentage' && promoDiscount > 0) {
+              salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
+            } else if (promoType == 'fixed' && promoDiscount > 0) {
+              salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+            }
+            product['promotion_type']     = promoType;
+            product['promotion_discount'] = promoDiscount;
+            product['promotion_code']     = promo['code'] as String? ?? '';
+            if (salePrice != null) product['sale_price'] = salePrice;
+            break; // one promo per product
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_enrichWithPromotions error: $e');
+    }
   }
 
   @override

@@ -639,23 +639,17 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
           SizedBox(width: 8),
           Text('Confirm Receipt', style: TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 18)),
         ]),
-        content: const Text('Confirm that you have received this order?', style: TextStyle(color: _textLight)),
+        content: const Text(
+          'Confirm that you have received this order?\n\nYou will be asked to leave a review to complete the order.',
+          style: TextStyle(color: _textLight)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(context);
-              // Mark as Completed in Supabase
-              await BuyerService.confirmReceipt(orderId);
-              // Reload orders so status updates to Completed
-              await _loadOrders();
-              _showSuccessSnack('Receipt confirmed! Order is now Completed.');
-              // Auto-open review dialog — only if not already reviewed
+              // Open review sheet — completing the order happens after review is submitted
               if (mounted && !_reviewedOrderIds.contains(orderId)) {
-                // Update the order map with new status for the review dialog
-                final updatedOrder = Map<String, dynamic>.from(order)
-                  ..['status'] = 'Completed';
-                _showReviewDialog(updatedOrder);
+                _showReviewDialog(order);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white,
@@ -675,10 +669,18 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
       context,
       order: order,
       userEmail: widget.userEmail,
-      onSubmitted: () {
+      onSubmitted: () async {
         // Mark this order as reviewed so the button changes to "Reviewed" immediately
         if (mounted) setState(() => _reviewedOrderIds.add(orderId));
-        _showSuccessSnack('Review submitted! Thank you.');
+        // Now mark the order as Completed in Supabase
+        try {
+          await BuyerService.confirmReceipt(orderId is int ? orderId : int.tryParse('$orderId') ?? 0);
+        } catch (e) {
+          debugPrint('confirmReceipt after review error: $e');
+        }
+        // Reload orders so status updates to Completed in the UI
+        await _loadOrders();
+        _showSuccessSnack('Review submitted! Order is now Completed.');
       },
     );
   }

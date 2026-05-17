@@ -21,7 +21,7 @@ const _premiumGrad = LinearGradient(begin: Alignment.topLeft, end: Alignment.bot
 const _goldGrad    = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_gold, _goldLight]);
 
 const _categories  = ['All Categories', 'SHIRTS', 'PANTS'];
-const _sortOptions = ['Default', 'Price: Low to High', 'Price: High to Low', 'Name: A to Z', 'Name: Z to A', 'Newest First'];
+const _sortOptions = ['Default', 'Price: Low to High', 'Price: High to Low', 'Rating: High to Low', 'Name: A to Z', 'Name: Z to A', 'Newest First'];
 
 class CasualPage extends StatefulWidget {
   final String? userEmail;
@@ -73,7 +73,7 @@ class _CasualPageState extends State<CasualPage> {
   
   Future<void> _loadPromoProducts() async {
     try {
-      final data = await BuyerService.getPromotionalProducts();
+      final data = await BuyerService.getPromotionalProducts(categories: ['SHIRTS', 'PANTS']);
       if (mounted) setState(() => _promoProducts = data);
     } catch (e) {
       debugPrint('_loadPromoProducts error: $e');
@@ -82,14 +82,33 @@ class _CasualPageState extends State<CasualPage> {
   List<Map<String, dynamic>> get _filteredProducts {
     var list = List<Map<String, dynamic>>.from(_products);
     if (_selectedCategory != 'All Categories') {
-      list = list.where((p) => (p['category'] as String?) == _selectedCategory).toList();
+      list = list.where((p) =>
+        (p['category'] as String? ?? '').toUpperCase() == _selectedCategory.toUpperCase()
+      ).toList();
     }
     switch (_selectedSort) {
-      case 'Price: Low to High':  list.sort((a, b) => ((a['price'] as num?) ?? 0).compareTo((b['price'] as num?) ?? 0)); break;
-      case 'Price: High to Low':  list.sort((a, b) => ((b['price'] as num?) ?? 0).compareTo((a['price'] as num?) ?? 0)); break;
-      case 'Name: A to Z':        list.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String)); break;
-      case 'Name: Z to A':        list.sort((a, b) => (b['name'] as String).compareTo(a['name'] as String)); break;
-      case 'Newest First':        list.sort((a, b) => ((b['id'] as num?) ?? 0).compareTo((a['id'] as num?) ?? 0)); break;
+      case 'Price: Low to High':
+        list.sort((a, b) => ((a['price'] as num?) ?? 0).compareTo((b['price'] as num?) ?? 0));
+        break;
+      case 'Price: High to Low':
+        list.sort((a, b) => ((b['price'] as num?) ?? 0).compareTo((a['price'] as num?) ?? 0));
+        break;
+      case 'Rating: High to Low':
+        list.sort((a, b) => ((b['rating'] as num?) ?? 0).compareTo((a['rating'] as num?) ?? 0));
+        break;
+      case 'Name: A to Z':
+        list.sort((a, b) => (a['name'] as String? ?? '').compareTo(b['name'] as String? ?? ''));
+        break;
+      case 'Name: Z to A':
+        list.sort((a, b) => (b['name'] as String? ?? '').compareTo(a['name'] as String? ?? ''));
+        break;
+      case 'Newest First':
+        list.sort((a, b) {
+          final ai = a['id'] is int ? a['id'] as int : int.tryParse('${a['id']}') ?? 0;
+          final bi = b['id'] is int ? b['id'] as int : int.tryParse('${b['id']}') ?? 0;
+          return bi.compareTo(ai);
+        });
+        break;
     }
     return list;
   }
@@ -137,101 +156,124 @@ class _CasualPageState extends State<CasualPage> {
       {'title': 'Comfort', 'highlight': '& Elegance', 'sub': 'Premium shirts and pants for everyday wear.'},
     ];
     final slide = slides[_heroSlide % slides.length];
+    final count = _promoProducts.isNotEmpty ? _promoProducts.length : slides.length;
 
     return SizedBox(
-      height: 380,
-      child: Stack(children: [
-        Row(children: [
-          Expanded(
-            flex: 55,
-            child: Container(
-              decoration: const BoxDecoration(gradient: _premiumGrad),
-              padding: const EdgeInsets.fromLTRB(20, 28, 14, 28),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      height: 420,
+      child: Stack(fit: StackFit.expand, children: [
+        // ── Background: promo image carousel or gradient fallback ─────────
+        _promoProducts.isEmpty
+          ? Container(decoration: const BoxDecoration(gradient: _premiumGrad))
+          : _CategoryPromoCarousel(products: _promoProducts, heroSlide: _heroSlide),
+
+        // ── Dark gradient overlay (left-heavy, matches homepage) ──────────
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              stops: [0.0, 0.55, 0.85, 1.0],
+              colors: [
+                Color(0xEE1a1a1a),
+                Color(0xCC1a1a1a),
+                Color(0x661a1a1a),
+                Color(0x001a1a1a),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Text content ──────────────────────────────────────────────────
+        Positioned(
+          left: 0, top: 0, bottom: 0,
+          width: MediaQuery.of(context).size.width * 0.62,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 12, 40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(20),
-                    boxShadow: [BoxShadow(color: _gold.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 3))]),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: _goldGrad,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 3))],
+                  ),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.star, color: _primary, size: 10),
                     SizedBox(width: 4),
-                    Text('Premium Casual Collection', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 8, letterSpacing: 0.8)),
+                    Text('PREMIUM CASUAL COLLECTION',
+                      style: TextStyle(color: _primary, fontWeight: FontWeight.w900, fontSize: 9, letterSpacing: 1.5)),
                   ]),
                 ),
                 const SizedBox(height: 12),
-                Text(slide['title']!, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w400)),
-                const SizedBox(height: 3),
+                Text(slide['title']!,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w400, letterSpacing: 0.3)),
+                const SizedBox(height: 4),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 500),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(anim),
+                      child: child)),
                   child: ShaderMask(
                     key: ValueKey(_heroSlide),
                     shaderCallback: (b) => _goldGrad.createShader(b),
-                    child: Text(slide['highlight']!, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1)),
+                    child: Text(slide['highlight']!,
+                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1)),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Container(width: 40, height: 3, decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), gradient: _goldGrad)),
                 const SizedBox(height: 10),
-                Text(slide['sub']!, style: const TextStyle(color: Colors.white60, fontSize: 10.5, height: 1.5), maxLines: 2, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 16),
+                Container(width: 44, height: 3,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), gradient: _goldGrad)),
+                const SizedBox(height: 10),
+                Text(slide['sub']!,
+                  style: const TextStyle(color: Colors.white60, fontSize: 11, height: 1.5),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 18),
                 GestureDetector(
                   onTap: () {},
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(30),
-                      boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))]),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: const [
-                      Text('Shop Now', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 12)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      gradient: _goldGrad,
+                      boxShadow: [BoxShadow(color: _gold.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))],
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text('Shop Now', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.5)),
                       SizedBox(width: 6),
-                      Icon(Icons.arrow_forward, color: _primary, size: 13),
+                      Icon(Icons.arrow_forward, color: _primary, size: 14),
                     ]),
                   ),
                 ),
-              ]),
+              ],
             ),
           ),
-          Expanded(
-            flex: 45,
-            child: _promoProducts.isEmpty
-              ? Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: [Color(0xFF1a1a2e), Color(0xFF2d2d4a)]),
-                  ),
-                  child: Stack(alignment: Alignment.center, children: [
-                    Container(width: 130, height: 130, decoration: BoxDecoration(shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [_gold.withOpacity(0.15), Colors.transparent]))),
-                    const Icon(Icons.checkroom, size: 64, color: Color(0xFF4a4a7a)),
-                    Positioned(top: 16, right: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 8)]),
-                        child: const Text('NEW', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: 0.8)),
-                      ),
-                    ),
-                  ]),
-                )
-              : _CategoryPromoCarousel(products: _promoProducts, heroSlide: _heroSlide),
-          ),
-        ]),
-        Positioned(bottom: 10, left: 0, right: 0,
+        ),
+
+        // ── Slide indicators ──────────────────────────────────────────────
+        Positioned(
+          bottom: 14, left: 0, right: 0,
           child: Row(mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              _promoProducts.isNotEmpty ? _promoProducts.length : slides.length,
-              (i) => GestureDetector(
-                onTap: () => setState(() => _heroSlide = i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : slides.length) == i ? 20 : 7,
-                  height: 7,
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(4),
-                    color: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : slides.length) == i
-                        ? _gold : Colors.white38),
+            children: List.generate(count, (i) => GestureDetector(
+              onTap: () => setState(() => _heroSlide = i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: _heroSlide % count == i ? 24 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: _heroSlide % count == i ? _gold : Colors.white38,
+                  boxShadow: _heroSlide % count == i
+                      ? [BoxShadow(color: _gold.withOpacity(0.6), blurRadius: 8)]
+                      : [],
                 ),
               ),
-            ),
+            )),
           ),
         ),
       ]),

@@ -52,17 +52,20 @@ class _BuyerWishlistPageState extends State<BuyerWishlistPage> {
   Map<String, dynamic> _toProductMap(Map<String, dynamic> item) {
     final p = item['products'] as Map<String, dynamic>? ?? {};
     return {
-      'id':           item['product_id'],
-      'name':         p['name'] ?? '',
-      'price':        p['price'] ?? 0,
-      'sale_price':   p['sale_price'],
-      'image':        p['image'] ?? '',
-      'seller_email': p['seller_email'] ?? '',
-      'variations':   p['variations'] ?? '',
-      'sizes':        p['sizes'] ?? '',
-      'rating':       0,
-      'sold':         0,
-      'quantity':     1, // always in-stock in wishlist view
+      'id':                   item['product_id'],
+      'name':                 p['name'] ?? '',
+      'price':                p['price'] ?? 0,
+      'sale_price':           p['sale_price'],
+      'image':                p['image'] ?? '',
+      'seller_email':         p['seller_email'] ?? '',
+      'variations':           p['variations'] ?? '',
+      'sizes':                p['sizes'] ?? '',
+      'rating':               0,
+      'sold':                 0,
+      'quantity':             1, // always in-stock in wishlist view
+      'promotion_type':       p['promotion_type'] ?? '',
+      'promotion_discount':   p['promotion_discount'] ?? 0,
+      'promotion_code':       p['promotion_code'] ?? '',
     };
   }
 

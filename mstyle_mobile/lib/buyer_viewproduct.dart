@@ -36,14 +36,16 @@ class ProductDetail {
   final double price;
   final double? salePrice;
   final double? discountPercent;
+  final String? promoType;     // 'percentage', 'fixed', 'buy_one_get_one', 'free_shipping'
+  final double? promoDiscount;
   final List<String> colors;
   final List<String> sizes;
   final double rating;
   final int reviewCount;
   final int quantity;
   final String sellerEmail;
-  final String sellerName;       // business_name or full name
-  final String? sellerPicture;   // profile_picture filename/url
+  final String sellerName;
+  final String? sellerPicture;
   final List<ReviewItem> reviews;
 
   const ProductDetail({
@@ -53,6 +55,8 @@ class ProductDetail {
     required this.price,
     this.salePrice,
     this.discountPercent,
+    this.promoType,
+    this.promoDiscount,
     required this.colors,
     required this.sizes,
     required this.rating,
@@ -224,6 +228,12 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
           name: data['name'] ?? '',
           description: data['description'] ?? '',
           price: (data['price'] as num?)?.toDouble() ?? 0,
+          salePrice: (data['sale_price'] as num?)?.toDouble(),
+          discountPercent: data['promotion_type'] == 'percentage'
+              ? (data['promotion_discount'] as num?)?.toDouble()
+              : null,
+          promoType: data['promotion_type'] as String?,
+          promoDiscount: (data['promotion_discount'] as num?)?.toDouble(),
           colors: colors,
           sizes: sizes,
           rating: double.parse(avgRating.toStringAsFixed(1)),
@@ -1041,7 +1051,7 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
                 email:       widget.userEmail,
                 productId:   int.tryParse(p!.id) ?? 0,
                 name:        p!.name,
-                price:       p!.salePrice ?? p!.price,
+                price:       p!.price, // always store original price; promo applied at checkout
                 sellerEmail: p!.sellerEmail,
                 color:       _selectedColor,
                 size:        _selectedSize,
@@ -1094,12 +1104,17 @@ class _BuyerViewProductPageState extends State<BuyerViewProductPage> {
             Navigator.push(context, MaterialPageRoute(builder: (_) => BuyerCheckoutPage(
               userEmail: widget.userEmail,
               items: [CheckoutItem(
-                id: p!.id, name: p!.name,
-                price: p!.salePrice ?? p!.price,
-                quantity: _quantity,
-                color: _selectedColor,
-                size: _selectedSize,
-                productId: int.tryParse(p!.id),
+                id:            p!.id,
+                name:          p!.name,
+                price:         p!.salePrice ?? p!.price,
+                originalPrice: p!.salePrice != null ? p!.price : null,
+                promoType:     p!.promoType,
+                promoDiscount: p!.promoDiscount,
+                freeShipping:  p!.promoType == 'free_shipping',
+                quantity:      _quantity,
+                color:         _selectedColor,
+                size:          _selectedSize,
+                productId:     int.tryParse(p!.id),
                 image: _selectedColor != null
                     ? (_colorImages[_selectedColor!.toLowerCase()] ?? _rawImage?.split(',').first.trim())
                     : _rawImage?.split(',').first.trim(),

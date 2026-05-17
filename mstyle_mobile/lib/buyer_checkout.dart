@@ -25,18 +25,24 @@ const _goldGrad = LinearGradient(
 class CheckoutItem {
   final String id;
   final String name;
-  final double price;
+  final double price;          // effective price (sale price if promo applies)
+  final double? originalPrice; // original price before discount (null if no promo)
+  final String? promoType;     // 'percentage', 'fixed', 'buy_one_get_one', 'free_shipping'
+  final double? promoDiscount;
   final int quantity;
   final String? color;
   final String? size;
   final bool freeShipping;
-  final String? image;      // color-specific image URL
+  final String? image;
   final int? productId;
 
   const CheckoutItem({
     required this.id,
     required this.name,
     required this.price,
+    this.originalPrice,
+    this.promoType,
+    this.promoDiscount,
     required this.quantity,
     this.color,
     this.size,
@@ -47,6 +53,19 @@ class CheckoutItem {
 
   double get subtotal => price * quantity;
   double get shippingFee => freeShipping ? 0 : 50;
+  bool get hasPromo => promoType != null && promoType!.isNotEmpty;
+
+  String get promoBadgeLabel {
+    if (!hasPromo) return '';
+    final d = promoDiscount?.toInt() ?? 0;
+    switch (promoType) {
+      case 'percentage':      return '$d% OFF';
+      case 'fixed':           return '₱$d OFF';
+      case 'buy_one_get_one': return 'BOGO';
+      case 'free_shipping':   return 'FREE SHIP';
+      default:                return 'SALE';
+    }
+  }
 }
 
 class BuyerCheckoutPage extends StatefulWidget {
@@ -199,17 +218,39 @@ class _BuyerCheckoutPageState extends State<BuyerCheckoutPage> {
   Widget _itemRow(CheckoutItem item) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // Product image — color-specific if available
-      ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: item.image != null && item.image!.isNotEmpty
-          ? Image.network(
-              item.image!,
-              width: 60, height: 60, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _imagePlaceholder(),
-            )
-          : _imagePlaceholder(),
-      ),
+      // Product image
+      Stack(children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: item.image != null && item.image!.isNotEmpty
+            ? Image.network(
+                item.image!,
+                width: 60, height: 60, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _imagePlaceholder(),
+              )
+            : _imagePlaceholder(),
+        ),
+        // Promo badge on image
+        if (item.hasPromo)
+          Positioned(
+            top: 0, left: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFE74C3C), Color(0xFFc0392b)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(10),
+                  bottomRight: Radius.circular(7),
+                ),
+              ),
+              child: Text(item.promoBadgeLabel,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 8, letterSpacing: 0.4)),
+            ),
+          ),
+      ]),
       const SizedBox(width: 12),
       Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -217,8 +258,20 @@ class _BuyerCheckoutPageState extends State<BuyerCheckoutPage> {
             style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 13),
             maxLines: 2, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 4),
-          // Price
-          if (item.freeShipping)
+          // Price row — show sale + strikethrough original if promo
+          if (item.hasPromo && item.originalPrice != null &&
+              (item.promoType == 'percentage' || item.promoType == 'fixed'))
+            Row(children: [
+              Text('₱${item.price.toStringAsFixed(2)}',
+                style: const TextStyle(color: Color(0xFFE74C3C), fontWeight: FontWeight.w800, fontSize: 13)),
+              const SizedBox(width: 6),
+              Text('₱${item.originalPrice!.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: _textLight, fontSize: 11,
+                  decoration: TextDecoration.lineThrough,
+                  decorationColor: _textLight)),
+            ])
+          else if (item.freeShipping)
             Row(children: [
               Text('₱${item.price.toStringAsFixed(2)}',
                 style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 13)),
@@ -231,6 +284,21 @@ class _BuyerCheckoutPageState extends State<BuyerCheckoutPage> {
                   border: Border.all(color: Colors.green.shade200),
                 ),
                 child: const Text('Free Shipping', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.w600)),
+              ),
+            ])
+          else if (item.hasPromo && item.promoType == 'buy_one_get_one')
+            Row(children: [
+              Text('₱${item.price.toStringAsFixed(2)}',
+                style: const TextStyle(color: _accent, fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: const Text('BOGO', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.w600)),
               ),
             ])
           else

@@ -11,6 +11,7 @@ import 'buyer_service.dart';
 import 'product_image_carousel.dart';
 import 'buyer_viewproduct.dart';
 import 'buyer_view_shop.dart';
+import 'supabase_client.dart' show supabase;
 
 const Color _primary   = Color(0xFF1a1a1a);
 const Color _accent    = Color(0xFF2c3e50);
@@ -64,8 +65,11 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
   bool get _allSelected => _items.isNotEmpty && _items.every((i) => i['_selected'] == true);
   List<Map<String, dynamic>> get _selectedItems => _items.where((i) => i['_selected'] == true).toList();
   int get _totalItems => _selectedItems.fold(0, (s, i) => s + (i['quantity'] as int? ?? 1));
-  double get _totalAmount => _selectedItems.fold(0.0, (s, i) =>
-    s + (double.tryParse(i['price']?.toString() ?? '0') ?? 0) * (i['quantity'] as int? ?? 1));
+  double get _totalAmount => _selectedItems.fold(0.0, (s, i) {
+    final basePrice = double.tryParse(i['price']?.toString() ?? '0') ?? 0;
+    final salePrice = (i['sale_price'] as num?)?.toDouble();
+    return s + (salePrice ?? basePrice) * (i['quantity'] as int? ?? 1);
+  });
 
   @override
   void initState() {
@@ -79,10 +83,124 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
       final data = await BuyerService.getCartItems(widget.userEmail);
       // Add local selection flag
       for (final item in data) { item['_selected'] = false; }
+      // Enrich with active promotions
+      if (data.isNotEmpty) await _enrichWithPromotions(data);
       if (mounted) setState(() { _items = data; _loading = false; });
     } catch (e) {
       debugPrint('_loadCart error: $e');
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Fetches active promotions and writes promotion_type, promotion_discount,
+  /// promotion_code, and sale_price onto each matching cart item.
+  Future<void> _enrichWithPromotions(List<Map<String, dynamic>> items) async {
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final promoRes = await supabase
+          .from('promotions')
+          .select('id, type, discount_value, code, product_scope, seller_email')
+          .eq('is_active', true)
+          .lte('start_date', today)
+          .gte('end_date', today);
+
+      final promos = List<Map<String, dynamic>>.from(promoRes as List);
+      if (promos.isEmpty) return;
+
+      // Specific-scope product IDs
+      final specificIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'specific')
+          .map((p) => p['id'] as int).toList();
+      final Map<int, Set<int>> promoProductIds = {};
+      if (specificIds.isNotEmpty) {
+        final ppRes = await supabase
+            .from('promotion_products')
+            .select('promotion_id, product_id')
+            .inFilter('promotion_id', specificIds);
+        for (final row in (ppRes as List)) {
+          final pid = row['promotion_id'] as int?;
+          final prodId = row['product_id'] as int?;
+          if (pid != null && prodId != null) {
+            promoProductIds.putIfAbsent(pid, () => {}).add(prodId);
+          }
+        }
+      }
+
+      // Category-scope categories
+      final categoryIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'category')
+          .map((p) => p['id'] as int).toList();
+      final Map<int, Set<String>> promoCategoryNames = {};
+      if (categoryIds.isNotEmpty) {
+        // Fetch product categories for cart items
+        final productIds = items.map((i) => i['product_id']).whereType<int>().toList();
+        if (productIds.isNotEmpty) {
+          final catRes = await supabase
+              .from('products')
+              .select('id, category')
+              .inFilter('id', productIds);
+          for (final p in (catRes as List)) {
+            final pid = p['id'] as int?;
+            if (pid != null) {
+              final cat = (p['category'] as String? ?? '').toUpperCase();
+              // Store category on item for matching below
+              for (final item in items) {
+                if (item['product_id'] == pid) item['_category'] = cat;
+              }
+            }
+          }
+        }
+        final pcRes = await supabase
+            .from('promotion_categories')
+            .select('promotion_id, category')
+            .inFilter('promotion_id', categoryIds);
+        for (final row in (pcRes as List)) {
+          final pid = row['promotion_id'] as int?;
+          final cat = (row['category'] as String? ?? '').toUpperCase();
+          if (pid != null && cat.isNotEmpty) {
+            promoCategoryNames.putIfAbsent(pid, () => {}).add(cat);
+          }
+        }
+      }
+
+      // Match each cart item to its best promotion
+      for (final item in items) {
+        final productId = item['product_id'] as int?;
+        if (productId == null) continue;
+        final sellerEmail = item['seller_email'] as String? ?? '';
+        final category = (item['_category'] as String? ?? '').toUpperCase();
+        final basePrice = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
+
+        for (final promo in promos) {
+          if ((promo['seller_email'] as String? ?? '') != sellerEmail) continue;
+          final scope = promo['product_scope'] as String? ?? 'all';
+          bool qualifies = false;
+          if (scope == 'all') {
+            qualifies = true;
+          } else if (scope == 'specific') {
+            qualifies = promoProductIds[promo['id'] as int]?.contains(productId) ?? false;
+          } else if (scope == 'category') {
+            qualifies = promoCategoryNames[promo['id'] as int]?.contains(category) ?? false;
+          }
+          if (qualifies) {
+            final promoType     = promo['type'] as String? ?? '';
+            final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
+            double? salePrice;
+            if (promoType == 'percentage' && promoDiscount > 0) {
+              salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
+            } else if (promoType == 'fixed' && promoDiscount > 0) {
+              salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+            }
+            item['promotion_type']     = promoType;
+            item['promotion_discount'] = promoDiscount;
+            item['promotion_code']     = promo['code'] as String? ?? '';
+            if (salePrice != null) item['sale_price'] = salePrice;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_enrichWithPromotions error: $e');
     }
   }
 
@@ -236,19 +354,32 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
     final selected = item['_selected'] == true;
     final name       = item['name'] as String? ?? '';
     final price      = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
+    final salePrice  = (item['sale_price'] as num?)?.toDouble();
+    final promoType  = item['promotion_type'] as String? ?? '';
+    final promoDiscount = (item['promotion_discount'] as num?)?.toDouble() ?? 0;
+    final hasPromo   = promoType.isNotEmpty && (salePrice != null || promoType == 'buy_one_get_one' || promoType == 'free_shipping');
     final color      = item['variations'] as String?;
     final size       = item['size'] as String?;
     final qty        = item['quantity'] as int? ?? 1;
     final imageRaw   = item['image'] as String?;
     final pid        = item['product_id'];
     final sellerEmail = item['seller_email'] as String? ?? '';
-    // Use business name if available; never fall back to raw email for display
     final sellerName  = (item['seller_name'] as String?)?.trim();
     final showSeller  = sellerEmail.isNotEmpty && sellerName != null && sellerName.isNotEmpty;
     final productId  = pid is int ? pid : int.tryParse('$pid');
     final imageUrl   = imageRaw != null && imageRaw.trim().isNotEmpty
         ? buildImageUrl(imageRaw.split(',').first.trim())
         : null;
+
+    // Build promo badge label
+    String promoBadgeLabel = '';
+    if (hasPromo) {
+      if (promoType == 'percentage') promoBadgeLabel = '${promoDiscount.toInt()}% OFF';
+      else if (promoType == 'fixed') promoBadgeLabel = '₱${promoDiscount.toInt()} OFF';
+      else if (promoType == 'buy_one_get_one') promoBadgeLabel = 'BOGO';
+      else if (promoType == 'free_shipping') promoBadgeLabel = 'FREE SHIP';
+      else promoBadgeLabel = 'SALE';
+    }
 
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -275,27 +406,48 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // ── Clickable product image ──────────────────────────────────
-          GestureDetector(
-            onTap: productId != null
-                ? () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => BuyerViewProductPage(
-                      userEmail: widget.userEmail,
-                      productId: productId,
-                    )))
-                : null,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: imageUrl != null
-                  ? Image.network(imageUrl, width: 72, height: 72, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imagePlaceholder())
-                  : _imagePlaceholder(),
+          // ── Product image with optional promo badge ──────────────────
+          Stack(children: [
+            GestureDetector(
+              onTap: productId != null
+                  ? () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => BuyerViewProductPage(
+                        userEmail: widget.userEmail,
+                        productId: productId,
+                      )))
+                  : null,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: imageUrl != null
+                    ? Image.network(imageUrl, width: 72, height: 72, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _imagePlaceholder())
+                    : _imagePlaceholder(),
+              ),
             ),
-          ),
+            if (hasPromo)
+              Positioned(
+                top: 0, left: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFE74C3C), Color(0xFFc0392b)],
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(8),
+                    ),
+                  ),
+                  child: Text(promoBadgeLabel,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 8, letterSpacing: 0.4)),
+                ),
+              ),
+          ]),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // ── Seller name (clickable) ────────────────────────────────
+              // ── Seller name ────────────────────────────────────────────
               if (showSeller)
                 GestureDetector(
                   onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -311,20 +463,15 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
                       Flexible(
                         child: Text(
                           sellerName!,
-                          style: const TextStyle(
-                            color: _textLight,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: _textLight, fontSize: 11, fontWeight: FontWeight.w600),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                 ),
               if (showSeller) const SizedBox(height: 2),
-              // ── Clickable product name ─────────────────────────────────
+              // ── Product name ───────────────────────────────────────────
               GestureDetector(
                 onTap: productId != null
                     ? () => Navigator.push(context, MaterialPageRoute(
@@ -338,8 +485,51 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
                   maxLines: 2, overflow: TextOverflow.ellipsis),
               ),
               const SizedBox(height: 4),
-              Text('₱${price.toStringAsFixed(2)}',
-                style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
+              // ── Price — show sale price if promo, same as checkout ─────
+              if (hasPromo && salePrice != null && (promoType == 'percentage' || promoType == 'fixed'))
+                Row(children: [
+                  Text('₱${salePrice.toStringAsFixed(2)}',
+                    style: const TextStyle(color: Color(0xFFE74C3C), fontWeight: FontWeight.w900, fontSize: 15)),
+                  const SizedBox(width: 6),
+                  Text('₱${price.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: _textLight, fontSize: 11,
+                      decoration: TextDecoration.lineThrough,
+                      decorationColor: _textLight)),
+                ])
+              else if (hasPromo && promoType == 'free_shipping')
+                Row(children: [
+                  Text('₱${price.toStringAsFixed(2)}',
+                    style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: const Text('Free Ship', style: TextStyle(color: Colors.green, fontSize: 9, fontWeight: FontWeight.w700)),
+                  ),
+                ])
+              else if (hasPromo && promoType == 'buy_one_get_one')
+                Row(children: [
+                  Text('₱${price.toStringAsFixed(2)}',
+                    style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: const Text('BOGO', style: TextStyle(color: Colors.orange, fontSize: 9, fontWeight: FontWeight.w700)),
+                  ),
+                ])
+              else
+                Text('₱${price.toStringAsFixed(2)}',
+                  style: const TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 15)),
               const SizedBox(height: 6),
               if ((color != null && color.isNotEmpty) || (size != null && size.isNotEmpty))
                 Wrap(spacing: 6, children: [
@@ -485,10 +675,6 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
       const SizedBox(height: 8),
       const Text("Looks like you haven't added any items yet.",
         style: TextStyle(color: _textLight, fontSize: 13), textAlign: TextAlign.center),
-      const SizedBox(height: 6),
-      // Debug: show email being queried
-      Text('(${widget.userEmail.isEmpty ? "no email" : widget.userEmail})',
-        style: const TextStyle(color: _textLight, fontSize: 10)),
       const SizedBox(height: 24),
       GestureDetector(
         onTap: () => Navigator.pushAndRemoveUntil(context,
@@ -508,25 +694,62 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
   );
 
   // ─── Order Summary ────────────────────────────────────────────────────────
-  Widget _orderSummary() => Container(
-    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 16, offset: const Offset(0, 4))],
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Order Summary',
-        style: TextStyle(color: _accent, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
-      const SizedBox(height: 4),
-      Container(width: 40, height: 3, decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), gradient: _goldGrad)),
-      const SizedBox(height: 16),
-      _summaryRow('Total Items:', '$_totalItems'),
-      const Divider(height: 20),
-      _summaryRow('Total Amount:', '₱${_totalAmount.toStringAsFixed(2)}', highlight: true),
-    ]),
-  );
+  Widget _orderSummary() {
+    final originalTotal = _selectedItems.fold(0.0, (s, i) {
+      final basePrice = double.tryParse(i['price']?.toString() ?? '0') ?? 0;
+      return s + basePrice * (i['quantity'] as int? ?? 1);
+    });
+    final savings = originalTotal - _totalAmount;
+    final hasSavings = savings > 0.01;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 16, offset: const Offset(0, 4))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Order Summary',
+          style: TextStyle(color: _accent, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+        const SizedBox(height: 4),
+        Container(width: 40, height: 3, decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), gradient: _goldGrad)),
+        const SizedBox(height: 16),
+        _summaryRow('Total Items:', '$_totalItems'),
+        if (hasSavings) ...[
+          const SizedBox(height: 8),
+          _summaryRow('Original Price:', '₱${originalTotal.toStringAsFixed(2)}'),
+          const SizedBox(height: 4),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            const Text('Promo Savings:', style: TextStyle(color: Colors.green, fontSize: 14)),
+            Text('- ₱${savings.toStringAsFixed(2)}',
+              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w700, fontSize: 14)),
+          ]),
+        ],
+        const Divider(height: 20),
+        _summaryRow('Total Amount:', '₱${_totalAmount.toStringAsFixed(2)}', highlight: true),
+        if (hasSavings) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.local_offer_outlined, color: Colors.green.shade600, size: 14),
+              const SizedBox(width: 6),
+              Text('You save ₱${savings.toStringAsFixed(2)} with promotions!',
+                style: TextStyle(color: Colors.green.shade700, fontSize: 12, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
 
   Widget _summaryRow(String label, String value, {bool highlight = false}) => Row(
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -552,18 +775,28 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
       ),
       child: GestureDetector(
         onTap: enabled ? () {
-          final checkoutItems = _selectedItems.map((item) => CheckoutItem(
-            id:        '${item['id']}',
-            name:      item['name'] as String? ?? '',
-            price:     double.tryParse(item['price']?.toString() ?? '0') ?? 0,
-            quantity:  item['quantity'] as int? ?? 1,
-            color:     item['variations'] as String?,
-            size:      item['size'] as String?,
-            image:     item['image'] as String?,
-            productId: item['product_id'] is int
-                ? item['product_id'] as int
-                : int.tryParse('${item['product_id']}'),
-          )).toList();
+          final checkoutItems = _selectedItems.map((item) {
+            final basePrice  = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
+            final salePrice  = (item['sale_price'] as num?)?.toDouble();
+            final promoType  = item['promotion_type'] as String? ?? '';
+            final freeShip   = promoType == 'free_shipping';
+            return CheckoutItem(
+              id:           '${item['id']}',
+              name:         item['name'] as String? ?? '',
+              price:        salePrice ?? basePrice,
+              originalPrice: salePrice != null ? basePrice : null,
+              promoType:    promoType.isNotEmpty ? promoType : null,
+              promoDiscount: (item['promotion_discount'] as num?)?.toDouble(),
+              quantity:     item['quantity'] as int? ?? 1,
+              color:        item['variations'] as String?,
+              size:         item['size'] as String?,
+              freeShipping: freeShip,
+              image:        item['image'] as String?,
+              productId:    item['product_id'] is int
+                  ? item['product_id'] as int
+                  : int.tryParse('${item['product_id']}'),
+            );
+          }).toList();
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => BuyerCheckoutPage(userEmail: widget.userEmail, items: checkoutItems),
           ));

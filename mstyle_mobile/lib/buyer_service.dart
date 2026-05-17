@@ -529,9 +529,9 @@ class BuyerService {
 
       final productIds = wlRows.map((r) => r['product_id']).toList();
 
-      // Fetch products
+      // Fetch products (include category + seller_email for promo scope matching)
       final prodUri = Uri.parse('$supabaseUrl/rest/v1/products').replace(queryParameters: {
-        'select': 'id,name,price,image,seller_email,variations,sizes',
+        'select': 'id,name,price,image,seller_email,variations,sizes,category',
         'id': 'in.(${productIds.join(',')})',
       });
       final prodResp = await http.get(prodUri, headers: {
@@ -542,10 +542,10 @@ class BuyerService {
           : <Map<String, dynamic>>[];
       final prodMap = {for (final p in prodList) p['id'] as int: p};
 
-      // Fetch active promotions
+      // Fetch active promotions (include seller_email for matching)
       final today = DateTime.now().toIso8601String().split('T')[0];
       final promoUri = Uri.parse('$supabaseUrl/rest/v1/promotions').replace(queryParameters: {
-        'select': 'id,type,discount_value,code,product_scope',
+        'select': 'id,type,discount_value,code,product_scope,seller_email',
         'is_active': 'eq.true', 'start_date': 'lte.$today', 'end_date': 'gte.$today',
       });
       final promoResp = await http.get(promoUri, headers: {
@@ -555,13 +555,76 @@ class BuyerService {
           ? List<Map<String, dynamic>>.from(jsonDecode(promoResp.body) as List)
           : <Map<String, dynamic>>[];
 
-      final promoMap = <int, Map<String, dynamic>>{};
-      for (final promo in promos) {
-        if ((promo['product_scope'] as String? ?? 'all') == 'all') {
-          for (final pid in productIds) {
-            final id = pid as int;
-            if (!promoMap.containsKey(id)) promoMap[id] = promo;
+      // Fetch specific-scope product IDs
+      final specificPromoIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'specific')
+          .map((p) => '${p['id']}').toList();
+      final Map<int, Set<int>> promoProductIds = {};
+      if (specificPromoIds.isNotEmpty) {
+        final ppUri = Uri.parse('$supabaseUrl/rest/v1/promotion_products').replace(queryParameters: {
+          'select': 'promotion_id,product_id',
+          'promotion_id': 'in.(${specificPromoIds.join(',')})',
+        });
+        final ppResp = await http.get(ppUri, headers: {
+          'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+        });
+        if (ppResp.statusCode == 200) {
+          for (final row in List<Map<String, dynamic>>.from(jsonDecode(ppResp.body) as List)) {
+            final pid   = row['promotion_id'] as int?;
+            final prodId = row['product_id'] as int?;
+            if (pid != null && prodId != null) {
+              promoProductIds.putIfAbsent(pid, () => {}).add(prodId);
+            }
           }
+        }
+      }
+
+      // Fetch category-scope categories
+      final categoryPromoIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'category')
+          .map((p) => '${p['id']}').toList();
+      final Map<int, Set<String>> promoCategoryNames = {};
+      if (categoryPromoIds.isNotEmpty) {
+        final pcUri = Uri.parse('$supabaseUrl/rest/v1/promotion_categories').replace(queryParameters: {
+          'select': 'promotion_id,category',
+          'promotion_id': 'in.(${categoryPromoIds.join(',')})',
+        });
+        final pcResp = await http.get(pcUri, headers: {
+          'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+        });
+        if (pcResp.statusCode == 200) {
+          for (final row in List<Map<String, dynamic>>.from(jsonDecode(pcResp.body) as List)) {
+            final pid = row['promotion_id'] as int?;
+            final cat = (row['category'] as String? ?? '').toUpperCase();
+            if (pid != null && cat.isNotEmpty) {
+              promoCategoryNames.putIfAbsent(pid, () => {}).add(cat);
+            }
+          }
+        }
+      }
+
+      // Build promoMap: productId → best matching promo
+      final promoMap = <int, Map<String, dynamic>>{};
+      for (final pid in productIds.whereType<int>()) {
+        final prod = prodMap[pid];
+        if (prod == null) continue;
+        final sellerEmail = prod['seller_email'] as String? ?? '';
+        final category    = (prod['category'] as String? ?? '').toUpperCase();
+
+        for (final promo in promos) {
+          if ((promo['seller_email'] as String? ?? '') != sellerEmail) continue;
+          if (promoMap.containsKey(pid)) break; // already matched
+
+          final scope = promo['product_scope'] as String? ?? 'all';
+          bool qualifies = false;
+          if (scope == 'all') {
+            qualifies = true;
+          } else if (scope == 'specific') {
+            qualifies = promoProductIds[promo['id'] as int]?.contains(pid) ?? false;
+          } else if (scope == 'category') {
+            qualifies = promoCategoryNames[promo['id'] as int]?.contains(category) ?? false;
+          }
+          if (qualifies) promoMap[pid] = promo;
         }
       }
 
@@ -1204,6 +1267,65 @@ class BuyerService {
         debugPrint('reviews fetch fallback also failed: $e2');
         productData['reviews'] = [];
       }
+    }
+
+    // Enrich with active promotion data
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final sellerEmail = (productData['seller_email'] as String? ?? '').trim();
+      final category    = (productData['category']     as String? ?? '').toUpperCase();
+      final basePrice   = (productData['price'] as num?)?.toDouble() ?? 0;
+
+      final promoRes = await supabase
+          .from('promotions')
+          .select('id, type, discount_value, code, product_scope')
+          .eq('is_active', true)
+          .eq('seller_email', sellerEmail)
+          .lte('start_date', today)
+          .gte('end_date', today);
+
+      for (final promo in (promoRes as List)) {
+        final scope = promo['product_scope'] as String? ?? 'all';
+        bool qualifies = false;
+
+        if (scope == 'all') {
+          qualifies = true;
+        } else if (scope == 'specific') {
+          final ppRes = await supabase
+              .from('promotion_products')
+              .select('product_id')
+              .eq('promotion_id', promo['id'] as int)
+              .eq('product_id', productId)
+              .limit(1);
+          qualifies = (ppRes as List).isNotEmpty;
+        } else if (scope == 'category') {
+          final pcRes = await supabase
+              .from('promotion_categories')
+              .select('category')
+              .eq('promotion_id', promo['id'] as int)
+              .limit(20);
+          final cats = (pcRes as List).map((r) => (r['category'] as String? ?? '').toUpperCase()).toSet();
+          qualifies = cats.contains(category);
+        }
+
+        if (qualifies) {
+          final promoType     = promo['type'] as String? ?? '';
+          final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
+          double? salePrice;
+          if (promoType == 'percentage' && promoDiscount > 0) {
+            salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
+          } else if (promoType == 'fixed' && promoDiscount > 0) {
+            salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+          }
+          productData['promotion_type']     = promoType;
+          productData['promotion_discount'] = promoDiscount;
+          productData['promotion_code']     = promo['code'] as String? ?? '';
+          if (salePrice != null) productData['sale_price'] = salePrice;
+          break; // one promo per product
+        }
+      }
+    } catch (e) {
+      debugPrint('getProduct promo enrichment error: $e');
     }
 
     return productData;

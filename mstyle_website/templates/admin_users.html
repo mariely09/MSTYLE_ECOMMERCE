@@ -490,35 +490,28 @@
         }
 
         function viewUser(userId) {
-            // Show loading state
             const button = event.target.closest('.view-btn');
             const originalContent = button.innerHTML;
             button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
-            // Show user details in modal - try approved user documents API first
+            // Always use the documents endpoint — it returns signed Supabase Storage URLs
             fetch(`/api/approved_user_documents/${userId}`)
-                .then(response => response.json())
+                .then(r => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r.json();
+                })
                 .then(data => {
                     if (data.success) {
-                        // Merge user data with document data
-                        const userData = { ...data.user, ...data.documents };
-                        showUserModal(userData);
+                        // Merge user info + document URLs into one object
+                        const merged = { ...data.user, ...data.documents };
+                        showUserModal(merged);
                     } else {
-                        // Fallback to basic user details if documents API fails
-                        return fetch(`/api/user_details/${userId}`)
-                            .then(response => response.json())
-                            .then(fallbackData => {
-                                if (fallbackData.success) {
-                                    showUserModal(fallbackData.user);
-                                } else {
-                                    throw new Error(fallbackData.error || 'Failed to load user details');
-                                }
-                            });
+                        throw new Error(data.error || 'Failed to load user details');
                     }
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error loading user details: ' + (error.message || 'Please try again.'));
+                .catch(err => {
+                    console.error('viewUser error:', err);
+                    alert('Error loading user details: ' + err.message);
                 })
                 .finally(() => {
                     button.innerHTML = originalContent;

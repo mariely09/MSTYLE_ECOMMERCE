@@ -486,11 +486,21 @@
 
         fetch(`/approve_user/${userId}`, {
             method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            body: JSON.stringify({})
         })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) throw new Error(`Server error: ${r.status}`);
+                return r.json();
+            })
             .then(data => {
                 if (data.success) {
+                    if (data.unban_ok === false) {
+                        alert('⚠️ User was approved but their login account could not be activated. Please try approving again or contact support.');
+                        btn.innerHTML = orig;
+                        btn.disabled = false;
+                        return;
+                    }
                     const row = btn.closest('tr');
                     row.style.transition = 'all 0.4s';
                     row.style.opacity = '0';
@@ -504,8 +514,9 @@
                     btn.disabled = false;
                 }
             })
-            .catch(() => {
-                showToast('Network Error', 'Unable to connect to the server', 'error');
+            .catch(err => {
+                console.error('Approve error:', err);
+                showToast('Network Error', err.message || 'Unable to connect to the server', 'error');
                 btn.innerHTML = orig;
                 btn.disabled = false;
             });

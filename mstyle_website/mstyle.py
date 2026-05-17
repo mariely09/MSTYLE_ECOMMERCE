@@ -469,7 +469,7 @@ def get_promotional_products(limit=4, category_filter=None):
         today = _datetime.now(_pht).date().isoformat()
 
         promo_res = sb_admin.table('promotions') \
-            .select('id, name, type, discount_value, code, product_scope, start_date, end_date') \
+            .select('id, name, type, discount_value, code, product_scope, start_date, end_date, seller_email') \
             .eq('is_active', True) \
             .lte('start_date', today) \
             .gte('end_date', today) \
@@ -523,11 +523,16 @@ def get_promotional_products(limit=4, category_filter=None):
         seen_ids = set()
 
         for promo in promotions:
-            scope = promo.get('product_scope', 'all')
-            pid   = promo['id']
+            scope          = promo.get('product_scope', 'all')
+            pid            = promo['id']
+            seller_email   = promo.get('seller_email', '')
 
             for p in all_products:
                 if p['id'] in seen_ids:
+                    continue
+
+                # Always restrict to the seller who owns the promotion
+                if p.get('seller_email') != seller_email:
                     continue
 
                 qualifies = False
@@ -5344,6 +5349,7 @@ def edit_product(product_id):
         return redirect(url_for('home'))
 
     seller_email = session['email']
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
     if request.method == 'POST':
         try:
@@ -5537,10 +5543,14 @@ def edit_product(product_id):
                 pass
 
             flash('Product updated successfully!', 'success')
+            if is_ajax:
+                return jsonify({'success': True, 'message': 'Product updated successfully!'})
             return redirect(url_for('products'))
 
         except Exception as e:
             import traceback; traceback.print_exc()
+            if is_ajax:
+                return jsonify({'success': False, 'message': f'Error updating product: {str(e)}'}), 500
             flash(f'Error updating product: {str(e)}', 'error')
             return redirect(url_for('products'))
 
@@ -7579,13 +7589,23 @@ def approve_user(user_id):
             addr = ', '.join(filter(None,[u.get('house_street',''),u.get('barangay',''),u.get('city',''),u.get('province',''),u.get('region',''),u.get('zip_code','')]))
             sb_admin.table('users').upsert({'id':uid,'email':u['email'],'first_name':u.get('first_name'),'last_name':u.get('last_name'),'phone':u.get('phone',''),'role':(u.get('role') or 'buyer').lower(),'house_street':u.get('house_street',''),'barangay':u.get('barangay',''),'city':u.get('city',''),'province':u.get('province',''),'region':u.get('region',''),'zip_code':u.get('zip_code',''),'valid_id_path':u.get('valid_id_path'),'status':'active'}).execute()
             if uid:
-                try: sb_admin.auth.admin.update_user_by_id(uid, {'ban_duration': 'none'})
-                except Exception as ue: print(f"unban failed: {ue}")
+                # Unban the Supabase Auth account so the user can log in — retry up to 3 times
+                unban_ok = False
+                for attempt in range(3):
+                    try:
+                        sb_admin.auth.admin.update_user_by_id(uid, {'ban_duration': 'none'})
+                        unban_ok = True
+                        print(f"approve_user: auth unban OK for uid={uid} (attempt {attempt+1})")
+                        break
+                    except Exception as ue:
+                        print(f"approve_user: unban attempt {attempt+1} failed: {ue}")
+                if not unban_ok:
+                    print(f"approve_user: WARNING — could not unban uid={uid} after 3 attempts")
             sb_admin.table('pending_users').delete().eq('id', supabase_record_id).execute()
             try: send_approval_email(u['email'], u.get('first_name',''))
             except Exception: pass
             msg = f"{u.get('first_name','')} {u.get('last_name','')} approved successfully"
-            return jsonify({'success': True, 'message': msg}) if is_ajax else (flash(msg,'success'), redirect(url_for('pending_users')))[1]
+            return jsonify({'success': True, 'message': msg, 'unban_ok': unban_ok}) if is_ajax else (flash(msg,'success'), redirect(url_for('pending_users')))[1]
         except Exception as e:
             import traceback; traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)}) if is_ajax else (flash(str(e),'error'), redirect(url_for('pending_users')))[1]
@@ -8157,31 +8177,52 @@ def view_documents(seller_id):
 @app.route('/approve/<string:seller_id>', methods=['POST'])
 def approve_seller(seller_id):
     if 'user_id' not in session or session.get('user_type') != 'Admin':
-        flash('Access denied.', 'error')
-        return redirect(url_for('pending_sellers_dashboard'))
-    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     record_id = seller_id[3:] if str(seller_id).startswith('sb_') else str(seller_id)
     try:
         res = sb_admin.table('pending_sellers').select('*').eq('id', record_id).execute()
         if not res.data:
-            msg = 'Seller not found in pending list'
-            return jsonify({'success': False, 'error': msg}) if is_ajax else (flash(msg,'error'), redirect(url_for('pending_sellers_dashboard')))[1]
+            return jsonify({'success': False, 'error': 'Seller not found in pending list'}), 404
         s = res.data[0]
         uid = s.get('supabase_uid')
         addr_parts = [s.get('house_street',''),s.get('barangay',''),s.get('city',''),s.get('province',''),s.get('region',''),s.get('zip_code','')]
-        sb_admin.table('users').upsert({'id':uid,'email':s['email'],'first_name':s.get('first_name'),'last_name':s.get('last_name'),'phone':s.get('phone',''),'role':'seller','business_name':s.get('business_name'),'business_type':s.get('business_type'),'house_street':addr_parts[0],'barangay':addr_parts[1],'city':addr_parts[2],'province':addr_parts[3],'region':addr_parts[4],'zip_code':addr_parts[5],'valid_id_path':s.get('valid_id_path'),'dti_path':s.get('dti_path'),'bir_path':s.get('bir_path'),'business_permit_path':s.get('business_permit_path')}).execute()
+        sb_admin.table('users').upsert({
+            'id': uid, 'email': s['email'],
+            'first_name': s.get('first_name'), 'last_name': s.get('last_name'),
+            'phone': s.get('phone', ''), 'role': 'seller',
+            'business_name': s.get('business_name'), 'business_type': s.get('business_type'),
+            'house_street': addr_parts[0], 'barangay': addr_parts[1], 'city': addr_parts[2],
+            'province': addr_parts[3], 'region': addr_parts[4], 'zip_code': addr_parts[5],
+            'valid_id_path': s.get('valid_id_path'), 'dti_path': s.get('dti_path'),
+            'bir_path': s.get('bir_path'), 'business_permit_path': s.get('business_permit_path')
+        }).execute()
         if uid:
-            try: sb_admin.auth.admin.update_user_by_id(uid, {'ban_duration': 'none'})
-            except Exception as ue: print(f"unban failed: {ue}")
+            # Unban the Supabase Auth account so the seller can log in
+            unban_ok = False
+            for attempt in range(3):
+                try:
+                    sb_admin.auth.admin.update_user_by_id(uid, {'ban_duration': 'none'})
+                    unban_ok = True
+                    print(f"approve_seller: auth unban OK for uid={uid} (attempt {attempt+1})")
+                    break
+                except Exception as ue:
+                    print(f"approve_seller: unban attempt {attempt+1} failed: {ue}")
+            if not unban_ok:
+                print(f"approve_seller: WARNING — could not unban uid={uid} after 3 attempts")
         sb_admin.table('pending_sellers').delete().eq('id', record_id).execute()
-        try: send_seller_approval_email(s['email'], s.get('first_name',''), s.get('business_name', f"{s.get('first_name','')} {s.get('last_name','')}"))
-        except Exception: pass
+        # Send email in background thread so it doesn't block the response
+        import threading
+        threading.Thread(
+            target=send_seller_approval_email,
+            args=(s['email'], s.get('first_name', ''),
+                  s.get('business_name', f"{s.get('first_name','')} {s.get('last_name','')}".strip())),
+            daemon=True
+        ).start()
         seller_name = f"{s.get('first_name','')} {s.get('last_name','')}".strip()
-        msg = f"{seller_name} successfully approved"
-        return jsonify({'success': True, 'message': msg}) if is_ajax else (flash(msg,'success'), redirect(url_for('pending_sellers_dashboard')))[1]
+        return jsonify({'success': True, 'message': f"{seller_name} successfully approved", 'unban_ok': unban_ok})
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}) if is_ajax else (flash(str(e),'error'), redirect(url_for('pending_sellers_dashboard')))[1]
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/test-flash')

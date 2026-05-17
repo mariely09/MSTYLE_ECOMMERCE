@@ -826,39 +826,53 @@
 <!-- Keep your existing JavaScript -->
 <script>
     function approveUser(userId) {
-        if (confirm('Are you sure you want to approve this seller?')) {
-            const approveBtn = event.target.closest('.approve-btn');
-            const originalHTML = approveBtn.innerHTML;
-            approveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-            approveBtn.disabled = true;
+        if (!confirm('Are you sure you want to approve this seller?')) return;
 
-            fetch(`/approve/${userId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        const sellerRow = approveBtn.closest('tr');
-                        const sellerName = sellerRow.querySelector('.seller-name .name')?.textContent.trim() || 'Seller';
-                        // Animate row out, then redirect to user management with success param
-                        if (sellerRow) {
-                            sellerRow.style.transition = 'all 0.4s ease';
-                            sellerRow.style.opacity = '0';
-                            sellerRow.style.transform = 'translateX(20px)';
-                        }
-                        setTimeout(() => {
-                            window.location.href = '/admin_users?approved=' + encodeURIComponent(sellerName);
-                        }, 450);
-                    } else {
-                        showToast('Approval Failed', 'Failed to approve seller', 'error', data.error || 'Please try again.');
+        const approveBtn = event.target.closest('.approve-btn');
+        const originalHTML = approveBtn.innerHTML;
+        approveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        approveBtn.disabled = true;
+
+        fetch(`/approve/${userId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        })
+            .then(r => {
+                if (!r.ok) throw new Error(`Server error: ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    if (data.unban_ok === false) {
+                        // Approved in DB but auth unban failed — warn admin
+                        alert('⚠️ Seller was approved but their login account could not be activated. Please try approving again or contact support.');
                         approveBtn.innerHTML = originalHTML;
                         approveBtn.disabled = false;
+                        return;
                     }
-                })
-                .catch(() => {
-                    showToast('Network Error', 'Unable to connect to the server', 'error');
+                    const sellerRow = approveBtn.closest('tr');
+                    const sellerName = sellerRow?.querySelector('.seller-name .name')?.textContent.trim() || 'Seller';
+                    if (sellerRow) {
+                        sellerRow.style.transition = 'all 0.4s ease';
+                        sellerRow.style.opacity = '0';
+                        sellerRow.style.transform = 'translateX(20px)';
+                    }
+                    setTimeout(() => {
+                        window.location.href = '/admin_users?approved=' + encodeURIComponent(sellerName);
+                    }, 450);
+                } else {
+                    alert('Approval failed: ' + (data.error || 'Unknown error'));
                     approveBtn.innerHTML = originalHTML;
                     approveBtn.disabled = false;
-                });
-        }
+                }
+            })
+            .catch(err => {
+                console.error('Approve error:', err);
+                alert('Error: ' + err.message + '\n\nPlease check your connection and try again.');
+                approveBtn.innerHTML = originalHTML;
+                approveBtn.disabled = false;
+            });
     }
 
     // ── View Documents ────────────────────────────────────────────────────

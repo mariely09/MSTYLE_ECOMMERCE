@@ -5985,6 +5985,47 @@ def orders_list():
         except Exception:
             pass
 
+        # Batch-fetch promotion usage for all orders (to show promo data in the table)
+        order_ids = [o['id'] for o in raw_orders if o.get('id')]
+        promo_usage_map = {}  # order_id -> promo info dict
+        if order_ids:
+            try:
+                pu_res = sb_admin.table('promotion_usage') \
+                    .select('order_id, promotion_id, discount_applied') \
+                    .in_('order_id', order_ids) \
+                    .execute()
+                pu_rows = pu_res.data or []
+                print(f"[orders_list] promotion_usage rows found: {len(pu_rows)} for {len(order_ids)} orders")
+                if pu_rows:
+                    promo_ids = list({r['promotion_id'] for r in pu_rows if r.get('promotion_id')})
+                    promo_res = sb_admin.table('promotions') \
+                        .select('id, name, type, discount_value') \
+                        .in_('id', promo_ids) \
+                        .execute()
+                    promo_detail_map = {p['id']: p for p in (promo_res.data or [])}
+                    for pu in pu_rows:
+                        oid      = pu.get('order_id')
+                        pid_promo = pu.get('promotion_id')
+                        if not oid or not pid_promo:
+                            continue
+                        promo = promo_detail_map.get(pid_promo, {})
+                        disc_applied = float(pu.get('discount_applied') or 0)
+                        try:
+                            oid = int(oid)
+                        except (TypeError, ValueError):
+                            pass
+                        promo_usage_map[oid] = {
+                            'promotion_type':  promo.get('type', ''),
+                            'promotion_name':  promo.get('name', ''),
+                            'discount_amount': disc_applied,
+                            'discount_value':  float(promo.get('discount_value') or 0),
+                        }
+                        print(f"  [promo_usage] order_id={oid} type={promo.get('type')} disc={disc_applied}")
+            except Exception as pu_err:
+                print(f"⚠️ promotion_usage fetch failed (non-fatal): {pu_err}")
+
+        print(f"[orders_list] promo_usage_map keys: {list(promo_usage_map.keys())}")
+
         import datetime as _dt
         for o in raw_orders:
             # Buyer info
@@ -6011,13 +6052,67 @@ def orders_list():
             o['quantity']       = qty
             print(f"  order {o.get('id')}: pid={pid}, unit_price={unit_price}, orig={o['original_price']}, total={o['total_price']}")
 
-            # Promotion defaults
-            o.setdefault('promotion_type', '')
-            o.setdefault('promotion_name', '')
-            o.setdefault('discount_amount', 0)
-            o.setdefault('discount_percentage', 0)
+            # Promotion — pull from promotion_usage batch fetch
+            # Fallback: check active promotion for the product if no usage record found
+            try:
+                order_id_key = int(o.get('id'))
+            except (TypeError, ValueError):
+                order_id_key = o.get('id')
+            pu = promo_usage_map.get(order_id_key, {})
 
-            # Date - format to readable PHT (UTC+8)
+            if not pu and pid and o.get('seller_email'):
+                # No promotion_usage record — check if product currently has an active promo
+                try:
+                    active_promo = get_active_promotions_for_product(
+                        str(int(pid)), o.get('seller_email', ''), '')
+                    if active_promo:
+                        orig_p = float(o.get('original_price') or 0)
+                        qty_v  = int(o.get('quantity') or 1)
+                        disc_v = float(active_promo.get('discount_value') or 0)
+                        p_type = active_promo.get('type', '')
+                        if p_type == 'percentage' and disc_v > 0:
+                            disc_total = round(orig_p * (disc_v / 100) * qty_v, 2)
+                        elif p_type == 'fixed' and disc_v > 0:
+                            disc_total = round(disc_v * qty_v, 2)
+                        else:
+                            disc_total = 0.0
+                        pu = {
+                            'promotion_type':  p_type,
+                            'promotion_name':  active_promo.get('name', ''),
+                            'discount_amount': disc_total,
+                            'discount_value':  disc_v,
+                        }
+                except Exception:
+                    pass
+
+            promo_type  = pu.get('promotion_type', '')
+            promo_name  = pu.get('promotion_name', '')
+            disc_amount = float(pu.get('discount_amount', 0))
+            disc_value  = float(pu.get('discount_value', 0))
+            orig_price  = float(o.get('original_price') or 0)
+            qty_val     = int(o.get('quantity') or 1)
+
+            # discount_percentage
+            if promo_type == 'percentage' and disc_value > 0:
+                disc_pct = disc_value
+            elif promo_type == 'fixed' and orig_price > 0 and disc_amount > 0:
+                per_item_disc = disc_amount / qty_val if qty_val else disc_amount
+                disc_pct = round((per_item_disc / orig_price) * 100, 1)
+            else:
+                disc_pct = 0
+
+            # Subtotal = qty × original_unit_price (before discount)
+            subtotal_before_disc = round(orig_price * qty_val, 2)
+            # Effective subtotal = subtotal_before_disc - discount
+            effective_subtotal = round(subtotal_before_disc - disc_amount, 2) if disc_amount > 0 else subtotal_before_disc
+
+            o['promotion_type']        = promo_type
+            o['promotion_name']        = promo_name
+            o['discount_amount']       = disc_amount
+            o['discount_percentage']   = disc_pct
+            o['subtotal_before_disc']  = subtotal_before_disc
+            o['effective_subtotal']    = effective_subtotal
+            print(f"  [promo] order {order_id_key}: type={promo_type} disc={disc_amount} subtotal={subtotal_before_disc} eff={effective_subtotal}")
             raw_date = o.get('date')
             print(f"[orders_list] order {o.get('id')} raw date: {raw_date!r}")
             if raw_date:
@@ -8794,6 +8889,34 @@ def cart():
             elif cart_image:
                 first_image_url = f"https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/{cart_image.split('/')[-1]}"
 
+            # Fetch active promotion for this product (non-fatal)
+            promo_type = ''
+            promo_discount = 0
+            promo_label = ''
+            sale_price = None
+            if pid and item.get('seller_email'):
+                try:
+                    promo = get_active_promotions_for_product(
+                        str(pid), item['seller_email'],
+                        prod_img_map.get(pid, {}).get('category', '')
+                    )
+                    if promo:
+                        promo_type = promo.get('type', '')
+                        promo_discount = float(promo.get('discount_value') or 0)
+                        base = float(item.get('price') or 0)
+                        if promo_type == 'percentage' and promo_discount > 0:
+                            promo_label = f"{int(promo_discount)}% OFF"
+                            sale_price = max(0.01, base * (1 - promo_discount / 100))
+                        elif promo_type == 'fixed' and promo_discount > 0:
+                            promo_label = f"₱{int(promo_discount)} OFF"
+                            sale_price = max(0.01, base - promo_discount)
+                        elif promo_type == 'buy_one_get_one':
+                            promo_label = 'BOGO'
+                        elif promo_type == 'free_shipping':
+                            promo_label = 'FREE SHIP'
+                except Exception:
+                    pass
+
             cart_items.append({
                 'id': item['id'], 'name': item.get('name',''),
                 'price': float(item.get('price') or 0),
@@ -8805,6 +8928,10 @@ def cart():
                 'image_url': first_image_url,
                 'first_image_url': first_image_url,
                 'all_images': prod_img_map.get(pid, {}).get('image', '') if pid else '',
+                'promo_type': promo_type,
+                'promo_discount': promo_discount,
+                'promo_label': promo_label,
+                'sale_price': sale_price,
             })
     except Exception as e:
         print(f"cart Supabase error: {e}")
@@ -9031,7 +9158,7 @@ def checkout_route():
             if product_ids:
                 try:
                     pr = sb_admin.table('products') \
-                        .select('id, image, image_colors') \
+                        .select('id, image, image_colors, price, seller_email, category') \
                         .in_('id', product_ids) \
                         .execute()
                     for p in (pr.data or []):
@@ -9069,10 +9196,30 @@ def checkout_route():
                 except Exception:
                     pass
 
+                # Resolve the effective price: apply active promotion on top of original price
+                base_price = float(item['price'] or 0)
+                effective_price = base_price
+                try:
+                    prod_data = prod_images.get(pid, {})
+                    active_promo = get_active_promotions_for_product(
+                        str(pid),
+                        item.get('seller_email', '') or prod_data.get('seller_email', ''),
+                        prod_data.get('category', '')
+                    )
+                    if active_promo:
+                        promo_type = active_promo.get('type', '')
+                        discount_val = float(active_promo.get('discount_value') or 0)
+                        if promo_type == 'percentage' and discount_val > 0:
+                            effective_price = max(0.01, base_price * (1 - discount_val / 100))
+                        elif promo_type == 'fixed' and discount_val > 0:
+                            effective_price = max(0.01, base_price - discount_val)
+                except Exception:
+                    pass
+
                 checkout_items_session.append({
                     'id':           item['id'],
                     'name':         item['name'],
-                    'price':        float(item['price'] or 0),
+                    'price':        effective_price,
                     'quantity':     int(item['quantity'] or 1),
                     'variations':   item.get('variations') or '',
                     'size':         item.get('size') or '',
@@ -11249,6 +11396,23 @@ def checkout_single_product():
             price = float(product_price) if product_price and str(product_price).strip() else float(product.get('price') or 0)
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid product price'})
+
+        # Apply active promotion to get effective price
+        try:
+            active_promo = get_active_promotions_for_product(
+                str(product_id),
+                product.get('seller_email', ''),
+                product.get('category', '')
+            )
+            if active_promo:
+                promo_type = active_promo.get('type', '')
+                discount_val = float(active_promo.get('discount_value') or 0)
+                if promo_type == 'percentage' and discount_val > 0:
+                    price = max(0.01, price * (1 - discount_val / 100))
+                elif promo_type == 'fixed' and discount_val > 0:
+                    price = max(0.01, price - discount_val)
+        except Exception:
+            pass
 
         # Resolve image — prefer color_image from form (already resolved by view_product.html JS)
         # then fall back to image_colors mapping, then first product image

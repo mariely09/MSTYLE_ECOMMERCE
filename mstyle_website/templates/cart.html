@@ -50,6 +50,7 @@
                     </div>
                     <div class="item-content">
                         {% set view_url = url_for('view_product', product_id=item.product_id) if item.product_id else '#' %}
+                        <div class="item-image-wrap" style="position:relative;flex-shrink:0;">
                         {% if item.first_image_url %}
                         <a href="{{ view_url }}" title="View product">
                         <img src="{{ item.first_image_url }}"
@@ -72,6 +73,19 @@
                             <span>No Image</span>
                         </div>
                         {% endif %}
+                        {% if item.promo_label %}
+                        <span style="
+                            position:absolute;top:6px;left:6px;
+                            background:linear-gradient(135deg,#d4af37,#f4d03f);
+                            color:#1a1a1a;font-size:9px;font-weight:900;
+                            letter-spacing:0.6px;padding:3px 8px;
+                            border-radius:10px;
+                            box-shadow:0 2px 6px rgba(212,175,55,0.45);
+                            pointer-events:none;z-index:2;
+                            white-space:nowrap;
+                        ">{{ item.promo_label }}</span>
+                        {% endif %}
+                        </div>
                         <div class="item-details">
                             {% if item.seller_name %}
                             <div style="font-size:11px;color:#6c757d;margin-bottom:2px;display:flex;align-items:center;gap:4px;">
@@ -84,10 +98,30 @@
                             </div>
                             {% endif %}
                             <h3 class="item-name"><a href="{{ view_url }}" style="color:inherit;text-decoration:none;">{{ item.name }}</a></h3>
-                            <p class="item-price">₱{{ "%.2f"|format(item.price) }}</p>
+                            <p class="item-price">
+                                {% if item.sale_price and item.promo_type in ('percentage', 'fixed') %}
+                                <span style="color:#e74c3c;font-weight:900;font-size:15px;">₱{{ "%.2f"|format(item.sale_price) }}</span>
+                                <span style="color:#6c757d;font-size:11px;text-decoration:line-through;margin-left:6px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                {% elif item.promo_type == 'free_shipping' %}
+                                <span style="color:#d4af37;font-weight:800;font-size:15px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                <span style="background:rgba(212,175,55,0.15);color:#d4af37;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:6px;border:1px solid rgba(212,175,55,0.3);">FREE SHIP</span>
+                                {% elif item.promo_type == 'buy_one_get_one' %}
+                                <span style="color:#d4af37;font-weight:800;font-size:15px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                <span style="background:rgba(212,175,55,0.15);color:#d4af37;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:6px;border:1px solid rgba(212,175,55,0.3);">BOGO</span>
+                                {% else %}
+                                <span style="color:#d4af37;font-weight:800;font-size:15px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                {% endif %}
+                            </p>
                             {% if item.variations or item.size %}
+                            {% set has_active_promo = item.promo_type in ('percentage', 'fixed', 'buy_one_get_one', 'free_shipping') %}
                             <div class="item-specifications">
                                 {% if item.variations %}
+                                {% if has_active_promo %}
+                                <span class="item-color" title="Color cannot be changed while a promotion is active">
+                                    <i class="bi bi-palette"></i>
+                                    Color: {{ item.variations }}
+                                </span>
+                                {% else %}
                                 <span class="item-color clickable-spec"
                                     onclick="changeColor('{{ item.id }}', '{{ item.variations }}')">
                                     <i class="bi bi-palette"></i>
@@ -95,13 +129,21 @@
                                     <i class="bi bi-pencil-square edit-icon"></i>
                                 </span>
                                 {% endif %}
+                                {% endif %}
                                 {% if item.size %}
+                                {% if has_active_promo %}
+                                <span class="item-size" title="Size cannot be changed while a promotion is active">
+                                    <i class="bi bi-rulers"></i>
+                                    Size: {{ item.size }}
+                                </span>
+                                {% else %}
                                 <span class="item-size clickable-spec"
                                     onclick="changeSize('{{ item.id }}', '{{ item.size }}')">
                                     <i class="bi bi-rulers"></i>
                                     Size: {{ item.size }}
                                     <i class="bi bi-pencil-square edit-icon"></i>
                                 </span>
+                                {% endif %}
                                 {% endif %}
                             </div>
                             {% endif %}

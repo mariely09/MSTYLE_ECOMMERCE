@@ -40,17 +40,37 @@
 
                 {% for item in checkout_items %}
                 <div class="item" id="item-{{ item.id }}" data-seller-email="{{ item.seller_email }}"
-                    data-product-id="{{ item.product_id }}" data-promotion-type="{{ item.promotion_type or '' }}">
+                    data-product-id="{{ item.product_id }}"
+                    data-promotion-type="{{ item.promotion_type or '' }}"
+                    data-price="{{ item.promotional_price if (item.has_promotion and item.promotion_type in ['percentage','fixed']) else item.price }}"
+                    data-quantity="{{ item.quantity }}">
                     <div class="item-image-container">
-                        {% set selected_color = item.variations.split(',')[0].strip() if item.variations else '' %}
                         {% if item.image %}
-                        <img src="{{ item.image if (item.image.startswith('http') or item.image.startswith('/')) else item.image|product_img }}"
-                            alt="{{ item.name }}" class="product-image"
-                            style="border: 2px solid var(--secondary-color, #d4af37); border-radius: 8px; width: 80px; height: 80px; object-fit: cover;"
-                            title="{{ item.variations + ' variant' if item.variations else item.name }}"
-                            onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                        <div class="item-image-wrap">
+                            <img src="{{ item.image if (item.image.startswith('http') or item.image.startswith('/')) else item.image|product_img }}"
+                                alt="{{ item.name }}" class="product-image"
+                                title="{{ item.variations + ' variant' if item.variations else item.name }}"
+                                onerror="this.onerror=null;this.src='/static/images/placeholder.png';">
+                            {% if item.has_promotion %}
+                            <span class="item-promo-badge
+                                {%- if item.promotion_type == 'free_shipping' %} promo-free-ship
+                                {%- elif item.promotion_type == 'buy_one_get_one' %} promo-bogo
+                                {%- else %} promo-discount
+                                {%- endif %}">
+                                {%- if item.promotion_type == 'percentage' -%}
+                                    -{{ item.discount_percentage|default(0) }}%
+                                {%- elif item.promotion_type == 'fixed' -%}
+                                    ₱{{ "%.0f"|format(item.discount_amount|default(0)) }} OFF
+                                {%- elif item.promotion_type == 'buy_one_get_one' -%}
+                                    BOGO
+                                {%- elif item.promotion_type == 'free_shipping' -%}
+                                    FREE SHIP
+                                {%- endif -%}
+                            </span>
+                            {% endif %}
+                        </div>
                         {% else %}
-                        <div class="product-image-placeholder" id="checkout-image-{{ item.id }}">
+                        <div class="product-image-placeholder">
                             <i class="fas fa-image"></i>
                             <span>No Image</span>
                         </div>
@@ -58,47 +78,37 @@
                     </div>
                     <div class="item-details">
                         <span class="item-name">{{ item.name }}</span>
-                        
-                        <!-- Price Display with Promotional Information -->
-                        <div class="item-price-container">
+
+                        <!-- Price block — mirrors mobile app logic -->
+                        <div class="item-price-block">
                             {% if item.has_promotion and item.promotion_type in ['percentage', 'fixed'] %}
-                            <!-- Promotional pricing display for price-affecting promotions -->
-                            <div class="promotional-price-section">
-                                <span class="item-price promotional">₱{{ "%.2f"|format(item.promotional_price|default(0)) }}</span>
-                                <span class="discount-badge">-{{ item.discount_percentage|default(0) }}%</span>
+                            <!-- Red sale price + strikethrough original -->
+                            <div class="price-row">
+                                <span class="item-price sale-price">₱{{ "%.2f"|format(item.promotional_price|default(0)) }}</span>
+                                <span class="item-price original-price-strike">₱{{ "%.2f"|format(item.original_price|default(0)) }}</span>
+                                <span class="savings-pill">Save ₱{{ "%.2f"|format(item.discount_amount|default(0)) }}</span>
                             </div>
-                            <div class="original-price-section">
-                                <span class="original-price">₱{{ "%.2f"|format(item.original_price|default(0)) }}</span>
-                                <span class="savings-text">Save ₱{{ "%.2f"|format(item.discount_amount|default(0)) }}</span>
+                            {% elif item.has_promotion and item.promotion_type == 'free_shipping' %}
+                            <!-- Normal price + green Free Shipping pill -->
+                            <div class="price-row">
+                                <span class="item-price">₱{{ "%.2f"|format(item.price|default(0)) }}</span>
+                                <span class="promo-pill free-ship-pill"><i class="fas fa-truck"></i> Free Shipping</span>
+                            </div>
+                            {% elif item.has_promotion and item.promotion_type == 'buy_one_get_one' %}
+                            <!-- Normal price + orange BOGO pill -->
+                            <div class="price-row">
+                                <span class="item-price">₱{{ "%.2f"|format(item.price|default(0)) }}</span>
+                                <span class="promo-pill bogo-pill">BOGO</span>
                             </div>
                             {% else %}
-                            <!-- Regular pricing display (including non-price-affecting promotions) -->
                             <span class="item-price">₱{{ "%.2f"|format(item.price|default(0)) }}</span>
                             {% endif %}
-                            
-                            {% if item.promotion_name %}
-                            <div class="promotion-tag">
-                                <i class="fas fa-tag"></i>
-                                {% if item.promotion_type == 'free_shipping' %}
-                                <span>Free Shipping</span>
-                                {% elif item.promotion_type == 'buy_one_get_one' %}
-                                <span>Buy One Get One</span>
-                                {% elif item.promotion_type == 'percentage' %}
-                                <span>{{ item.discount_percentage|default(0) }}% OFF</span>
-                                {% elif item.promotion_type == 'fixed' %}
-                                <span>₱{{ "%.0f"|format(item.discount_amount|default(0)) }} OFF</span>
-                                {% else %}
-                                <span>{{ item.promotion_name }}</span>
-                                {% endif %}
-                            </div>
-                            {% endif %}
                         </div>
-                        
+
                         <div class="item-specifications">
                             {% if item.variations %}
-                            {% set selected_color = item.variations.split(',')[0].strip() if ',' in item.variations else
-                            item.variations %}
-                            <span class="item-color" data-color="{{ selected_color }}">
+                            {% set selected_color = item.variations.split(',')[0].strip() if ',' in item.variations else item.variations %}
+                            <span class="item-color">
                                 <i class="bi bi-palette"></i>
                                 Color: {{ selected_color }}
                             </span>
@@ -111,9 +121,21 @@
                             {% endif %}
                             <span class="item-quantity">
                                 <i class="bi bi-box-seam"></i>
-                                Quantity: {{ item.quantity }}
+                                Qty: {{ item.quantity }}
                             </span>
                         </div>
+                    </div>
+                    <!-- Item subtotal (right side, like mobile) -->
+                    <div class="item-subtotal">
+                        ₱{{ "%.2f"|format(
+                            (item.promotional_price if (item.has_promotion and item.promotion_type in ['percentage','fixed']) else item.price)
+                            * item.quantity
+                        ) }}
+                        {% if item.promotion_type == 'free_shipping' %}
+                        <span class="item-shipping-note free">Free Ship</span>
+                        {% else %}
+                        <span class="item-shipping-note">+₱50 ship</span>
+                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}
@@ -125,7 +147,10 @@
                         <span id="subtotal-amount">₱{{ "%.2f"|format(total_price) }}</span>
                     </div>
                     <div class="shipping-row" id="shipping-row">
-                        <span>Shipping Fee:</span>
+                        <span>
+                            Shipping Fee:
+                            <span class="shipping-breakdown" id="shipping-breakdown"></span>
+                        </span>
                         <span id="shipping-amount">{% if has_free_shipping %}Free{% else %}₱{{ "%.2f"|format(shipping_fee) }}{% endif %}</span>
                     </div>
                     <div class="total" aria-label="Total amount">
@@ -258,295 +283,51 @@
         // Calculate total price on page load
         document.addEventListener('DOMContentLoaded', function () {
             calculateTotalPrice();
-
-            // Images are already resolved server-side via image_colors mapping — no JS override needed
         });
-
-
-
-        // Function to set appropriate product images based on selected color (matches cart.html logic)
-        function setProductImages() {
-            console.log('🔍 Setting product images based on selected colors in checkout...');
-
-            document.querySelectorAll('.product-image[data-all-images]').forEach(function (img, index) {
-                const allImages = img.getAttribute('data-all-images');
-                const selectedColor = img.getAttribute('data-selected-color');
-                const currentSrc = img.src;
-
-                console.log(`\n📋 Processing item ${index + 1}:`);
-                console.log(`   Selected Color: "${selectedColor}"`);
-                console.log(`   Available Images: ${allImages}`);
-                console.log(`   Current Image: ${currentSrc.split('/').pop()}`);
-
-                if (allImages && selectedColor) {
-                    const images = allImages.split(',').map(img => img.trim()).filter(img => img);
-                    const colorLower = selectedColor.toLowerCase().trim();
-
-                    console.log(`   🎨 Looking for images matching color: "${colorLower}"`);
-
-                    // Simple but effective matching
-                    let bestImageIndex = 0;
-                    let bestMatch = '';
-
-                    // Check each image for color match
-                    for (let i = 0; i < images.length; i++) {
-                        const imageName = images[i].toLowerCase();
-                        console.log(`   🖼️  Checking image: "${images[i]}" (${imageName})`);
-
-                        // Check various color formats
-                        const colorChecks = [
-                            colorLower,
-                            colorLower.replace(' ', '_'),
-                            colorLower.replace(' ', '-'),
-                            colorLower.replace(' ', ''),
-                            colorLower.split(' ')[0], // First word of color
-                        ];
-
-                        for (let colorCheck of colorChecks) {
-                            if (colorCheck && imageName.includes(colorCheck)) {
-                                bestImageIndex = i;
-                                bestMatch = colorCheck;
-                                console.log(`   ✅ MATCH FOUND! "${colorCheck}" in "${imageName}"`);
-                                break;
-                            }
-                        }
-
-                        if (bestMatch) break;
-                    }
-
-                    const selectedImage = images[bestImageIndex];
-                    const expectedSrc = "{{ url_for('static', filename='images/uploads/') }}" + selectedImage;
-
-                    console.log(`   🎯 Selected image: "${selectedImage}" (index: ${bestImageIndex})`);
-                    console.log(`   🔄 Current vs Expected: "${currentSrc.split('/').pop()}" vs "${selectedImage}"`);
-
-                    // Update image if different
-                    if (!currentSrc.endsWith(selectedImage)) {
-                        console.log(`   🔄 Updating image to: ${expectedSrc}`);
-                        img.src = expectedSrc;
-                    } else {
-                        console.log(`   ✅ Image already correct!`);
-                    }
-
-                    // Add visual indicator
-                    img.style.border = '2px solid var(--secondary-color, #d4af37)';
-                    img.style.borderRadius = '8px';
-                    img.title = `${selectedColor} variant`;
-
-                    if (bestMatch) {
-                        console.log(`   🎉 Successfully matched "${selectedColor}" with "${selectedImage}"`);
-                    } else {
-                        console.log(`   ⚠️  No color match found, using first image: "${selectedImage}"`);
-                    }
-                } else {
-                    console.log(`   ❌ Missing data - Images: ${!!allImages}, Color: ${!!selectedColor}`);
-                }
-            });
-
-            console.log('🏁 Finished processing all checkout images');
-        }
-
-        // Comprehensive debug function - call this in browser console to diagnose issues
-        function debugCheckoutData() {
-            console.log('🔍 COMPREHENSIVE CHECKOUT DEBUG:');
-            
-            document.querySelectorAll('.item').forEach(function (item, index) {
-                console.log(`\n📋 Item ${index + 1}:`);
-                console.log(`   🆔 Item ID: ${item.id}`);
-                
-                // Check name
-                const nameElement = item.querySelector('.item-name');
-                console.log(`   📝 Name element:`, nameElement);
-                console.log(`   📝 Name text: "${nameElement ? nameElement.textContent : 'NOT FOUND'}"`);
-                
-                // Check price elements
-                const promotionalPriceElement = item.querySelector('.item-price.promotional');
-                const regularPriceElement = item.querySelector('.item-price');
-                console.log(`   💰 Promotional price element:`, promotionalPriceElement);
-                console.log(`   💰 Regular price element:`, regularPriceElement);
-                
-                if (promotionalPriceElement) {
-                    console.log(`   💰 Promotional price text: "${promotionalPriceElement.textContent}"`);
-                } else if (regularPriceElement) {
-                    console.log(`   💰 Regular price text: "${regularPriceElement.textContent}"`);
-                } else {
-                    console.log(`   ❌ NO PRICE ELEMENT FOUND!`);
-                }
-                
-                // Check quantity
-                const quantityElement = item.querySelector('.item-quantity');
-                console.log(`   📦 Quantity element:`, quantityElement);
-                console.log(`   📦 Quantity text: "${quantityElement ? quantityElement.textContent : 'NOT FOUND'}"`);
-                
-                // Check promotional info
-                const hasPromotionClass = item.querySelector('.promotional-price-section');
-                console.log(`   🏷️ Has promotional section:`, !!hasPromotionClass);
-                
-                // Check data attributes
-                console.log(`   📊 Data attributes:`);
-                console.log(`      - seller-email: ${item.getAttribute('data-seller-email')}`);
-                console.log(`      - product-id: ${item.getAttribute('data-product-id')}`);
-                console.log(`      - promotion-type: ${item.getAttribute('data-promotion-type')}`);
-            });
-        }
-
-        // Debug function - call this in browser console to see current state
-        function debugCheckoutImages() {
-            console.log('🔍 DEBUGGING CHECKOUT IMAGES:');
-            document.querySelectorAll('.product-image').forEach(function (img, index) {
-                const allImages = img.getAttribute('data-all-images');
-                const selectedColor = img.getAttribute('data-selected-color');
-                const currentSrc = img.src;
-
-                console.log(`\n📋 Item ${index + 1}:`);
-                console.log(`   🎨 Selected Color: "${selectedColor}"`);
-                console.log(`   🖼️  Current Image: "${currentSrc.split('/').pop()}"`);
-                console.log(`   📁 Available Images: ${allImages}`);
-
-                if (allImages) {
-                    const images = allImages.split(',').map(img => img.trim());
-                    console.log(`   📝 Image List:`);
-                    images.forEach((img, i) => {
-                        const isCurrentImage = currentSrc.endsWith(img);
-                        console.log(`      ${i}: "${img}" ${isCurrentImage ? '← CURRENT' : ''}`);
-                    });
-                }
-            });
-        }
-
-        // Function to validate that images match selected colors
-        function validateImageColorMatching() {
-            console.log('Validating image-color matching in checkout...');
-
-            document.querySelectorAll('.product-image[data-selected-color]').forEach(function (img) {
-                const selectedColor = img.getAttribute('data-selected-color');
-                const currentSrc = img.src;
-                const imageName = currentSrc.split('/').pop().toLowerCase();
-
-                if (selectedColor) {
-                    const colorLower = selectedColor.toLowerCase().trim();
-                    const colorVariations = [
-                        colorLower,
-                        colorLower.replace(' ', '_'),
-                        colorLower.replace(' ', '-'),
-                        colorLower.replace(/\s+/g, '')
-                    ];
-
-                    let isMatching = false;
-                    for (let variation of colorVariations) {
-                        if (variation && imageName.includes(variation)) {
-                            isMatching = true;
-                            break;
-                        }
-                    }
-
-                    if (isMatching) {
-                        console.log(`✅ Image matches selected color - Color: ${selectedColor}, Image: ${imageName}`);
-                        // Add visual indicator for matched images
-                        img.style.border = '2px solid var(--secondary-color, #d4af37)';
-                        img.style.borderRadius = '8px';
-                        img.title = `${selectedColor} variant - Color matched!`;
-                    } else {
-                        console.log(`⚠️ Image may not match selected color - Color: ${selectedColor}, Image: ${imageName}`);
-                        // Still add some styling but different
-                        img.style.border = '1px solid #ccc';
-                        img.style.borderRadius = '8px';
-                        img.title = `${selectedColor} variant`;
-                    }
-                }
-            });
-        }
 
         function calculateTotalPrice() {
             let subtotal = 0;
             let totalShippingFee = 0;
-            let itemCount = 0;
-            let freeShippingCount = 0;
-            console.log('🧮 Starting total price calculation...');
-            
-            document.querySelectorAll('.item').forEach(function (item, index) {
-                try {
-                    console.log(`📋 Processing item ${index + 1}:`);
-                    
-                    // Check if this item has free shipping promotion
-                    const promotionType = item.getAttribute('data-promotion-type');
-                    const hasFreeShipping = (promotionType === 'free_shipping');
-                    
-                    if (hasFreeShipping) {
-                        freeShippingCount++;
-                        console.log(`   🚚 Free shipping for item ${index + 1}`);
-                    } else {
-                        // Add ₱50 shipping fee per item without free shipping
-                        totalShippingFee += 50;
-                        console.log(`   📦 Adding ₱50 shipping fee for item ${index + 1}`);
-                    }
-                    
-                    itemCount++;
-                    
-                    // Get the actual price being used (promotional or regular)
-                    let priceElement = item.querySelector('.item-price.promotional');
-                    if (!priceElement) {
-                        priceElement = item.querySelector('.item-price');
-                    }
-                    
-                    if (priceElement) {
-                        const priceText = priceElement.textContent.replace('₱', '').trim();
-                        console.log(`   💰 Price text: "${priceText}"`);
-                        
-                        const price = parseFloat(priceText);
-                        console.log(`   💰 Parsed price: ${price}`);
-                        
-                        const quantityElement = item.querySelector('.item-quantity');
-                        if (quantityElement) {
-                            const quantityText = quantityElement.textContent.split(': ')[1];
-                            console.log(`   📦 Quantity text: "${quantityText}"`);
-                            
-                            const quantity = parseInt(quantityText);
-                            console.log(`   📦 Parsed quantity: ${quantity}`);
-                            
-                            if (!isNaN(price) && !isNaN(quantity) && price >= 0 && quantity >= 0) {
-                                const itemTotal = price * quantity;
-                                subtotal += itemTotal;
-                                console.log(`   ✅ Item total: ${itemTotal}, Running subtotal: ${subtotal}`);
-                            } else {
-                                console.warn(`   ⚠️ Invalid price or quantity - Price: ${price}, Quantity: ${quantity}`);
-                            }
-                        } else {
-                            console.warn(`   ⚠️ Quantity element not found`);
-                        }
-                    } else {
-                        console.warn(`   ⚠️ Price element not found`);
-                    }
-                } catch (error) {
-                    console.error(`❌ Error calculating price for item ${index + 1}:`, error);
+            let paidCount = 0;
+            let freeCount = 0;
+
+            document.querySelectorAll('.item').forEach(function (item) {
+                const price    = parseFloat(item.dataset.price    || 0);
+                const quantity = parseInt(item.dataset.quantity   || 1);
+                const promoType = item.dataset.promotionType || '';
+                const isFreeShip = promoType === 'free_shipping';
+
+                subtotal += price * quantity;
+
+                if (isFreeShip) {
+                    freeCount++;
+                } else {
+                    totalShippingFee += 50;
+                    paidCount++;
                 }
             });
-            
+
             const finalTotal = subtotal + totalShippingFee;
-            
-            console.log(`🏁 Calculation results:`);
-            console.log(`   Total Items: ${itemCount}`);
-            console.log(`   Items with Free Shipping: ${freeShippingCount}`);
-            console.log(`   Items with Paid Shipping: ${itemCount - freeShippingCount}`);
-            console.log(`   Subtotal: ₱${subtotal.toFixed(2)}`);
-            console.log(`   Total Shipping Fee: ₱${totalShippingFee.toFixed(2)}`);
-            console.log(`   Final Total: ₱${finalTotal.toFixed(2)}`);
-            
-            // Update display
-            document.getElementById('subtotal-amount').textContent = `₱${subtotal.toFixed(2)}`;
-            document.getElementById('total-amount').textContent = `₱${finalTotal.toFixed(2)}`;
-            
-            // Update shipping display
-            const shippingAmountElement = document.getElementById('shipping-amount');
-            if (shippingAmountElement) {
-                if (totalShippingFee === 0) {
-                    shippingAmountElement.textContent = 'Free';
-                } else if (freeShippingCount > 0) {
-                    // Mixed: some items have free shipping, some don't
-                    shippingAmountElement.textContent = `₱${totalShippingFee.toFixed(2)} (${itemCount - freeShippingCount} item${itemCount - freeShippingCount > 1 ? 's' : ''})`;
-                } else {
-                    // All items have shipping fee
-                    shippingAmountElement.textContent = `₱${totalShippingFee.toFixed(2)}`;
+
+            document.getElementById('subtotal-amount').textContent  = `₱${subtotal.toFixed(2)}`;
+            document.getElementById('total-amount').textContent     = `₱${finalTotal.toFixed(2)}`;
+
+            // Shipping display
+            const shippingEl    = document.getElementById('shipping-amount');
+            const breakdownEl   = document.getElementById('shipping-breakdown');
+            const totalItems    = paidCount + freeCount;
+
+            if (totalShippingFee === 0) {
+                shippingEl.textContent = 'Free';
+                if (breakdownEl) breakdownEl.textContent = '';
+            } else {
+                shippingEl.textContent = `₱${totalShippingFee.toFixed(2)}`;
+                if (breakdownEl) {
+                    if (freeCount > 0) {
+                        breakdownEl.textContent = `(${paidCount} item${paidCount > 1 ? 's' : ''} × ₱50, ${freeCount} free)`;
+                    } else {
+                        breakdownEl.textContent = `(${paidCount} item${paidCount > 1 ? 's' : ''} × ₱50)`;
+                    }
                 }
             }
         }
@@ -558,178 +339,86 @@
                 return;
             }
 
-            // Show loading state on button
             const confirmBtn = document.querySelector('.confirm-button');
             const originalBtnContent = confirmBtn.innerHTML;
             confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Processing...';
             confirmBtn.disabled = true;
 
             const items = [];
-
-            document.querySelectorAll('.item').forEach(function (item, index) {
-                try {
-                    console.log(`🛒 Processing order item ${index + 1}:`);
-                    
-                    const itemId = item.id.split('-')[1];
-                    const name = item.querySelector('.item-name').textContent;
-                    console.log(`   📝 Item ID: ${itemId}, Name: ${name}`);
-                    
-                    // Get the actual price being used (promotional or regular)
-                    // For free shipping and buy one get one, there's no promotional price element
-                    let priceElement = item.querySelector('.item-price.promotional');
-                    if (!priceElement) {
-                        priceElement = item.querySelector('.item-price');
-                    }
-                    
-                    if (!priceElement) {
-                        console.error('❌ Price element not found for item:', itemId);
-                        return; // Skip this item
-                    }
-                    
-                    const priceText = priceElement.textContent.replace('₱', '').trim();
-                    console.log(`   💰 Price text: "${priceText}"`);
-                    
-                    const price = parseFloat(priceText);
-                    console.log(`   💰 Parsed price: ${price}`);
-                    
-                    const quantityElement = item.querySelector('.item-quantity');
-                    if (!quantityElement) {
-                        console.error('❌ Quantity element not found for item:', itemId);
-                        return; // Skip this item
-                    }
-                    
-                    const quantityText = quantityElement.textContent.split(': ')[1];
-                    console.log(`   📦 Quantity text: "${quantityText}"`);
-                    
-                    const quantity = parseInt(quantityText);
-                    console.log(`   📦 Parsed quantity: ${quantity}`);
-                    
-                    if (isNaN(price) || isNaN(quantity) || price < 0 || quantity < 0) {
-                        console.error('❌ Invalid price or quantity for item:', itemId, 'Price:', priceText, 'Quantity:', quantityText);
-                        return; // Skip this item
-                    }
-                    
-                    const itemTotal = price * quantity;
-                    console.log(`   💵 Item total: ${itemTotal}`);
-                    const imgElement = item.querySelector('img');
-                    const image = imgElement ? imgElement.getAttribute('src').split('/').pop() : '';
-                    const seller_email = item.getAttribute('data-seller-email');
-                    const product_id = item.getAttribute('data-product-id');
-
-                    // Get color and size information
-                    const colorElement = item.querySelector('.item-color');
-                    const sizeElement = item.querySelector('.item-size');
-                    const color = colorElement ? colorElement.textContent.replace('Color: ', '') : '';
-                    const size = sizeElement ? sizeElement.textContent.replace('Size: ', '') : '';
-
-                    items.push({
-                        id: itemId,
-                        name: name,
-                        quantity: quantity,
-                        itemTotal: itemTotal,
-                        image: image,
-                        seller_email: seller_email,
-                        product_id: product_id,
-                        variations: color,  // Use variations instead of color for consistency
-                        size: size
-                    });
-                } catch (error) {
-                    console.error('Error processing item in confirmOrder:', error);
-                }
-            });
-
-            // Calculate shipping fee for the order (per item)
-            let orderSubtotal = 0;
+            let orderSubtotal    = 0;
             let totalShippingFee = 0;
-            let itemShippingDetails = [];
-            
-            items.forEach(function(item) {
-                orderSubtotal += item.itemTotal;
-            });
-            
-            // Calculate shipping fee per item
-            document.querySelectorAll('.item').forEach(function (item, index) {
-                const promotionType = item.getAttribute('data-promotion-type');
-                const itemId = item.id.split('-')[1];
-                
-                if (promotionType === 'free_shipping') {
-                    console.log(`   🚚 Item ${index + 1} (ID: ${itemId}): Free shipping`);
-                    itemShippingDetails.push({ itemId: itemId, shippingFee: 0 });
-                } else {
-                    console.log(`   📦 Item ${index + 1} (ID: ${itemId}): ₱50 shipping fee`);
-                    totalShippingFee += 50;
-                    itemShippingDetails.push({ itemId: itemId, shippingFee: 50 });
-                }
-            });
-            
-            const finalOrderTotal = orderSubtotal + totalShippingFee;
-            
-            console.log(`📦 Order Summary:`);
-            console.log(`   Subtotal: ₱${orderSubtotal.toFixed(2)}`);
-            console.log(`   Total Shipping Fee: ₱${totalShippingFee.toFixed(2)}`);
-            console.log(`   Final Total: ₱${finalOrderTotal.toFixed(2)}`);
+            const itemShippingDetails = [];
 
-            // Send order to server
+            document.querySelectorAll('.item').forEach(function (item) {
+                const itemId    = item.id.split('-')[1];
+                const price     = parseFloat(item.dataset.price    || 0);
+                const quantity  = parseInt(item.dataset.quantity   || 1);
+                const promoType = item.dataset.promotionType || '';
+                const isFreeShip = promoType === 'free_shipping';
+                const itemTotal  = price * quantity;
+                const shipFee    = isFreeShip ? 0 : 50;
+
+                orderSubtotal    += itemTotal;
+                totalShippingFee += shipFee;
+                itemShippingDetails.push({ itemId, shippingFee: shipFee });
+
+                const imgEl       = item.querySelector('img');
+                const image       = imgEl ? imgEl.getAttribute('src').split('/').pop() : '';
+                const name        = item.querySelector('.item-name').textContent.trim();
+                const sellerEmail = item.dataset.sellerEmail;
+                const productId   = item.dataset.productId;
+
+                const colorEl = item.querySelector('.item-color');
+                const sizeEl  = item.querySelector('.item-size');
+                const color   = colorEl ? colorEl.textContent.replace(/Color:\s*/i, '').trim() : '';
+                const size    = sizeEl  ? sizeEl.textContent.replace(/Size:\s*/i,  '').trim() : '';
+
+                items.push({
+                    id: itemId, name, quantity, itemTotal, image,
+                    seller_email: sellerEmail, product_id: productId,
+                    variations: color, size
+                });
+            });
+
+            const finalOrderTotal = orderSubtotal + totalShippingFee;
+
             fetch('/confirm_order', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    items: items,
-                    payment_method: paymentMethod.value,
-                    subtotal: orderSubtotal,
-                    shipping_fee: totalShippingFee,
-                    final_total: finalOrderTotal,
+                    items,
+                    payment_method:       paymentMethod.value,
+                    subtotal:             orderSubtotal,
+                    shipping_fee:         totalShippingFee,
+                    final_total:          finalOrderTotal,
                     item_shipping_details: itemShippingDetails
                 })
             })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.text().then(text => {
-                            // Try to parse as JSON first, fall back to showing status
-                            try {
-                                const data = JSON.parse(text);
-                                return Promise.reject(data);
-                            } catch (_) {
-                                return Promise.reject({ message: `Server error ${response.status}. Check server logs.` });
-                            }
-                        });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        // Clear checkout items from session
-                        fetch('/clear_checkout', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            }
-                        })
-                            .then(() => {
-                                // Show success modal instead of alert
-                                showSuccessModal();
-                            })
-                            .catch(error => {
-                                console.error('Error clearing checkout:', error);
-                                // Still show success modal even if clear fails
-                                showSuccessModal();
-                            });
-                    } else {
-                        alert("Failed to confirm order: " + (data.error || "Unknown error"));
-                        // Reset button state on error
-                        confirmBtn.innerHTML = originalBtnContent;
-                        confirmBtn.disabled = false;
-                    }
-                })
-                .catch(error => {
-                    console.error("Error during order confirmation:", error);
-                    alert("An error occurred while placing your order: " + (error.message || "Unknown error"));
-                    // Reset button state on error
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        try { return Promise.reject(JSON.parse(text)); }
+                        catch (_) { return Promise.reject({ message: `Server error ${response.status}.` }); }
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    fetch('/clear_checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                        .finally(() => showSuccessModal());
+                } else {
+                    alert('Failed to confirm order: ' + (data.error || 'Unknown error'));
                     confirmBtn.innerHTML = originalBtnContent;
                     confirmBtn.disabled = false;
-                });
+                }
+            })
+            .catch(error => {
+                console.error('Error during order confirmation:', error);
+                alert('An error occurred while placing your order: ' + (error.message || 'Unknown error'));
+                confirmBtn.innerHTML = originalBtnContent;
+                confirmBtn.disabled = false;
+            });
         }
 
         function cancelOrder() {

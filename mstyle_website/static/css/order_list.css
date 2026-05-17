@@ -2189,6 +2189,42 @@ riginal Price and Promotion Columns Styles */
     color: var(--primary-color);
 }
 
+/* ── Pricing modal — promotion-aware styles ─────────────────────────── */
+
+/* Sale price (red, shown when percentage/fixed promo) */
+.modal-sale-price-val {
+    color: #e74c3c;
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+
+/* Discount applied row — green */
+#modal-discount {
+    color: #27ae60;
+    font-weight: 600;
+}
+
+/* Shipping fee FREE badge inline */
+#modal-shipping-fee .free-badge {
+    background: rgba(39, 174, 96, 0.1);
+    border: 1px solid rgba(39, 174, 96, 0.3);
+    color: #1e8449;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+/* Subtle separator before shipping row */
+#modal-shipping-fee-row,
+.details-row + .details-row:has(#modal-shipping-fee) {
+    border-top: 1px dashed #e9ecef;
+    padding-top: 0.6rem;
+    margin-top: 0.25rem;
+}
+
 /* Product Section Specific Styles */
 .product-section {
     grid-column: 1 / -1;

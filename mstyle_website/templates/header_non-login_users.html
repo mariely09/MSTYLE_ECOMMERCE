@@ -53,7 +53,7 @@
             </div>
 
             <!-- Mobile Menu Toggle -->
-            <button class="mobile-menu-toggle" id="mobile-menu-toggle" title="Open mobile menu">
+            <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Open mobile menu" aria-expanded="false" aria-controls="mobile-nav">
                 <span class="hamburger-line"></span>
                 <span class="hamburger-line"></span>
                 <span class="hamburger-line"></span>
@@ -61,25 +61,35 @@
         </div>
     </div>
 
-    <!-- Mobile Navigation Menu -->
-    <div class="mobile-nav" id="mobile-nav">
+    <!-- Mobile Navigation Drawer -->
+    <div class="mobile-nav" id="mobile-nav" role="dialog" aria-modal="true" aria-label="Mobile navigation">
+        <button class="mobile-nav-close" id="mobile-nav-close" aria-label="Close menu">
+            <i class="fas fa-times"></i>
+        </button>
         <div class="mobile-nav-content">
             <div class="mobile-search">
-                <input type="text" placeholder="Search products..." class="mobile-search-input">
-                <button class="mobile-search-btn" title="Search">
+                <input type="text" id="mobile-search-input" placeholder="Search products..." class="mobile-search-input" aria-label="Search products">
+                <button class="mobile-search-btn" onclick="performMobileSearch()" title="Search" aria-label="Search">
                     <i class="fas fa-search"></i>
                 </button>
             </div>
+            <div class="mobile-section-label">Categories</div>
             <nav class="mobile-nav-links">
-                <a href="/suits">Suits & Blazers</a>
-                <a href="/casual">Casual Shirts & Pants</a>
-                <a href="/outerwear">Outerwear & Jackets</a>
-                <a href="/activewear">Activewear & Fitness</a>
-                <a href="/shoes">Shoes & Accessories</a>
-                <a href="/grooming">Grooming Products</a>
+                <a href="/suits"><i class="fas fa-user-tie"></i> Suits &amp; Blazers</a>
+                <a href="/casual"><i class="fas fa-tshirt"></i> Casual Shirts &amp; Pants</a>
+                <a href="/outerwear"><i class="fas fa-wind"></i> Outerwear &amp; Jackets</a>
+                <a href="/activewear"><i class="fas fa-running"></i> Activewear &amp; Fitness</a>
+                <a href="/shoes"><i class="fas fa-shoe-prints"></i> Shoes &amp; Accessories</a>
+                <a href="/grooming"><i class="fas fa-cut"></i> Grooming Products</a>
             </nav>
+            <div class="mobile-section-label">Account</div>
+            <div class="mobile-nav-footer">
+                <a href="/login" class="mobile-auth-link login"><i class="fas fa-sign-in-alt"></i> Sign In</a>
+                <a href="/register" class="mobile-auth-link signup"><i class="fas fa-user-plus"></i> Sign Up</a>
+            </div>
         </div>
     </div>
+    <div class="mobile-nav-overlay" id="mobile-nav-overlay"></div>
 </header>
 <style>
     .auth-buttons .login-btn  { background: transparent !important; border: 2px solid #d4af37 !important; color: #d4af37 !important; }
@@ -87,3 +97,52 @@
     .auth-buttons .signup-btn { background: linear-gradient(135deg,#1a1a1a,#2c3e50) !important; border: 2px solid transparent !important; color: #fff !important; }
     .auth-buttons .signup-btn:hover { background: linear-gradient(135deg,#2c3e50,#1a1a1a) !important; }
 </style>
+<script>
+    // ── Mobile navigation (non-login header) ─────────────────────────────────
+    (function () {
+        const toggle   = document.getElementById('mobile-menu-toggle');
+        const nav      = document.getElementById('mobile-nav');
+        const overlay  = document.getElementById('mobile-nav-overlay');
+        const closeBtn = document.getElementById('mobile-nav-close');
+
+        function openMobileNav() {
+            nav.classList.add('active');
+            overlay.classList.add('active');
+            toggle.classList.add('active');
+            toggle.setAttribute('aria-expanded', 'true');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeMobileNav() {
+            nav.classList.remove('active');
+            overlay.classList.remove('active');
+            toggle.classList.remove('active');
+            toggle.setAttribute('aria-expanded', 'false');
+            document.body.style.overflow = '';
+        }
+
+        if (toggle) toggle.addEventListener('click', function (e) {
+            e.stopPropagation();
+            nav && nav.classList.contains('active') ? closeMobileNav() : openMobileNav();
+        });
+
+        if (closeBtn) closeBtn.addEventListener('click', closeMobileNav);
+        if (overlay)  overlay.addEventListener('click', closeMobileNav);
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && nav && nav.classList.contains('active')) closeMobileNav();
+        });
+
+        window.performMobileSearch = function () {
+            const input = document.getElementById('mobile-search-input');
+            const q = input ? input.value.trim() : '';
+            if (q) window.location.href = '/search?query=' + encodeURIComponent(q);
+        };
+        const mobileInput = document.getElementById('mobile-search-input');
+        if (mobileInput) {
+            mobileInput.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') performMobileSearch();
+            });
+        }
+    })();
+</script>

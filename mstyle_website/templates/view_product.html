@@ -155,7 +155,7 @@
 
                     <input type="hidden" name="product_id" value="{{ product.id }}">
                     <input type="hidden" name="product_name" value="{{ product.name }}">
-                    <input type="hidden" name="product_price" value="{{ product.promotional_price if product.has_promotion else product.price }}">
+                    <input type="hidden" name="product_price" value="{{ product.price }}">
                     <input type="hidden" name="original_price" value="{{ product.price }}">
                     <input type="hidden" name="has_promotion" value="{{ product.has_promotion }}">
                     <input type="hidden" name="discount_amount" value="{{ product.discount_amount if product.has_promotion else 0 }}">

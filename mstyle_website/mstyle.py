@@ -123,6 +123,148 @@ def handle_options(path=''):
     r.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
     return r, 200
 
+
+@app.route('/api/mobile/place_order', methods=['POST'])
+def mobile_place_order():
+    """Mobile app: place one or more orders directly from the app."""
+    try:
+        data = request.get_json(silent=True) or {}
+        email          = (data.get('email') or '').strip()
+        payment_method = (data.get('payment_method') or 'cod').strip()
+        address        = (data.get('address') or '').strip()
+        items          = data.get('items') or []
+
+        if not email:
+            return jsonify({'success': False, 'error': 'email is required'}), 400
+        if not items:
+            return jsonify({'success': False, 'error': 'items is required'}), 400
+
+        # Resolve address from DB if not provided
+        if not address:
+            try:
+                addr_res = sb_admin.table('users') \
+                    .select('house_street, barangay, city, province, region, zip_code') \
+                    .eq('email', email).limit(1).execute()
+                if addr_res.data:
+                    u = addr_res.data[0]
+                    parts = [u.get('house_street',''), u.get('barangay',''),
+                             u.get('city',''), u.get('province',''),
+                             u.get('region',''), u.get('zip_code','')]
+                    address = ', '.join(p for p in parts if p)
+            except Exception:
+                pass
+
+        order_ids = []
+        for item in items:
+            name         = str(item.get('name') or '')
+            product_id   = item.get('product_id')
+            price        = float(item.get('price') or 0)
+            quantity     = int(item.get('quantity') or 1)
+            color        = str(item.get('color') or '')
+            size         = str(item.get('size') or '')
+            image        = str(item.get('image') or '')
+            seller_email = str(item.get('seller_email') or '')
+            shipping_fee = float(item.get('shipping_fee') or 50)
+
+            # Resolve product_id if missing
+            product_id_int = 0
+            if product_id:
+                try:
+                    product_id_int = int(product_id)
+                except (ValueError, TypeError):
+                    pass
+
+            if product_id_int == 0 and name:
+                try:
+                    pr = sb_admin.table('products').select('id, seller_email') \
+                        .ilike('name', f'%{name}%').limit(1).execute()
+                    if pr.data:
+                        product_id_int = int(pr.data[0].get('id') or 0)
+                        if not seller_email:
+                            seller_email = pr.data[0].get('seller_email', '')
+                except Exception:
+                    pass
+
+            # Resolve seller_email if still missing
+            if not seller_email and product_id_int:
+                try:
+                    pe = sb_admin.table('products').select('seller_email') \
+                        .eq('id', product_id_int).limit(1).execute()
+                    if pe.data:
+                        seller_email = pe.data[0].get('seller_email', '')
+                except Exception:
+                    pass
+
+            # Decrement variant stock (non-fatal)
+            if product_id_int and color and size:
+                try:
+                    vi_res = sb_admin.table('variant_inventory') \
+                        .select('id, stock_quantity, low_stock_threshold') \
+                        .eq('product_id', product_id_int) \
+                        .eq('color', color).eq('size', size).limit(1).execute()
+                    if vi_res.data:
+                        vi = vi_res.data[0]
+                        new_stock = max(0, int(vi.get('stock_quantity') or 0) - quantity)
+                        sb_admin.table('variant_inventory').update({
+                            'stock_quantity': new_stock
+                        }).eq('id', vi['id']).execute()
+                except Exception as ve:
+                    print(f'mobile_place_order: variant stock decrement failed (non-fatal): {ve}')
+
+            # Decrement product stock (non-fatal)
+            if product_id_int:
+                try:
+                    ps = sb_admin.table('products').select('quantity') \
+                        .eq('id', product_id_int).limit(1).execute()
+                    if ps.data:
+                        cur_qty = int(ps.data[0].get('quantity') or 0)
+                        sb_admin.table('products').update({
+                            'quantity': max(0, cur_qty - quantity)
+                        }).eq('id', product_id_int).execute()
+                except Exception as pe2:
+                    print(f'mobile_place_order: product stock decrement failed (non-fatal): {pe2}')
+
+            total_price = price * quantity + shipping_fee
+
+            order_row = {
+                'name':           name,
+                'quantity':       quantity,
+                'total_price':    total_price,
+                'payment_method': payment_method,
+                'status':         'Pending',
+                'email':          email,
+                'address':        address,
+                'seller_email':   seller_email,
+                'image':          image,
+                'variations':     color,
+                'size':           size,
+                'product_id':     product_id_int if product_id_int else None,
+                'shipping_fee':   shipping_fee,
+            }
+            order_res = sb_admin.table('orders').insert(order_row).execute()
+            new_order_id = (order_res.data or [{}])[0].get('id')
+            if new_order_id:
+                order_ids.append(new_order_id)
+
+            # Notify seller (non-fatal, background)
+            if seller_email:
+                import threading
+                def _notify(se=seller_email, od=[{'name': name, 'quantity': quantity,
+                    'total_price': total_price, 'variations': color, 'size': size,
+                    'email': email, 'address': address, 'payment_method': payment_method}]):
+                    try:
+                        send_order_notification_email(se, od)
+                        _create_order_notification_supabase(se, od)
+                    except Exception:
+                        pass
+                threading.Thread(target=_notify, daemon=True).start()
+
+        return jsonify({'success': True, 'order_ids': order_ids})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # Get the absolute path of the project directory (FFastique - no images/ECommerce)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

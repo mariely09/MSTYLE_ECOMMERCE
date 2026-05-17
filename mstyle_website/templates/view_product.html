@@ -25,7 +25,9 @@
             border-color: #2c3e50 !important;
             background: #f8f9fa !important;
         }
-    </style></head>
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/buyer_responsive.css') }}">
+</head>
 
 <body>
     {% if session.get('user_id') %}{% include 'homepg_header.html' %}{% else %}{% include 'header_non-login_users.html' %}{% endif %}

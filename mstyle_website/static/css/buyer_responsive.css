@@ -1,0 +1,237 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   buyer_responsive.css
+   Global mobile-first responsive patches for all buyer-facing pages.
+   Included in every buyer template. Breakpoints: 768px, 480px, 360px
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Product grid (homepage, category pages, search, view_shop) ─────────── */
+/* Grid is already 2-col at ≤900px via product_grid.html inline styles.
+   These rules handle card internals at small sizes. */
+@media (max-width: 768px) {
+    .pc-card { border-radius: 14px !important; }
+    .pc-info  { padding: 8px 10px 10px !important; }
+    .pc-name  { font-size: 12px !important; }
+    .pc-price, .pc-sale { font-size: 13px !important; }
+}
+@media (max-width: 480px) {
+    .pc-name  { font-size: 11px !important; }
+    .pc-price, .pc-sale { font-size: 12px !important; }
+    .pc-promo-badge { font-size: 9px !important; padding: 3px 7px !important; }
+}
+
+/* ── 2. Hero section (homepage / index / category pages) ────────────────────── */
+@media (max-width: 768px) {
+    .hero-section { min-height: auto !important; }
+    .hero-wrapper {
+        flex-direction: column !important;
+        padding: 20px 16px !important;
+        gap: 20px !important;
+    }
+    .hero-content-section,
+    .hero-image-section { width: 100% !important; max-width: 100% !important; }
+    .hero-title { font-size: 28px !important; }
+    .hero-description { font-size: 13px !important; }
+    .hero-buttons { flex-direction: column !important; gap: 10px !important; }
+    .hero-btn { width: 100% !important; justify-content: center !important; }
+    .hero-image-container { height: 260px !important; }
+}
+@media (max-width: 480px) {
+    .hero-title { font-size: 22px !important; }
+    .hero-image-container { height: 200px !important; }
+}
+
+/* ── 3. Category cards (new mobile-style) ───────────────────────────────────── */
+@media (max-width: 480px) {
+    .category-scroll-track { padding: 4px 12px 12px !important; }
+    .cat-card { flex: 0 0 90px !important; width: 90px !important; min-height: 120px !important; }
+    .cat-icon-wrap { width: 44px !important; height: 44px !important; font-size: 18px !important; }
+    .cat-label { font-size: 9.5px !important; }
+}
+
+/* ── 4. Cart page ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .cart-container,
+    .cart-page-container { padding: 0 12px !important; }
+
+    .cart-item {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+        padding: 14px !important;
+    }
+    .cart-item-image { width: 80px !important; height: 80px !important; }
+    .cart-item-details { width: 100% !important; }
+    .cart-item-actions { width: 100% !important; justify-content: space-between !important; }
+
+    .cart-summary {
+        position: static !important;
+        width: 100% !important;
+        margin-top: 16px !important;
+    }
+    .cart-layout,
+    .cart-grid { flex-direction: column !important; gap: 16px !important; }
+}
+@media (max-width: 480px) {
+    .cart-item-image { width: 64px !important; height: 64px !important; }
+    .quantity-controls { gap: 6px !important; }
+}
+
+/* ── 5. Checkout page ───────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .checkout-container,
+    .checkout-wrapper { padding: 0 12px !important; }
+
+    .checkout-layout,
+    .checkout-grid { flex-direction: column !important; gap: 16px !important; }
+
+    .checkout-form-section,
+    .checkout-summary-section { width: 100% !important; }
+
+    .checkout-item {
+        flex-direction: row !important;
+        gap: 10px !important;
+    }
+    .checkout-item-image { width: 64px !important; height: 64px !important; flex-shrink: 0 !important; }
+
+    .place-order-btn,
+    .btn-place-order { width: 100% !important; }
+
+    .payment-options { flex-direction: column !important; gap: 10px !important; }
+}
+@media (max-width: 480px) {
+    .checkout-item-image { width: 52px !important; height: 52px !important; }
+    .order-total-row { font-size: 14px !important; }
+}
+
+/* ── 6. Profile page ────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .profile-container { padding: 0 12px !important; }
+    .profile-header { flex-direction: column !important; align-items: center !important; text-align: center !important; gap: 12px !important; }
+    .profile-avatar { width: 80px !important; height: 80px !important; font-size: 32px !important; }
+    .profile-grid,
+    .profile-form-grid { grid-template-columns: 1fr !important; }
+    .profile-card { padding: 16px !important; }
+    .profile-tabs { flex-wrap: wrap !important; gap: 6px !important; }
+    .profile-tab { padding: 8px 14px !important; font-size: 13px !important; }
+}
+
+/* ── 7. Orders page ─────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .order-name-status-row { flex-direction: column !important; gap: 4px !important; }
+    .order-bottom { flex-wrap: wrap !important; gap: 8px !important; }
+    .order-bottom-actions { width: 100% !important; justify-content: flex-start !important; }
+    .btn-cancel-inline,
+    .btn-contact-inline { flex: 1 !important; justify-content: center !important; }
+}
+
+/* ── 8. Wishlist page ───────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .wishlist-container { padding: 0 12px !important; }
+    .wishlist-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
+    .wishlist-header h1 { font-size: 22px !important; }
+}
+@media (max-width: 480px) {
+    .wishlist-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+}
+
+/* ── 9. View product page ───────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .product-detail { grid-template-columns: 1fr !important; }
+    .product-info { padding: 16px !important; }
+    .buttons { flex-direction: column !important; }
+    .add-to-cart,
+    .checkout { width: 100% !important; }
+    .rating-summary { flex-direction: column !important; gap: 16px !important; }
+}
+
+/* ── 10. View shop page ─────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .shop-header { padding: 16px !important; }
+    .seller-details h1 { font-size: 18px !important; }
+    .page-container { padding: 0 12px !important; }
+}
+
+/* ── 11. Search results page ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .search-results-container { padding: 0 12px !important; }
+    .search-title { font-size: 18px !important; }
+    .search-filters { flex-wrap: wrap !important; gap: 8px !important; }
+    .filter-btn { padding: 6px 12px !important; font-size: 12px !important; }
+}
+
+/* ── 12. Category pages (suits, casual, etc.) ───────────────────────────────── */
+@media (max-width: 768px) {
+    .category-hero { min-height: 200px !important; }
+    .category-hero-content h1 { font-size: 24px !important; }
+    .filter-section { flex-wrap: wrap !important; gap: 8px !important; padding: 12px !important; }
+    .filter-group { width: 100% !important; }
+    .filter-select,
+    .filter-input { width: 100% !important; }
+    .products-header h2 { font-size: 20px !important; }
+}
+
+/* ── 13. Navigation / header ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* Ensure header doesn't overflow */
+    header, .header, nav { overflow-x: hidden !important; }
+    .nav-links { display: none !important; }
+    .mobile-menu-toggle { display: flex !important; }
+    /* Cart/wishlist icon badges */
+    .cart-count,
+    .wishlist-count { font-size: 9px !important; min-width: 16px !important; height: 16px !important; }
+}
+
+/* ── 14. Modals (color/size, cart success, etc.) ────────────────────────────── */
+@media (max-width: 480px) {
+    .modal-content,
+    .color-size-modal-content { width: 95vw !important; max-width: 95vw !important; padding: 16px !important; }
+    .modal-buttons { flex-direction: column !important; gap: 8px !important; }
+    .modal-buttons button { width: 100% !important; }
+}
+
+/* ── 15. Footer ─────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .footer-grid,
+    .footer-content { grid-template-columns: 1fr 1fr !important; gap: 20px !important; }
+    .footer-bottom { flex-direction: column !important; text-align: center !important; gap: 8px !important; }
+}
+@media (max-width: 480px) {
+    .footer-grid,
+    .footer-content { grid-template-columns: 1fr !important; }
+}
+
+/* ── 16. Seller registration section ────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .seller-registration-section { padding: 32px 16px !important; }
+    .seller-content h2 { font-size: 22px !important; }
+    .seller-benefits { flex-direction: column !important; gap: 12px !important; align-items: center !important; }
+    .seller-cta { flex-direction: column !important; align-items: center !important; }
+    .seller-register-btn { width: 100% !important; justify-content: center !important; }
+}
+
+/* ── 17. Pagination ─────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .pagination { gap: 4px !important; }
+    .pagination-btn,
+    .page-number { padding: 6px 10px !important; font-size: 12px !important; }
+    .page-ellipsis { display: none !important; }
+}
+
+/* ── 18. General utility ────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* Prevent horizontal scroll */
+    body { overflow-x: hidden !important; }
+    img  { max-width: 100% !important; }
+    table { display: block !important; overflow-x: auto !important; }
+
+    /* Section headers */
+    .products-header h2,
+    .section-title { font-size: 20px !important; }
+
+    /* Back button */
+    .back-button { font-size: 12px !important; padding: 8px 14px !important; }
+}
+@media (max-width: 360px) {
+    .product-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 6px !important; padding: 8px !important; }
+    .cat-card { flex: 0 0 80px !important; width: 80px !important; }
+}

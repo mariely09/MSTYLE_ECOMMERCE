@@ -18,6 +18,7 @@
     <script src="{{ url_for('static', filename='js/buyer_rider_chat.js') }}"></script>
     <script src="{{ url_for('static', filename='js/buyer_seller_chat_order.js') }}"></script>
 
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/buyer_responsive.css') }}">
 </head>
 
 <body data-buyer-email="{{ session.get('email', '') }}">

@@ -210,6 +210,22 @@
     background: transparent !important;
 }
 
+/* ── 2-column on tablet and mobile — matches Flutter's crossAxisCount: 2 ── */
+@media (max-width: 900px) {
+    .product-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 12px !important;
+        padding: 16px 14px !important;
+    }
+}
+@media (max-width: 480px) {
+    .product-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+        padding: 12px 10px !important;
+    }
+}
+
 .pc-card {
     background: #fff !important;
     border-radius: 18px !important;

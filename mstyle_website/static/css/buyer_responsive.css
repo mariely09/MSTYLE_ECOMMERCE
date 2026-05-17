@@ -5,23 +5,15 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── 1. Product grid (homepage, category pages, search, view_shop) ─────────── */
+/* Grid is already 2-col at ≤900px via product_grid.html inline styles.
+   These rules handle card internals at small sizes. */
 @media (max-width: 768px) {
-    .product-grid {
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 12px !important;
-        padding: 16px 12px !important;
-    }
     .pc-card { border-radius: 14px !important; }
     .pc-info  { padding: 8px 10px 10px !important; }
     .pc-name  { font-size: 12px !important; }
     .pc-price, .pc-sale { font-size: 13px !important; }
 }
 @media (max-width: 480px) {
-    .product-grid {
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 8px !important;
-        padding: 10px 8px !important;
-    }
     .pc-name  { font-size: 11px !important; }
     .pc-price, .pc-sale { font-size: 12px !important; }
     .pc-promo-badge { font-size: 9px !important; padding: 3px 7px !important; }

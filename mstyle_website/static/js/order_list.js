@@ -122,7 +122,7 @@ function closeSuccessModal() {
 let currentOrderDetails = {};
 
 // Order Details Modal Functions
-function openOrderModal(orderId, customerName, customerEmail, customerAddress, productName, productImage, productVariation, productSize, quantity, originalPrice, promotionType, discountPercentage, discountAmount, totalPrice, shippingFeeArg, orderDate, orderStatus, promotionName, customerPhone, sellerBusinessName, sellerAddress, sellerPhone, productId, riderEmail, riderName) {
+function openOrderModal(orderId, customerName, customerEmail, customerAddress, productName, productImage, productVariation, productSize, quantity, originalPrice, promotionType, discountPercentage, discountAmount, totalPrice, subtotalBeforeDisc, shippingFeeArg, orderDate, orderStatus, promotionName, customerPhone, sellerBusinessName, sellerAddress, sellerPhone, productId, riderEmail, riderName) {
     // Store order details for printing
     currentOrderDetails = {
         productId,
@@ -174,17 +174,18 @@ function openOrderModal(orderId, customerName, customerEmail, customerAddress, p
     document.getElementById('modal-product-size').textContent = productSize || 'One Size';
 
     // ── Promotion display ────────────────────────────────────────────────
-    let promotionText = 'No Promotion';
-    let discountText  = 'No Discount';
+    let promotionText    = 'No Promotion';
     let hasFreeShipping  = (promotionType === 'free_shipping');
     let hasPriceDiscount = false;
 
-    // Effective unit sale price = totalPrice ÷ qty (most reliable — comes straight from DB)
-    const qty          = parseInt(quantity) || 1;
-    const origUnit     = parseFloat(originalPrice);
-    const subtotalVal  = parseFloat(totalPrice);           // sale_price × qty (no shipping)
-    const salePriceUnit = subtotalVal / qty;               // effective unit price after discount
-    const totalDiscountApplied = parseFloat(discountAmount) || 0;
+    const qty               = parseInt(quantity) || 1;
+    const origUnit          = parseFloat(originalPrice);
+    // subtotalBeforeDisc = qty × original_unit_price (no discount applied yet)
+    const subtotalGross     = parseFloat(subtotalBeforeDisc) || (origUnit * qty);
+    // totalPrice = effective subtotal after discount (qty × sale_price)
+    const subtotalNet       = parseFloat(totalPrice);
+    const salePriceUnit     = subtotalNet / qty;
+    const totalDiscApplied  = parseFloat(discountAmount) || 0;
 
     if (promotionType) {
         switch (promotionType) {
@@ -198,24 +199,24 @@ function openOrderModal(orderId, customerName, customerEmail, customerAddress, p
                 promotionText    = (parseFloat(discountPercentage) || 0) + '% OFF';
                 hasPriceDiscount = true;
                 break;
-            case 'fixed':
-                promotionText    = '₱' + (totalDiscountApplied > 0
-                    ? (totalDiscountApplied / qty).toFixed(0)
-                    : parseFloat(discountPercentage || 0).toFixed(0)) + ' OFF per item';
+            case 'fixed': {
+                const perItem = totalDiscApplied > 0 ? (totalDiscApplied / qty).toFixed(0) : parseFloat(discountPercentage || 0).toFixed(0);
+                promotionText    = '₱' + perItem + ' OFF per item';
                 hasPriceDiscount = true;
                 break;
+            }
             default:
                 promotionText = promotionName || promotionType;
                 break;
         }
     }
 
-    // ── Shipping fee — flat ₱50, free if free_shipping promo ────────────
-    const shippingFee = hasFreeShipping ? 0 : (isNaN(parseFloat(shippingFeeArg)) ? 50 : parseFloat(shippingFeeArg));
+    // ── Shipping fee ─────────────────────────────────────────────────────
+    const shippingFee  = hasFreeShipping ? 0 : (isNaN(parseFloat(shippingFeeArg)) ? 50 : parseFloat(shippingFeeArg));
     const shippingText = hasFreeShipping ? '₱0.00 (Free Shipping)' : '₱' + shippingFee.toFixed(2);
 
-    // ── Grand total ──────────────────────────────────────────────────────
-    const finalTotal = subtotalVal + shippingFee;
+    // ── Grand total = effective subtotal + shipping ──────────────────────
+    const finalTotal = subtotalNet + shippingFee;
 
     // ── Populate pricing rows ────────────────────────────────────────────
 
@@ -241,29 +242,31 @@ function openOrderModal(orderId, customerName, customerEmail, customerAddress, p
     // Quantity
     document.getElementById('modal-pricing-qty').textContent = qty + ' item' + (qty > 1 ? 's' : '');
 
-    // Subtotal (sale price × qty, NO shipping)
-    document.getElementById('modal-subtotal').textContent = '₱' + subtotalVal.toFixed(2);
+    // Subtotal = qty × original_price (gross, before discount)
+    const subtotalEl = document.getElementById('modal-subtotal');
+    if (hasPriceDiscount && totalDiscApplied > 0) {
+        subtotalEl.innerHTML =
+            '<span style="text-decoration:line-through;color:#95a5a6;font-size:0.9em;">₱' + subtotalGross.toFixed(2) + '</span>'
+            + ' <span style="color:#e74c3c;font-weight:700;">₱' + subtotalNet.toFixed(2) + '</span>';
+    } else {
+        subtotalEl.textContent = '₱' + subtotalGross.toFixed(2);
+    }
 
     // Promotion badge
     const promoEl = document.getElementById('modal-promotion');
     if (promotionType) {
-        const badgeMap = {
-            free_shipping:   'free-shipping',
-            buy_one_get_one: 'bogo',
-            percentage:      'percentage',
-            fixed:           'fixed',
-        };
+        const badgeMap = { free_shipping: 'free-shipping', buy_one_get_one: 'bogo', percentage: 'percentage', fixed: 'fixed' };
         const badgeClass = badgeMap[promotionType] || 'other';
         promoEl.innerHTML = `<span class="promotion-badge ${badgeClass}">${promotionText}</span>`;
     } else {
         promoEl.innerHTML = '<span style="color:#6c757d;font-style:italic;">No Promotion</span>';
     }
 
-    // Discount row — only when there's an actual price reduction
+    // Discount row
     const discountRow = document.getElementById('modal-discount-row');
     const discountEl  = document.getElementById('modal-discount');
-    if (hasPriceDiscount && totalDiscountApplied > 0) {
-        discountEl.textContent = '−₱' + totalDiscountApplied.toFixed(2);
+    if (hasPriceDiscount && totalDiscApplied > 0) {
+        discountEl.textContent = '−₱' + totalDiscApplied.toFixed(2);
         discountRow.style.display = '';
     } else {
         discountRow.style.display = 'none';
@@ -284,10 +287,10 @@ function openOrderModal(orderId, customerName, customerEmail, customerAddress, p
 
     // Store for printing
     currentOrderDetails.shippingFee   = shippingFee;
-    currentOrderDetails.itemSubtotal  = subtotalVal;
+    currentOrderDetails.itemSubtotal  = subtotalNet;
     currentOrderDetails.finalTotal    = finalTotal;
     currentOrderDetails.promotionText = promotionText;
-    currentOrderDetails.discountText  = totalDiscountApplied > 0 ? '−₱' + totalDiscountApplied.toFixed(2) : 'No Discount';
+    currentOrderDetails.discountText  = totalDiscApplied > 0 ? '−₱' + totalDiscApplied.toFixed(2) : 'No Discount';
     
     // Show/hide Contact Rider button based on rider assignment
     const contactRiderBtn = document.getElementById('contactRiderBtn');

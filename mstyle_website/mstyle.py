@@ -5995,6 +5995,7 @@ def orders_list():
                     .in_('order_id', order_ids) \
                     .execute()
                 pu_rows = pu_res.data or []
+                print(f"[orders_list] promotion_usage rows found: {len(pu_rows)} for {len(order_ids)} orders")
                 if pu_rows:
                     promo_ids = list({r['promotion_id'] for r in pu_rows if r.get('promotion_id')})
                     promo_res = sb_admin.table('promotions') \
@@ -6003,13 +6004,12 @@ def orders_list():
                         .execute()
                     promo_detail_map = {p['id']: p for p in (promo_res.data or [])}
                     for pu in pu_rows:
-                        oid = pu.get('order_id')
+                        oid      = pu.get('order_id')
                         pid_promo = pu.get('promotion_id')
                         if not oid or not pid_promo:
                             continue
                         promo = promo_detail_map.get(pid_promo, {})
                         disc_applied = float(pu.get('discount_applied') or 0)
-                        # Normalise key to int so it matches o['id'] regardless of type
                         try:
                             oid = int(oid)
                         except (TypeError, ValueError):
@@ -6020,8 +6020,11 @@ def orders_list():
                             'discount_amount': disc_applied,
                             'discount_value':  float(promo.get('discount_value') or 0),
                         }
+                        print(f"  [promo_usage] order_id={oid} type={promo.get('type')} disc={disc_applied}")
             except Exception as pu_err:
                 print(f"⚠️ promotion_usage fetch failed (non-fatal): {pu_err}")
+
+        print(f"[orders_list] promo_usage_map keys: {list(promo_usage_map.keys())}")
 
         import datetime as _dt
         for o in raw_orders:
@@ -6050,29 +6053,66 @@ def orders_list():
             print(f"  order {o.get('id')}: pid={pid}, unit_price={unit_price}, orig={o['original_price']}, total={o['total_price']}")
 
             # Promotion — pull from promotion_usage batch fetch
+            # Fallback: check active promotion for the product if no usage record found
             try:
                 order_id_key = int(o.get('id'))
             except (TypeError, ValueError):
                 order_id_key = o.get('id')
             pu = promo_usage_map.get(order_id_key, {})
-            promo_type   = pu.get('promotion_type', '')
-            promo_name   = pu.get('promotion_name', '')
-            disc_amount  = float(pu.get('discount_amount', 0))
-            disc_value   = float(pu.get('discount_value', 0))
-            orig_price   = float(o.get('original_price') or 0)
-            # Compute discount_percentage from the stored discount_applied per item
+
+            if not pu and pid and o.get('seller_email'):
+                # No promotion_usage record — check if product currently has an active promo
+                try:
+                    active_promo = get_active_promotions_for_product(
+                        str(int(pid)), o.get('seller_email', ''), '')
+                    if active_promo:
+                        orig_p = float(o.get('original_price') or 0)
+                        qty_v  = int(o.get('quantity') or 1)
+                        disc_v = float(active_promo.get('discount_value') or 0)
+                        p_type = active_promo.get('type', '')
+                        if p_type == 'percentage' and disc_v > 0:
+                            disc_total = round(orig_p * (disc_v / 100) * qty_v, 2)
+                        elif p_type == 'fixed' and disc_v > 0:
+                            disc_total = round(disc_v * qty_v, 2)
+                        else:
+                            disc_total = 0.0
+                        pu = {
+                            'promotion_type':  p_type,
+                            'promotion_name':  active_promo.get('name', ''),
+                            'discount_amount': disc_total,
+                            'discount_value':  disc_v,
+                        }
+                except Exception:
+                    pass
+
+            promo_type  = pu.get('promotion_type', '')
+            promo_name  = pu.get('promotion_name', '')
+            disc_amount = float(pu.get('discount_amount', 0))
+            disc_value  = float(pu.get('discount_value', 0))
+            orig_price  = float(o.get('original_price') or 0)
+            qty_val     = int(o.get('quantity') or 1)
+
+            # discount_percentage
             if promo_type == 'percentage' and disc_value > 0:
-                disc_pct = disc_value  # stored as the % value in promotions.discount_value
+                disc_pct = disc_value
             elif promo_type == 'fixed' and orig_price > 0 and disc_amount > 0:
-                qty_val = int(o.get('quantity') or 1)
                 per_item_disc = disc_amount / qty_val if qty_val else disc_amount
                 disc_pct = round((per_item_disc / orig_price) * 100, 1)
             else:
                 disc_pct = 0
-            o['promotion_type']       = promo_type
-            o['promotion_name']       = promo_name
-            o['discount_amount']      = disc_amount
-            o['discount_percentage']  = disc_pct
+
+            # Subtotal = qty × original_unit_price (before discount)
+            subtotal_before_disc = round(orig_price * qty_val, 2)
+            # Effective subtotal = subtotal_before_disc - discount
+            effective_subtotal = round(subtotal_before_disc - disc_amount, 2) if disc_amount > 0 else subtotal_before_disc
+
+            o['promotion_type']        = promo_type
+            o['promotion_name']        = promo_name
+            o['discount_amount']       = disc_amount
+            o['discount_percentage']   = disc_pct
+            o['subtotal_before_disc']  = subtotal_before_disc
+            o['effective_subtotal']    = effective_subtotal
+            print(f"  [promo] order {order_id_key}: type={promo_type} disc={disc_amount} subtotal={subtotal_before_disc} eff={effective_subtotal}")
             raw_date = o.get('date')
             print(f"[orders_list] order {o.get('id')} raw date: {raw_date!r}")
             if raw_date:

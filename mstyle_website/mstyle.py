@@ -2451,11 +2451,23 @@ def search():
         # Distinct categories from results
         categories = sorted({p['category'] for p in all_products if p.get('category')})
 
+        # Enrich products with active promotion data
+        promotional_products = get_promotional_products(limit=200)
+        promo_map = {pp['id']: pp for pp in promotional_products}
+        for prod in products:
+            if prod['id'] in promo_map:
+                pp = promo_map[prod['id']]
+                prod['promotion_type']     = pp.get('promotion_type', '')
+                prod['promotion_discount'] = pp.get('promotion_discount', 0)
+                prod['promotion_code']     = pp.get('promotion_code', '')
+
     except Exception as e:
         print(f'[search] Supabase error: {e}')
+        promotional_products = []
 
     return render_template('search_results.html',
                            products=products,
+                           promotional_products=promotional_products[:4],
                            query=query,
                            user_email=session.get('email', 'User'),
                            category=category,
@@ -2465,6 +2477,7 @@ def search():
                            total_pages=total_pages,
                            total_count=total_count,
                            per_page=per_page,
+                           wishlist_product_ids=_get_wishlist_ids(),
                            user_name=user_name)
 
 @app.route('/api/search-suggestions')

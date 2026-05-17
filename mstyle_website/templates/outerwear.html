@@ -98,7 +98,7 @@
                                 <div class="promotional-product-card">
                                     {% set images = product.image.split(',') if product.image else [] %}
                                     {% if images and images[0].strip() %}
-                                    <img src="{{ url_for('static', filename='images/uploads/' + images[0].strip()) }}" 
+                                    <img src="{{ images[0].strip()|product_img }}"
                                          alt="{{ product.name }}" class="promotional-product-image">
                                     {% else %}
                                     <div class="promotional-product-placeholder">

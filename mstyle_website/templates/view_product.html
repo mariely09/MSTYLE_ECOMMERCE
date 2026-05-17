@@ -108,7 +108,7 @@
                         <i class="fas fa-tag"></i>
                         <span class="promotion-name">{{ active_promotion.name }}</span>
                         {% if active_promotion.end_date %}
-                        <span class="promotion-expires">Expires: {{ active_promotion.end_date.strftime('%b %d, %Y') }}</span>
+                        <span class="promotion-expires">Expires: {{ active_promotion.end_date[:10] }}</span>
                         {% endif %}
                     </div>
                     {% endif %}
@@ -286,7 +286,7 @@
                             </div>
                             <div class="reviewer-details">
                                 <div class="reviewer-name">{{ review.customer_name }}</div>
-                                <div class="review-date">{{ review.created_at.strftime('%B %d, %Y') }}</div>
+                                <div class="review-date">{{ review.created_at[:10] if review.created_at is string else review.created_at.strftime('%B %d, %Y') }}</div>
                             </div>
                         </div>
                         <div class="review-rating">
@@ -326,7 +326,7 @@
                             <div class="seller-response-icon"><i class="fas fa-store"></i></div>
                             <strong>Seller Response</strong>
                             {% if review.response_date %}
-                            <span class="response-date">{{ review.response_date.strftime('%B %d, %Y') }}</span>
+                            <span class="response-date">{{ review.response_date[:10] if review.response_date is string else review.response_date.strftime('%B %d, %Y') }}</span>
                             {% endif %}
                         </div>
                         <div class="seller-response-text">

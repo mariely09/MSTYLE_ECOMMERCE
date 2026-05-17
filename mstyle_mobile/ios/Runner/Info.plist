@@ -54,9 +54,11 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>MStyle needs access to your photo library to upload documents.</string>
+	<string>MStyle needs access to your photo library to upload documents and proof of delivery photos.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>MStyle needs camera access to capture documents.</string>
+	<string>MStyle needs camera access to take proof of delivery photos when completing deliveries.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MStyle needs permission to save delivery proof photos to your photo library.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

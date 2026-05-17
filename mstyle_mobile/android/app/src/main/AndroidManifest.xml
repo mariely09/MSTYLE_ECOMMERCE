@@ -1,9 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Network permission — required for Supabase and all HTTP calls -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera permission — required for proof of delivery photo -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <!-- Photo library permissions for document uploads -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Write permission for saving photos on older Android -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
     <!-- Push notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
@@ -29,6 +33,16 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- FileProvider required by image_picker for camera capture on Android 7+ -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

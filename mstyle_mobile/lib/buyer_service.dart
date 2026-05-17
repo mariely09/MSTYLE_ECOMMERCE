@@ -750,7 +750,7 @@ class BuyerService {
 
   /// Fetch featured/all products
   /// Fetch products that have active promotions — used for the hero carousel.
-  static Future<List<Map<String, dynamic>>> getPromotionalProducts({int limit = 20}) async {
+  static Future<List<Map<String, dynamic>>> getPromotionalProducts({int limit = 20, List<String>? categories}) async {
     try {
       // Use Philippine Time (UTC+8) to match website logic
       final now = DateTime.now().toUtc().add(const Duration(hours: 8));
@@ -833,13 +833,17 @@ class BuyerService {
       if (sellerEmails.isEmpty) return [];
 
       // 5. Fetch products from those sellers with stock
-      final prodUrl = '$supabaseUrl/rest/v1/products'
+      String prodUrl = '$supabaseUrl/rest/v1/products'
           '?select=id,name,price,image,category,seller_email,quantity,sold'
           '&seller_email=in.(${sellerEmails.join(',')})'
           '&quantity=gt.0'
           '&is_active=eq.true'
           '&order=sold.desc'
           '&limit=200';
+      // Filter by category if specified
+      if (categories != null && categories.isNotEmpty) {
+        prodUrl += '&category=in.(${categories.join(',')})';
+      }
       final prodResp = await http.get(Uri.parse(prodUrl), headers: {
         'apikey':        supabaseServiceRole,
         'Authorization': 'Bearer $supabaseServiceRole',

@@ -487,21 +487,26 @@ class _BuyerHomePageState extends State<BuyerHomePage> with TickerProviderStateM
         Positioned(
           bottom: 14, left: 0, right: 0,
           child: Row(mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(_heroSlides.length, (i) => GestureDetector(
-              onTap: () => setState(() => _heroSlide = i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: _heroSlide == i ? 24 : 8, height: 8,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: _heroSlide == i ? _gold : Colors.white38,
-                  boxShadow: _heroSlide == i
-                    ? [BoxShadow(color: _gold.withOpacity(0.6), blurRadius: 8)]
-                    : [],
+            children: List.generate(
+              _promoProducts.isNotEmpty ? _promoProducts.length : _heroSlides.length,
+              (i) => GestureDetector(
+                onTap: () => setState(() => _heroSlide = i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : _heroSlides.length) == i ? 24 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    color: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : _heroSlides.length) == i
+                        ? _gold : Colors.white38,
+                    boxShadow: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : _heroSlides.length) == i
+                        ? [BoxShadow(color: _gold.withOpacity(0.6), blurRadius: 8)]
+                        : [],
+                  ),
                 ),
               ),
-            )),
+            ),
           ),
         ),
       ]),

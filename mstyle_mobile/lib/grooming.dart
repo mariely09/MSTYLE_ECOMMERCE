@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'footer.dart';
 import 'login.dart';
@@ -34,6 +35,8 @@ class _GroomingPageState extends State<GroomingPage> {
   String _selectedCategory = 'All Categories';
   String _selectedSort     = 'Default';
   int    _heroSlide        = 0;
+  List<Map<String, dynamic>> _promoProducts = [];
+  Timer? _heroTimer;
 
   List<Map<String, dynamic>> _products = [];
   bool _loading = true;
@@ -43,6 +46,16 @@ class _GroomingPageState extends State<GroomingPage> {
   void initState() {
     super.initState();
     _loadProducts();
+    _loadPromoProducts();
+    _heroTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) setState(() => _heroSlide++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _heroTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadProducts() async {
@@ -58,6 +71,15 @@ class _GroomingPageState extends State<GroomingPage> {
     }
   }
 
+  
+  Future<void> _loadPromoProducts() async {
+    try {
+      final data = await BuyerService.getPromotionalProducts();
+      if (mounted) setState(() => _promoProducts = data);
+    } catch (e) {
+      debugPrint('_loadPromoProducts error: $e');
+    }
+  }
   List<Map<String, dynamic>> get _filteredProducts {
     var list = List<Map<String, dynamic>>.from(_products);
     if (_selectedCategory != 'All Categories') {
@@ -162,49 +184,46 @@ class _GroomingPageState extends State<GroomingPage> {
           ),
           Expanded(
             flex: 45,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF0a1a1a), Color(0xFF1a2d2d)]),
-              ),
-              child: Stack(alignment: Alignment.center, children: [
-                Container(width: 130, height: 130, decoration: BoxDecoration(shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: [_gold.withOpacity(0.15), Colors.transparent]))),
-                const Icon(Icons.cut, size: 64, color: Color(0xFF2a5a5a)),
-                Positioned(top: 16, right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 8)]),
-                    child: const Text('NEW', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: 0.8)),
+            child: _promoProducts.isEmpty
+              ? Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: [Color(0xFF0a1a1a), Color(0xFF1a2d2d)]),
                   ),
-                ),
-                Positioned(bottom: 24, left: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(color: _primary.withOpacity(0.85), borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _gold.withOpacity(0.3))),
-                    child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Grooming Essentials', style: TextStyle(color: Colors.white70, fontSize: 8)),
-                      Text('From ₱499.00', style: TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 12)),
-                    ]),
-                  ),
-                ),
-              ]),
-            ),
+                  child: Stack(alignment: Alignment.center, children: [
+                    Container(width: 130, height: 130, decoration: BoxDecoration(shape: BoxShape.circle,
+                      gradient: RadialGradient(colors: [_gold.withOpacity(0.15), Colors.transparent]))),
+                    const Icon(Icons.cut, size: 64, color: Color(0xFF2a5a5a)),
+                    Positioned(top: 16, right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(14),
+                          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 8)]),
+                        child: const Text('NEW', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: 0.8)),
+                      ),
+                    ),
+                  ]),
+                )
+              : _CategoryPromoCarousel(products: _promoProducts, heroSlide: _heroSlide),
           ),
         ]),
         Positioned(bottom: 10, left: 0, right: 0,
           child: Row(mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(slides.length, (i) => GestureDetector(
-              onTap: () => setState(() => _heroSlide = i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: _heroSlide == i ? 20 : 7, height: 7,
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(4),
-                  color: _heroSlide == i ? _gold : Colors.white38),
+            children: List.generate(
+              _promoProducts.isNotEmpty ? _promoProducts.length : slides.length,
+              (i) => GestureDetector(
+                onTap: () => setState(() => _heroSlide = i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : slides.length) == i ? 20 : 7,
+                  height: 7,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(4),
+                    color: _heroSlide % (_promoProducts.isNotEmpty ? _promoProducts.length : slides.length) == i
+                        ? _gold : Colors.white38),
+                ),
               ),
-            )),
+            ),
           ),
         ),
       ]),
@@ -454,4 +473,92 @@ class _GroomingPageState extends State<GroomingPage> {
       child: Icon(icon, size: 14, color: _accent),
     ),
   );
+}
+
+//  Category Promo Carousel ------------------------------
+class _CategoryPromoCarousel extends StatefulWidget {
+  final List<Map<String, dynamic>> products;
+  final int heroSlide;
+  const _CategoryPromoCarousel({required this.products, required this.heroSlide});
+  @override
+  State<_CategoryPromoCarousel> createState() => _CategoryPromoCarouselState();
+}
+
+class _CategoryPromoCarouselState extends State<_CategoryPromoCarousel> {
+  late PageController _ctrl;
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = 0;
+    _ctrl = PageController();
+  }
+
+  @override
+  void didUpdateWidget(_CategoryPromoCarousel old) {
+    super.didUpdateWidget(old);
+    if (widget.heroSlide != old.heroSlide && widget.products.isNotEmpty) {
+      final next = widget.heroSlide % widget.products.length;
+      if (_ctrl.hasClients) {
+        _ctrl.animateToPage(next, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+      }
+      _current = next;
+    }
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  String _promoBadge(Map<String, dynamic> p) {
+    final t = p['promotion_type'] as String? ?? '';
+    final d = (p['promotion_discount'] as num?)?.toDouble() ?? 0;
+    if (t == 'percentage') return '${d.toInt()}% OFF';
+    if (t == 'fixed')      return '${d.toInt()} OFF';
+    if (t == 'buy_one_get_one') return 'BOGO';
+    if (t == 'free_shipping')   return 'FREE SHIP';
+    return 'SALE';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PageView.builder(
+      controller: _ctrl,
+      itemCount: widget.products.length,
+      onPageChanged: (i) => setState(() => _current = i),
+      itemBuilder: (_, i) {
+        final p = widget.products[i];
+        final imageStr = p['image'] as String? ?? '';
+        final firstImg = imageStr.split(',').first.trim();
+        final imageUrl = buildImageUrl(firstImg.isNotEmpty ? firstImg : null);
+        final hasPromo = (p['promotion_type'] as String? ?? '').isNotEmpty;
+
+        return Stack(fit: StackFit.expand, children: [
+          imageUrl != null
+            ? Image.network(imageUrl, fit: BoxFit.cover,
+                loadingBuilder: (_, child, progress) => progress == null
+                  ? child
+                  : Container(color: const Color(0xFF0d1b2a),
+                      child: const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2))),
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: const BoxDecoration(gradient: _premiumGrad)))
+            : Container(decoration: const BoxDecoration(gradient: _premiumGrad)),
+
+          if (hasPromo)
+            Positioned(top: 14, right: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFFE74C3C), Color(0xFFc0392b)]),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 3))],
+                ),
+                child: Text(_promoBadge(p),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 0.8)),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
 }

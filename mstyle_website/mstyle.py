@@ -5495,52 +5495,59 @@ def edit_product(product_id):
                 .eq('seller_email', seller_email) \
                 .execute()
 
-            print(f"? Product {product_id} updated in Supabase")
+            print(f"✅ Product {product_id} updated in Supabase")
 
-            # -- Update variant_inventory in Supabase (non-fatal) ----------
-            try:
-                variations_list = [v.strip() for v in variations.split(',') if v.strip()]
-                sizes_list      = [s.strip() for s in updated_sizes.split(',') if s.strip()]
-                total_variants  = len(variations_list) * len(sizes_list)
-                stock_per_variant = quantity // total_variants if total_variants > 0 else quantity
+            # -- Update variant_inventory in background (non-blocking) ----
+            import threading
+            def _sync_variants():
+                try:
+                    variations_list = [v.strip() for v in variations.split(',') if v.strip()]
+                    sizes_list      = [s.strip() for s in updated_sizes.split(',') if s.strip()]
+                    total_variants  = len(variations_list) * len(sizes_list)
+                    stock_per_variant = quantity // total_variants if total_variants > 0 else quantity
 
-                for color in variations_list:
-                    for size in sizes_list:
-                        existing = sb_admin.table('variant_inventory') \
-                            .select('id') \
-                            .eq('product_id', product_id) \
-                            .eq('color', color) \
-                            .eq('size', size) \
-                            .limit(1).execute()
+                    for color in variations_list:
+                        for size in sizes_list:
+                            existing = sb_admin.table('variant_inventory') \
+                                .select('id') \
+                                .eq('product_id', product_id) \
+                                .eq('color', color) \
+                                .eq('size', size) \
+                                .limit(1).execute()
 
-                        if existing.data:
-                            sb_admin.table('variant_inventory').update({
-                                'stock_quantity': stock_per_variant,
-                            }).eq('id', existing.data[0]['id']).execute()
-                        else:
-                            sb_admin.table('variant_inventory').insert({
-                                'product_id':          product_id,
-                                'color':               color,
-                                'size':                size,
-                                'stock_quantity':      stock_per_variant,
-                                'low_stock_threshold': low_stock_threshold,
-                            }).execute()
+                            if existing.data:
+                                sb_admin.table('variant_inventory').update({
+                                    'stock_quantity': stock_per_variant,
+                                }).eq('id', existing.data[0]['id']).execute()
+                            else:
+                                sb_admin.table('variant_inventory').insert({
+                                    'product_id':          product_id,
+                                    'color':               color,
+                                    'size':                size,
+                                    'stock_quantity':      stock_per_variant,
+                                    'low_stock_threshold': low_stock_threshold,
+                                }).execute()
 
-                print(f"? Variant inventory updated for product {product_id}")
-            except Exception as vi_err:
-                print(f"?? Variant inventory update failed (non-fatal): {vi_err}")
+                    print(f"✅ Variant inventory synced for product {product_id}")
+                except Exception as vi_err:
+                    print(f"⚠️ Variant inventory sync failed (non-fatal): {vi_err}")
 
-            # -- Stock notifications (non-fatal) ---------------------------
-            try:
-                check_and_notify_stock_levels(
-                    product_id=product_id,
-                    seller_email=seller_email,
-                    new_quantity=quantity,
-                    threshold=low_stock_threshold,
-                    product_name=name,
-                )
-            except Exception:
-                pass
+            threading.Thread(target=_sync_variants, daemon=True).start()
+
+            # -- Stock notifications in background (non-blocking) ----------
+            def _notify_stock():
+                try:
+                    check_and_notify_stock_levels(
+                        product_id=product_id,
+                        seller_email=seller_email,
+                        new_quantity=quantity,
+                        threshold=low_stock_threshold,
+                        product_name=name,
+                    )
+                except Exception:
+                    pass
+
+            threading.Thread(target=_notify_stock, daemon=True).start()
 
             flash('Product updated successfully!', 'success')
             if is_ajax:

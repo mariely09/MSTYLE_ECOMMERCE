@@ -174,9 +174,11 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
 
   Future<void> _loadReviewedOrders() async {
     try {
+      // Check all completed orders (case-insensitive)
       final completedIds = _orders
           .where((o) => (o['status'] as String? ?? '').toLowerCase() == 'completed')
           .map((o) => o['id'])
+          .where((id) => id != null)
           .toList();
       if (completedIds.isEmpty) return;
 
@@ -643,11 +645,18 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
+              // Mark as Completed in Supabase
               await BuyerService.confirmReceipt(orderId);
+              // Reload orders so status updates to Completed
               await _loadOrders();
-              _showSuccessSnack('Receipt confirmed!');
-              // Auto-open review dialog after confirming
-              if (mounted) _showReviewDialog(order);
+              _showSuccessSnack('Receipt confirmed! Order is now Completed.');
+              // Auto-open review dialog — only if not already reviewed
+              if (mounted && !_reviewedOrderIds.contains(orderId)) {
+                // Update the order map with new status for the review dialog
+                final updatedOrder = Map<String, dynamic>.from(order)
+                  ..['status'] = 'Completed';
+                _showReviewDialog(updatedOrder);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
@@ -660,12 +669,14 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
 
   void _showReviewDialog(Map<String, dynamic> order) {
     final orderId = order['id'];
+    // Guard: don't open if already reviewed
+    if (_reviewedOrderIds.contains(orderId)) return;
     showReviewBottomSheet(
       context,
       order: order,
       userEmail: widget.userEmail,
       onSubmitted: () {
-        // Mark this order as reviewed so the button changes immediately
+        // Mark this order as reviewed so the button changes to "Reviewed" immediately
         if (mounted) setState(() => _reviewedOrderIds.add(orderId));
         _showSuccessSnack('Review submitted! Thank you.');
       },

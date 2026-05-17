@@ -66,6 +66,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
   int _heroSlide = 0;
   Timer? _heroTimer;
 
@@ -132,6 +133,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     _heroTimer?.cancel();
     _fadeCtrl.dispose();
     super.dispose();
@@ -144,6 +146,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       body: FadeTransition(
         opacity: _fadeAnim,
         child: CustomScrollView(
+          controller: _scrollCtrl,
           slivers: [
             _appBar(),
             SliverToBoxAdapter(child: _heroSection()),
@@ -240,94 +243,105 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final slide = _heroSlides[_heroSlide];
     return SizedBox(
       height: 420,
-      child: Stack(children: [
-        Row(children: [
-          // Left dark panel
-          Expanded(
-            flex: 58,
-            child: Container(
-              decoration: const BoxDecoration(gradient: _premiumGrad),
-              padding: const EdgeInsets.fromLTRB(16, 20, 12, 28),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Stack(fit: StackFit.expand, children: [
+        // ── Background: product image carousel or gradient fallback ──────
+        _promoProducts.isEmpty
+          ? Container(decoration: const BoxDecoration(gradient: _premiumGrad))
+          : _PromoCarousel(products: _promoProducts, heroSlide: _heroSlide),
+
+        // ── Dark gradient overlay (left-heavy, like website) ─────────────
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              stops: [0.0, 0.55, 0.85, 1.0],
+              colors: [
+                Color(0xEE1a1a1a),
+                Color(0xCC1a1a1a),
+                Color(0x661a1a1a),
+                Color(0x001a1a1a),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Text content ─────────────────────────────────────────────────
+        Positioned(
+          left: 0, top: 0, bottom: 0,
+          width: MediaQuery.of(context).size.width * 0.62,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 12, 40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // NEW COLLECTION badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(20),
-                    boxShadow: [BoxShadow(color: _gold.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))]),
-                  child: const Text('NEW COLLECTION', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 8, letterSpacing: 1.2)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: _goldGrad,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 3))],
+                  ),
+                  child: const Text('NEW COLLECTION',
+                    style: TextStyle(color: _primary, fontWeight: FontWeight.w900, fontSize: 9, letterSpacing: 1.5)),
                 ),
-                const SizedBox(height: 8),
-                Text(slide['title']!, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w400)),
-                const SizedBox(height: 2),
+                const SizedBox(height: 12),
+                Text(slide['title']!,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w400, letterSpacing: 0.3)),
+                const SizedBox(height: 4),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 500),
-                  transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: SlideTransition(position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(anim), child: child)),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(
+                      position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(anim),
+                      child: child)),
                   child: ShaderMask(
                     key: ValueKey(_heroSlide),
                     shaderCallback: (b) => _goldGrad.createShader(b),
-                    child: Text(slide['highlight']!, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1)),
+                    child: Text(slide['highlight']!,
+                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1)),
                   ),
                 ),
-                const SizedBox(height: 6),
-                Container(width: 40, height: 3, decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), gradient: _goldGrad)),
-                const SizedBox(height: 8),
-                const Text('Premium menswear for the modern man.',
-                  style: TextStyle(color: Colors.white60, fontSize: 10, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 10),
-                _heroBtn('Shop Now', primary: true, onTap: () {}),
-              ]),
+                Container(width: 44, height: 3,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), gradient: _goldGrad)),
+                const SizedBox(height: 10),
+                const Text('Premium menswear for the modern man.',
+                  style: TextStyle(color: Colors.white60, fontSize: 11, height: 1.5),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 18),
+                _heroBtn('Shop Now', primary: true, onTap: () {
+                  // Scroll past hero + features + categories to products section
+                  _scrollCtrl.animateTo(
+                    700,
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeInOut,
+                  );
+                }),
+              ],
             ),
           ),
-          // Right image panel — promotional products carousel
-          Expanded(
-            flex: 42,
-            child: _promoProducts.isEmpty
-              ? Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: [Color(0xFFECEFF1), Color(0xFFE9ECEF)]),
-                  ),
-                  child: Stack(alignment: Alignment.center, children: [
-                    Container(width: 140, height: 140, decoration: BoxDecoration(shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [_gold.withOpacity(0.12), Colors.transparent]))),
-                    const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA)),
-                    Positioned(top: 18, right: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(gradient: _goldGrad, borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: _gold.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 3))],
-                          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5)),
-                        child: const Text('SPECIAL', style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: 0.8)),
-                      ),
-                    ),
-                    Positioned(bottom: 30, left: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(color: _primary.withOpacity(0.85), borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: _gold.withOpacity(0.3))),
-                        child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('Premium Item', style: TextStyle(color: Colors.white70, fontSize: 8)),
-                          Text('₱1,299.00', style: TextStyle(color: _gold, fontWeight: FontWeight.w800, fontSize: 12)),
-                        ]),
-                      ),
-                    ),
-                  ]),
-                )
-              : _PromoCarousel(products: _promoProducts, heroSlide: _heroSlide),
-          ),
-        ]),
-        // Slide indicators
-        Positioned(bottom: 10, left: 0, right: 0,
+        ),
+
+        // ── Slide indicators ─────────────────────────────────────────────
+        Positioned(
+          bottom: 14, left: 0, right: 0,
           child: Row(mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(_heroSlides.length, (i) => GestureDetector(
               onTap: () => setState(() => _heroSlide = i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: _heroSlide == i ? 22 : 8, height: 8,
+                width: _heroSlide == i ? 24 : 8, height: 8,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
                   color: _heroSlide == i ? _gold : Colors.white38,
-                  boxShadow: _heroSlide == i ? [BoxShadow(color: _gold.withOpacity(0.5), blurRadius: 6)] : [],
+                  boxShadow: _heroSlide == i
+                    ? [BoxShadow(color: _gold.withOpacity(0.6), blurRadius: 8)]
+                    : [],
                 ),
               ),
             )),
@@ -704,92 +718,38 @@ class _PromoCarouselState extends State<_PromoCarousel> {
           final p = widget.products[i];
           final imageStr = p['image'] as String? ?? '';
           final firstImg = imageStr.split(',').first.trim();
-          final price     = (p['price'] as num?)?.toDouble() ?? 0;
-          final salePrice = (p['sale_price'] as num?)?.toDouble();
+          final imageUrl = buildImageUrl(firstImg.isNotEmpty ? firstImg : null);
           final hasPromo  = (p['promotion_type'] as String? ?? '').isNotEmpty;
 
           return Stack(fit: StackFit.expand, children: [
-            // Product image
-            firstImg.isNotEmpty
-              ? (firstImg.startsWith('http')
-                  ? Image.network(firstImg, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE9ECEF),
-                        child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA))))
-                  : Image.network(
-                      'https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/$firstImg',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE9ECEF),
-                        child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA)))))
-              : Container(color: const Color(0xFFE9ECEF),
-                  child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA))),
+            // Full-width product image
+            imageUrl != null
+              ? Image.network(imageUrl, fit: BoxFit.cover,
+                  loadingBuilder: (_, child, progress) => progress == null
+                    ? child
+                    : Container(color: const Color(0xFF1a1a1a),
+                        child: const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2))),
+                  errorBuilder: (_, __, ___) => Container(
+                    decoration: const BoxDecoration(gradient: _premiumGrad)))
+              : Container(decoration: const BoxDecoration(gradient: _premiumGrad)),
 
-            // Dark gradient overlay at bottom
-            Positioned(bottom: 0, left: 0, right: 0,
-              child: Container(
-                height: 110,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                    colors: [Colors.black.withOpacity(0.75), Colors.transparent]),
-                ),
-              ),
-            ),
-
-            // Promo badge top-right
+            // Promo badge only — top right, pill style
             if (hasPromo)
-              Positioned(top: 10, right: 10,
+              Positioned(top: 14, right: 14,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(colors: [Color(0xFFE74C3C), Color(0xFFc0392b)]),
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.4), blurRadius: 6)],
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 3))],
                   ),
                   child: Text(_promoBadge(p),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: 0.5)),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 0.8)),
                 ),
               ),
-
-            // Product info overlay at bottom
-            Positioned(bottom: 12, left: 10, right: 10,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(p['name'] as String? ?? '',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
-                Row(children: [
-                  if (salePrice != null) ...[
-                    Text('₱${price.toStringAsFixed(0)}',
-                      style: const TextStyle(color: Colors.white54, fontSize: 10,
-                        decoration: TextDecoration.lineThrough, decorationColor: Colors.white54)),
-                    const SizedBox(width: 6),
-                    Text('₱${salePrice.toStringAsFixed(0)}',
-                      style: const TextStyle(color: _goldLight, fontWeight: FontWeight.w900, fontSize: 14)),
-                  ] else
-                    Text('₱${price.toStringAsFixed(0)}',
-                      style: const TextStyle(color: _goldLight, fontWeight: FontWeight.w900, fontSize: 14)),
-                ]),
-              ]),
-            ),
           ]);
         },
       ),
-
-      // Dot indicators
-      if (widget.products.length > 1)
-        Positioned(bottom: 6, right: 8,
-          child: Row(mainAxisSize: MainAxisSize.min,
-            children: List.generate(widget.products.length, (i) => AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              width: _current == i ? 16 : 6, height: 6,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(3),
-                color: _current == i ? _gold : Colors.white38,
-              ),
-            )),
-          ),
-        ),
     ]);
   }
 }

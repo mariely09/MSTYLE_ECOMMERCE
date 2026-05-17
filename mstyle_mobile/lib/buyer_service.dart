@@ -750,73 +750,159 @@ class BuyerService {
 
   /// Fetch featured/all products
   /// Fetch products that have active promotions — used for the hero carousel.
-  static Future<List<Map<String, dynamic>>> getPromotionalProducts({int limit = 4}) async {
+  static Future<List<Map<String, dynamic>>> getPromotionalProducts({int limit = 20}) async {
     try {
-      final today = DateTime.now().toUtc().toIso8601String().split('T')[0];
-      // 1. Fetch active promotions
-      final promoUri = Uri.parse('$supabaseUrl/rest/v1/promotions').replace(queryParameters: {
-        'select': 'id,type,discount_value,code,product_scope,seller_email',
-        'is_active': 'eq.true',
-        'start_date': 'lte.$today',
-        'end_date':   'gte.$today',
-        'limit':      '$limit',
-      });
-      final promoResp = await http.get(promoUri, headers: {
+      // Use Philippine Time (UTC+8) to match website logic
+      final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+      final today = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+
+      // 1. Fetch active promotions (mirrors website get_promotional_products)
+      final promoUrl = '$supabaseUrl/rest/v1/promotions'
+          '?select=id,type,discount_value,code,product_scope,seller_email'
+          '&is_active=eq.true'
+          '&start_date=lte.$today'
+          '&end_date=gte.$today';
+      final promoResp = await http.get(Uri.parse(promoUrl), headers: {
         'apikey':        supabaseServiceRole,
         'Authorization': 'Bearer $supabaseServiceRole',
       });
-      if (promoResp.statusCode != 200) return [];
+      if (promoResp.statusCode != 200) {
+        debugPrint('getPromotionalProducts: promo fetch ${promoResp.statusCode}');
+        return [];
+      }
       final promos = List<Map<String, dynamic>>.from(jsonDecode(promoResp.body) as List);
-      if (promos.isEmpty) return [];
+      if (promos.isEmpty) {
+        debugPrint('getPromotionalProducts: no active promotions');
+        return [];
+      }
+      debugPrint('getPromotionalProducts: ${promos.length} active promotions');
 
-      // 2. Collect seller emails from promos with scope=all
+      // 2. Fetch promotion_products for specific-scope promos
+      final specificPromoIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'specific')
+          .map((p) => '${p['id']}').toList();
+      final Map<int, Set<int>> promoProductIds = {}; // promoId → productIds
+      if (specificPromoIds.isNotEmpty) {
+        final ppUrl = '$supabaseUrl/rest/v1/promotion_products'
+            '?select=promotion_id,product_id'
+            '&promotion_id=in.(${specificPromoIds.join(',')})';
+        final ppResp = await http.get(Uri.parse(ppUrl), headers: {
+          'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+        });
+        if (ppResp.statusCode == 200) {
+          for (final row in List<Map<String, dynamic>>.from(jsonDecode(ppResp.body) as List)) {
+            final pid   = row['promotion_id'] as int?;
+            final prodId = row['product_id'] as int?;
+            if (pid != null && prodId != null) {
+              promoProductIds.putIfAbsent(pid, () => {}).add(prodId);
+            }
+          }
+        }
+      }
+
+      // 3. Fetch promotion_categories for category-scope promos
+      final categoryPromoIds = promos
+          .where((p) => (p['product_scope'] as String? ?? '') == 'category')
+          .map((p) => '${p['id']}').toList();
+      final Map<int, Set<String>> promoCategoryNames = {}; // promoId → categories
+      if (categoryPromoIds.isNotEmpty) {
+        final pcUrl = '$supabaseUrl/rest/v1/promotion_categories'
+            '?select=promotion_id,category'
+            '&promotion_id=in.(${categoryPromoIds.join(',')})';
+        final pcResp = await http.get(Uri.parse(pcUrl), headers: {
+          'apikey': supabaseServiceRole, 'Authorization': 'Bearer $supabaseServiceRole',
+        });
+        if (pcResp.statusCode == 200) {
+          for (final row in List<Map<String, dynamic>>.from(jsonDecode(pcResp.body) as List)) {
+            final pid = row['promotion_id'] as int?;
+            final cat = (row['category'] as String? ?? '').toUpperCase();
+            if (pid != null && cat.isNotEmpty) {
+              promoCategoryNames.putIfAbsent(pid, () => {}).add(cat);
+            }
+          }
+        }
+      }
+
+      // 4. Collect all seller emails from promos to fetch their products
       final sellerEmails = promos
-          .where((p) => (p['product_scope'] as String? ?? 'all') == 'all')
           .map((p) => p['seller_email'] as String?)
           .whereType<String>()
+          .where((e) => e.isNotEmpty)
           .toSet()
           .toList();
       if (sellerEmails.isEmpty) return [];
 
-      // 3. Fetch one product per seller that has stock
-      final prodUri = Uri.parse('$supabaseUrl/rest/v1/products').replace(queryParameters: {
-        'select': 'id,name,price,image,category,seller_email,quantity,sold',
-        'seller_email': 'in.(${sellerEmails.join(',')})',
-        'quantity':     'gt.0',
-        'is_active':    'eq.true',
-        'order':        'id.desc',
-        'limit':        '$limit',
-      });
-      final prodResp = await http.get(prodUri, headers: {
+      // 5. Fetch products from those sellers with stock
+      final prodUrl = '$supabaseUrl/rest/v1/products'
+          '?select=id,name,price,image,category,seller_email,quantity,sold'
+          '&seller_email=in.(${sellerEmails.join(',')})'
+          '&quantity=gt.0'
+          '&is_active=eq.true'
+          '&order=sold.desc'
+          '&limit=200';
+      final prodResp = await http.get(Uri.parse(prodUrl), headers: {
         'apikey':        supabaseServiceRole,
         'Authorization': 'Bearer $supabaseServiceRole',
       });
       if (prodResp.statusCode != 200) return [];
-      final products = List<Map<String, dynamic>>.from(jsonDecode(prodResp.body) as List);
+      final allProducts = List<Map<String, dynamic>>.from(jsonDecode(prodResp.body) as List);
 
-      // 4. Attach promo data to each product
-      final promoBySellerEmail = <String, Map<String, dynamic>>{
-        for (final p in promos) (p['seller_email'] as String? ?? ''): p,
-      };
-      for (final p in products) {
-        final se    = p['seller_email'] as String? ?? '';
-        final promo = promoBySellerEmail[se];
-        if (promo == null) continue;
-        final promoType     = promo['type'] as String? ?? '';
-        final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
-        final basePrice     = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
-        double? salePrice;
-        if (promoType == 'percentage' && promoDiscount > 0) {
-          salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
-        } else if (promoType == 'fixed' && promoDiscount > 0) {
-          salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+      // 6. Match products to promotions — each promo gets its own product independently
+      // Track which product was already used per seller so all-scope promos get different products
+      final result = <Map<String, dynamic>>[];
+      final usedProductPerSeller = <String, Set<int>>{}; // sellerEmail → used productIds
+
+      for (final promo in promos) {
+        final scope        = promo['product_scope'] as String? ?? 'all';
+        final promoId      = promo['id'] as int;
+        final sellerEmail  = promo['seller_email'] as String? ?? '';
+
+        for (final p in allProducts) {
+          final pid = p['id'] as int?;
+          if (pid == null) continue;
+          if ((p['seller_email'] as String? ?? '') != sellerEmail) continue;
+
+          // For all-scope: skip products already used by a previous promo from this seller
+          if (scope == 'all') {
+            final used = usedProductPerSeller[sellerEmail] ?? {};
+            if (used.contains(pid)) continue;
+          }
+
+          bool qualifies = false;
+          if (scope == 'all') {
+            qualifies = true;
+          } else if (scope == 'specific') {
+            qualifies = promoProductIds[promoId]?.contains(pid) ?? false;
+          } else if (scope == 'category') {
+            final pCat = (p['category'] as String? ?? '').toUpperCase();
+            qualifies = promoCategoryNames[promoId]?.contains(pCat) ?? false;
+          }
+
+          if (qualifies) {
+            final basePrice     = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
+            final promoType     = promo['type'] as String? ?? '';
+            final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
+            double? salePrice;
+            if (promoType == 'percentage' && promoDiscount > 0) {
+              salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
+            } else if (promoType == 'fixed' && promoDiscount > 0) {
+              salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+            }
+            final enriched = Map<String, dynamic>.from(p);
+            enriched['promotion_type']     = promoType;
+            enriched['promotion_discount'] = promoDiscount;
+            enriched['promotion_code']     = promo['code'] as String? ?? '';
+            if (salePrice != null) enriched['sale_price'] = salePrice;
+            result.add(enriched);
+            // Mark this product as used for this seller
+            usedProductPerSeller.putIfAbsent(sellerEmail, () => {}).add(pid);
+            break; // one product per promotion
+          }
         }
-        p['promotion_type']     = promoType;
-        p['promotion_discount'] = promoDiscount;
-        p['promotion_code']     = promo['code'] as String? ?? '';
-        if (salePrice != null) p['sale_price'] = salePrice;
       }
-      return products;
+
+      debugPrint('getPromotionalProducts: returning ${result.length} products');
+      return result;
     } catch (e) {
       debugPrint('BuyerService.getPromotionalProducts error: $e');
       return [];

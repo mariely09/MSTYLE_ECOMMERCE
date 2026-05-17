@@ -98,7 +98,20 @@
                             </div>
                             {% endif %}
                             <h3 class="item-name"><a href="{{ view_url }}" style="color:inherit;text-decoration:none;">{{ item.name }}</a></h3>
-                            <p class="item-price">₱{{ "%.2f"|format(item.price) }}</p>
+                            <p class="item-price">
+                                {% if item.sale_price and item.promo_type in ('percentage', 'fixed') %}
+                                <span style="color:#e74c3c;font-weight:900;font-size:15px;">₱{{ "%.2f"|format(item.sale_price) }}</span>
+                                <span style="color:#6c757d;font-size:11px;text-decoration:line-through;margin-left:6px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                {% elif item.promo_type == 'free_shipping' %}
+                                <span style="color:#d4af37;font-weight:800;font-size:15px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                <span style="background:rgba(212,175,55,0.15);color:#d4af37;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:6px;border:1px solid rgba(212,175,55,0.3);">FREE SHIP</span>
+                                {% elif item.promo_type == 'buy_one_get_one' %}
+                                <span style="color:#d4af37;font-weight:800;font-size:15px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                <span style="background:rgba(212,175,55,0.15);color:#d4af37;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;margin-left:6px;border:1px solid rgba(212,175,55,0.3);">BOGO</span>
+                                {% else %}
+                                <span style="color:#d4af37;font-weight:800;font-size:15px;">₱{{ "%.2f"|format(item.price) }}</span>
+                                {% endif %}
+                            </p>
                             {% if item.variations or item.size %}
                             <div class="item-specifications">
                                 {% if item.variations %}

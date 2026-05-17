@@ -8798,6 +8798,7 @@ def cart():
             promo_type = ''
             promo_discount = 0
             promo_label = ''
+            sale_price = None
             if pid and item.get('seller_email'):
                 try:
                     promo = get_active_promotions_for_product(
@@ -8807,10 +8808,13 @@ def cart():
                     if promo:
                         promo_type = promo.get('type', '')
                         promo_discount = float(promo.get('discount_value') or 0)
-                        if promo_type == 'percentage':
+                        base = float(item.get('price') or 0)
+                        if promo_type == 'percentage' and promo_discount > 0:
                             promo_label = f"{int(promo_discount)}% OFF"
-                        elif promo_type == 'fixed':
+                            sale_price = max(0.01, base * (1 - promo_discount / 100))
+                        elif promo_type == 'fixed' and promo_discount > 0:
                             promo_label = f"₱{int(promo_discount)} OFF"
+                            sale_price = max(0.01, base - promo_discount)
                         elif promo_type == 'buy_one_get_one':
                             promo_label = 'BOGO'
                         elif promo_type == 'free_shipping':
@@ -8832,6 +8836,7 @@ def cart():
                 'promo_type': promo_type,
                 'promo_discount': promo_discount,
                 'promo_label': promo_label,
+                'sale_price': sale_price,
             })
     except Exception as e:
         print(f"cart Supabase error: {e}")

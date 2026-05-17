@@ -25,176 +25,219 @@
 <body>
     {% include 'header_non-login_users.html' %}
 
-    <!-- Hero Section -->
-    <section class="hero-section">
-        <!-- Geometric Background Elements -->
-        <div class="hero-geometric-bg">
-            <div class="geometric-shape shape-1"></div>
-            <div class="geometric-shape shape-2"></div>
-            <div class="geometric-shape shape-3"></div>
-            <div class="geometric-shape shape-4"></div>
-            <div class="geometric-shape shape-5"></div>
-        </div>
-
-        <!-- Animated Background Elements -->
-        <div class="hero-background-overlay"></div>
-        <div class="floating-elements">
-            <div class="floating-shape shape-1"></div>
-            <div class="floating-shape shape-2"></div>
-            <div class="floating-shape shape-3"></div>
-            <div class="floating-shape shape-4"></div>
-        </div>
-
-        <!-- Particle System -->
-        <div class="particles-container">
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-        </div>
-
-        <!-- Hero Content Wrapper -->
-        <div class="hero-wrapper">
-            <!-- Left Content Section -->
-            <div class="hero-content-section">
-                <div class="hero-content">
-                    <h1 class="hero-title">
-                        <span class="title-line">Craft Your</span>
-                        <span class="title-line highlight">
-                            <span class="highlight-text" id="dynamic-text">Signature Style</span>
-                            <div class="title-underline"></div>
-                        </span>
-                    </h1>
-
-                    <p class="hero-description">
-                        Discover our curated collection of premium menswear, from executive suits to casual essentials.
-                        Each piece is designed to elevate your confidence and make a lasting impression.
-                    </p>
-
-                    <!-- Enhanced Buttons -->
-                    <div class="hero-buttons">
-                        <a href="#featured-products" class="hero-btn primary">
-                            <span class="btn-text">Shop Now</span>
-                            <span class="btn-icon"><i class="fas fa-arrow-right"></i></span>
-                            <div class="btn-ripple"></div>
-                        </a>
-                        <a href="#featured-categories" class="hero-btn secondary">
-                            <span class="btn-text">Explore Collections</span>
-                            <span class="btn-icon"><i class="fas fa-compass"></i></span>
-                            <div class="btn-ripple"></div>
-                        </a>
-                    </div>
+    <!-- Hero Section — matches mobile home_page.dart _heroSection() exactly -->
+    <!-- Full-width product image fills background; left-heavy dark gradient overlay; text on top -->
+    <section class="mhero">
+        <div class="mhero-bg-carousel">
+            {% if promotional_products %}
+            {% for product in promotional_products[:4] %}
+            {% set images = product.image.split(',') if product.image else [] %}
+            <div class="mhero-bg-slide {% if loop.first %}active{% endif %}">
+                {% if images and images[0].strip() %}
+                <img src="{{ images[0].strip()|product_img }}" alt="{{ product.name }}" class="mhero-bg-img">
+                {% endif %}
+                {% if product.promotion_type %}
+                <div class="mhero-promo-badge">
+                    {% if product.promotion_type == 'percentage' %}{{ product.promotion_discount|int }}% OFF
+                    {% elif product.promotion_type == 'fixed' %}₱{{ product.promotion_discount|int }} OFF
+                    {% elif product.promotion_type == 'buy_one_get_one' %}BOGO
+                    {% elif product.promotion_type == 'free_shipping' %}FREE SHIP
+                    {% else %}SALE{% endif %}
+                </div>
+                {% endif %}
+                <div class="mhero-product-info">
+                    <span class="mhero-product-name">{{ product.name[:24] }}{% if product.name|length > 24 %}…{% endif %}</span>
+                    {% if product.promotion_type in ('percentage','fixed') and product.promotion_discount %}
+                    <span class="mhero-product-price">
+                        {% if product.promotion_type == 'percentage' %}
+                        ₱{{ "%.0f"|format(product.price|float * (1 - product.promotion_discount|float/100)) }}
+                        {% else %}
+                        ₱{{ "%.0f"|format(product.price|float - product.promotion_discount|float) }}
+                        {% endif %}
+                    </span>
+                    {% else %}
+                    <span class="mhero-product-price">₱{{ "%.0f"|format(product.price|float) }}</span>
+                    {% endif %}
                 </div>
             </div>
+            {% endfor %}
+            {% else %}
+            <div class="mhero-bg-slide active mhero-bg-fallback"></div>
+            {% endif %}
+        </div>
 
-            <!-- Right Image Section - Promotional Products -->
-            <div class="hero-image-section">
-                <div class="hero-image-container">
-                    <div class="hero-carousel">
-                        {% if promotional_products %}
-                        {% for product in promotional_products[:4] %}
-                        <div class="hero-image-slide {% if loop.first %}active{% endif %}">
-                            <div class="promotional-product-card">
-                                {% set images = product.image.split(',') if product.image else [] %}
-                                {% if images and images[0].strip() %}
-                                <img src="{{ images[0].strip()|product_img }}"
-                                    alt="{{ product.name }}" class="promotional-product-image">
-                                {% else %}
-                                <div class="promotional-product-placeholder">
-                                    <i class="fas fa-image"></i>
-                                    <span>{{ product.name }}</span>
-                                </div>
-                                {% endif %}
+        <div class="mhero-overlay"></div>
 
-                                <!-- Promotion Badge - Always Visible -->
-                                <div class="promotion-badge">
-                                    {% if product.promotion_type == 'percentage' %}
-                                    {{ (product.promotion_discount|float)|int }}% OFF
-                                    {% elif product.promotion_type == 'fixed' %}
-                                    ₱{{ (product.promotion_discount|float)|int }} OFF
-                                    {% elif product.promotion_type == 'buy_one_get_one' %}
-                                    BUY ONE GET ONE
-                                    {% elif product.promotion_type == 'free_shipping' %}
-                                    FREE SHIPPING
-                                    {% else %}
-                                    SPECIAL
-                                    {% endif %}
-                                </div>
-
-                                <div class="promotional-overlay">
-                                    <div class="promotional-content">
-                                        <h3>{{ product.name }}</h3>
-                                        <div class="price-section">
-                                            {% set original_price = product.price|float if product.price else 0.0 %}
-                                            {% set discount_value = product.promotion_discount|float if
-                                            product.promotion_discount else 0.0 %}
-                                            {% if product.promotion_type == 'percentage' and discount_value > 0 %}
-                                            <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                                            {% set sale_price = original_price * (1 - discount_value/100) %}
-                                            {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                                            <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                                            {% elif product.promotion_type == 'fixed' and discount_value > 0 %}
-                                            <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                                            {% set sale_price = original_price - discount_value %}
-                                            {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                                            <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                                            {% else %}
-                                            <span class="sale-price">₱{{ "%.2f"|format(original_price) }}</span>
-                                            {% endif %}
-                                        </div>
-
-                                        <div class="promotional-actions">
-                                            <a href="{{ url_for('view_product', product_id=product.id) }}"
-                                                class="btn-view-product">
-                                                <i class="fas fa-eye"></i> View Product
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                        {% else %}
-                        <!-- Fallback slides if no promotional products -->
-                        <div class="hero-image-slide active">
-                            <div class="hero-image-bg slide-1"></div>
-                            <div class="hero-image-overlay"></div>
-                            <div class="no-promotions-content">
-                                <h3>Premium Men's Fashion</h3>
-                                <p>Discover our exclusive collection</p>
-                            </div>
-                        </div>
-                        <div class="hero-image-slide">
-                            <div class="hero-image-bg slide-2"></div>
-                            <div class="hero-image-overlay"></div>
-                            <div class="no-promotions-content">
-                                <h3>Quality & Style</h3>
-                                <p>Crafted for the modern gentleman</p>
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    <!-- Carousel Indicators -->
-                    <div class="carousel-indicators">
-                        {% if promotional_products %}
-                        {% for product in promotional_products[:4] %}
-                        <span class="indicator {% if loop.first %}active{% endif %}"
-                            onclick="currentImageSlide({{ loop.index }})"></span>
-                        {% endfor %}
-                        {% else %}
-                        <span class="indicator active" onclick="currentImageSlide(1)"></span>
-                        <span class="indicator" onclick="currentImageSlide(2)"></span>
-                        {% endif %}
-                    </div>
-                </div>
+        <div class="mhero-content">
+            <div class="mhero-badge">NEW COLLECTION</div>
+            <p class="mhero-title-top">Craft Your</p>
+            <h1 class="mhero-highlight" id="mhero-highlight">Signature Style</h1>
+            <div class="mhero-bar"></div>
+            <p class="mhero-sub">Premium menswear for the modern man.</p>
+            <div class="mhero-btns">
+                <a href="#featured-products" class="mhero-btn-primary">
+                    Shop Now <i class="fas fa-arrow-right"></i>
+                </a>
+                <a href="#featured-categories" class="mhero-btn-secondary">
+                    Explore <i class="fas fa-compass"></i>
+                </a>
             </div>
         </div>
+
+        {% if promotional_products and promotional_products|length > 1 %}
+        <div class="mhero-dots">
+            {% for product in promotional_products[:4] %}
+            <span class="mhero-dot {% if loop.first %}active{% endif %}"
+                  onclick="mheroGo({{ loop.index0 }})"></span>
+            {% endfor %}
+        </div>
+        {% endif %}
     </section>
+
+    <style>
+    .mhero {
+        position: relative; height: 420px; overflow: hidden;
+        background: linear-gradient(135deg, #1a1a1a, #2c3e50);
+    }
+    .mhero-bg-carousel { position: absolute; inset: 0; }
+    .mhero-bg-slide { position: absolute; inset: 0; opacity: 0; transition: opacity 0.6s ease; display: flex; align-items: center; justify-content: flex-end; }
+    .mhero-bg-slide.active { opacity: 1; }
+    .mhero-bg-img { height: 100%; width: auto; max-width: 60%; object-fit: contain; display: block; margin-right: 0; }
+    .mhero-bg-fallback { background: linear-gradient(135deg, #0d1b2a, #1b2a3b); }
+    .mhero-overlay {
+        position: absolute; inset: 0; z-index: 1;
+        background: linear-gradient(to right,
+            rgba(26,26,26,0.93) 0%,
+            rgba(26,26,26,0.80) 55%,
+            rgba(26,26,26,0.40) 85%,
+            rgba(26,26,26,0.00) 100%);
+    }
+    .mhero-content {
+        position: absolute; left: 0; top: 0; bottom: 0;
+        width: 62%; padding: 28px 20px 40px;
+        display: flex; flex-direction: column; justify-content: center;
+        z-index: 2;
+    }
+    .mhero-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #d4af37, #f4d03f);
+        color: #1a1a1a; font-size: 9px; font-weight: 900; letter-spacing: 1.5px;
+        padding: 4px 10px; border-radius: 20px; width: fit-content;
+        margin-bottom: 12px; box-shadow: 0 3px 10px rgba(212,175,55,0.4);
+    }
+    .mhero-title-top {
+        color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 400;
+        letter-spacing: 0.3px; margin: 0 0 4px;
+    }
+    .mhero-highlight {
+        background: linear-gradient(135deg, #d4af37, #f4d03f);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        font-size: 26px; font-weight: 900; letter-spacing: -0.5px; line-height: 1.1;
+        margin: 0 0 10px; min-height: 32px;
+    }
+    .mhero-bar {
+        width: 44px; height: 3px;
+        background: linear-gradient(135deg, #d4af37, #f4d03f);
+        border-radius: 2px; margin-bottom: 10px;
+    }
+    .mhero-sub {
+        color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;
+        margin: 0 0 18px;
+    }
+    .mhero-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+    .mhero-btn-primary {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: linear-gradient(135deg, #d4af37, #f4d03f);
+        color: #1a1a1a; font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+        padding: 9px 18px; border-radius: 30px; text-decoration: none;
+        box-shadow: 0 4px 12px rgba(212,175,55,0.4);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .mhero-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(212,175,55,0.5); text-decoration: none; color: #1a1a1a; }
+    .mhero-btn-secondary {
+        display: inline-flex; align-items: center; gap: 6px;
+        border: 1.5px solid rgba(255,255,255,0.38); color: rgba(255,255,255,0.9);
+        font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+        padding: 9px 16px; border-radius: 30px; text-decoration: none;
+        transition: border-color 0.2s, color 0.2s;
+    }
+    .mhero-btn-secondary:hover { border-color: #d4af37; color: #d4af37; text-decoration: none; }
+    .mhero-dots {
+        position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 6px; z-index: 3;
+    }
+    .mhero-dot {
+        width: 8px; height: 8px; border-radius: 4px;
+        background: rgba(255,255,255,0.38); cursor: pointer; transition: all 0.3s;
+    }
+    .mhero-dot.active { width: 24px; background: #d4af37; box-shadow: 0 0 8px rgba(212,175,55,0.6); }
+
+    .mhero-promo-badge {
+        position: absolute; top: 16px; right: 16px; z-index: 4;
+        background: linear-gradient(135deg, #d4af37, #f4d03f);
+        color: #1a1a1a; font-size: 10px; font-weight: 900; letter-spacing: 0.8px;
+        padding: 5px 12px; border-radius: 16px;
+        box-shadow: 0 3px 10px rgba(212,175,55,0.5);
+    }
+    .mhero-product-info {
+        position: absolute; bottom: 36px; right: 16px; z-index: 4;
+        background: rgba(26,26,26,0.85); border: 1px solid rgba(212,175,55,0.3);
+        border-radius: 10px; padding: 6px 12px;
+        display: flex; flex-direction: column; align-items: flex-end; max-width: 55%;
+    }
+    .mhero-product-name {
+        color: rgba(255,255,255,0.75); font-size: 9px; font-weight: 500;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    }
+    .mhero-product-price { color: #d4af37; font-size: 15px; font-weight: 800; line-height: 1.2; }
+    @media (max-width: 768px) {
+        .mhero { height: 320px; }
+        .mhero-content { width: 78%; padding: 20px 16px 36px; }
+        .mhero-highlight { font-size: 20px; }
+    }
+    @media (max-width: 480px) {
+        .mhero { height: 280px; }
+        .mhero-content { width: 88%; padding: 18px 14px 32px; }
+        .mhero-highlight { font-size: 18px; }
+        .mhero-btn-primary, .mhero-btn-secondary { font-size: 11px; padding: 8px 13px; }
+    }
+    </style>
+
+    <script>
+    (function() {
+        var _s = 0;
+        var _texts = ['Signature Style','Executive Look','Premium Fashion','Timeless Elegance','Modern Sophistication','Classic Appeal'];
+        var _ti = 0, _ci = 0, _typing = true;
+        function mheroGo(n) {
+            var slides = document.querySelectorAll('.mhero-bg-slide');
+            var dots   = document.querySelectorAll('.mhero-dot');
+            slides.forEach(function(s){ s.classList.remove('active'); });
+            dots.forEach(function(d){ d.classList.remove('active'); });
+            _s = n;
+            if (slides[n]) slides[n].classList.add('active');
+            if (dots[n])   dots[n].classList.add('active');
+        }
+        window.mheroGo = mheroGo;
+        document.addEventListener('DOMContentLoaded', function() {
+            var slides = document.querySelectorAll('.mhero-bg-slide');
+            if (slides.length > 1) setInterval(function(){ mheroGo((_s+1)%slides.length); }, 4000);
+            var el = document.getElementById('mhero-highlight');
+            if (!el) return;
+            function typeNext() {
+                var text = _texts[_ti];
+                if (_typing) {
+                    if (_ci < text.length) { el.textContent = text.substring(0,++_ci); setTimeout(typeNext,80); }
+                    else { _typing=false; setTimeout(typeNext,2200); }
+                } else {
+                    if (_ci > 0) { el.textContent = text.substring(0,--_ci); setTimeout(typeNext,40); }
+                    else { _ti=(_ti+1)%_texts.length; _typing=true; setTimeout(typeNext,400); }
+                }
+            }
+            setTimeout(typeNext, 800);
+        });
+    })();
+    </script>
+
 
     <!-- Featured Categories — matches mobile app design -->
     <section id="featured-categories" class="featured-categories">

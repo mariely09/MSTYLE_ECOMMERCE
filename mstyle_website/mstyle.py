@@ -9063,7 +9063,7 @@ def checkout_route():
             if product_ids:
                 try:
                     pr = sb_admin.table('products') \
-                        .select('id, image, image_colors') \
+                        .select('id, image, image_colors, price, seller_email, category') \
                         .in_('id', product_ids) \
                         .execute()
                     for p in (pr.data or []):
@@ -9101,10 +9101,30 @@ def checkout_route():
                 except Exception:
                     pass
 
+                # Resolve the effective price: apply active promotion on top of original price
+                base_price = float(item['price'] or 0)
+                effective_price = base_price
+                try:
+                    prod_data = prod_images.get(pid, {})
+                    active_promo = get_active_promotions_for_product(
+                        str(pid),
+                        item.get('seller_email', '') or prod_data.get('seller_email', ''),
+                        prod_data.get('category', '')
+                    )
+                    if active_promo:
+                        promo_type = active_promo.get('type', '')
+                        discount_val = float(active_promo.get('discount_value') or 0)
+                        if promo_type == 'percentage' and discount_val > 0:
+                            effective_price = max(0.01, base_price * (1 - discount_val / 100))
+                        elif promo_type == 'fixed' and discount_val > 0:
+                            effective_price = max(0.01, base_price - discount_val)
+                except Exception:
+                    pass
+
                 checkout_items_session.append({
                     'id':           item['id'],
                     'name':         item['name'],
-                    'price':        float(item['price'] or 0),
+                    'price':        effective_price,
                     'quantity':     int(item['quantity'] or 1),
                     'variations':   item.get('variations') or '',
                     'size':         item.get('size') or '',
@@ -11281,6 +11301,23 @@ def checkout_single_product():
             price = float(product_price) if product_price and str(product_price).strip() else float(product.get('price') or 0)
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid product price'})
+
+        # Apply active promotion to get effective price
+        try:
+            active_promo = get_active_promotions_for_product(
+                str(product_id),
+                product.get('seller_email', ''),
+                product.get('category', '')
+            )
+            if active_promo:
+                promo_type = active_promo.get('type', '')
+                discount_val = float(active_promo.get('discount_value') or 0)
+                if promo_type == 'percentage' and discount_val > 0:
+                    price = max(0.01, price * (1 - discount_val / 100))
+                elif promo_type == 'fixed' and discount_val > 0:
+                    price = max(0.01, price - discount_val)
+        except Exception:
+            pass
 
         # Resolve image — prefer color_image from form (already resolved by view_product.html JS)
         # then fall back to image_colors mapping, then first product image

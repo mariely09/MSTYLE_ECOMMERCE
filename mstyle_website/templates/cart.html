@@ -113,8 +113,15 @@
                                 {% endif %}
                             </p>
                             {% if item.variations or item.size %}
+                            {% set has_active_promo = item.promo_type in ('percentage', 'fixed', 'buy_one_get_one', 'free_shipping') %}
                             <div class="item-specifications">
                                 {% if item.variations %}
+                                {% if has_active_promo %}
+                                <span class="item-color" title="Color cannot be changed while a promotion is active">
+                                    <i class="bi bi-palette"></i>
+                                    Color: {{ item.variations }}
+                                </span>
+                                {% else %}
                                 <span class="item-color clickable-spec"
                                     onclick="changeColor('{{ item.id }}', '{{ item.variations }}')">
                                     <i class="bi bi-palette"></i>
@@ -122,13 +129,21 @@
                                     <i class="bi bi-pencil-square edit-icon"></i>
                                 </span>
                                 {% endif %}
+                                {% endif %}
                                 {% if item.size %}
+                                {% if has_active_promo %}
+                                <span class="item-size" title="Size cannot be changed while a promotion is active">
+                                    <i class="bi bi-rulers"></i>
+                                    Size: {{ item.size }}
+                                </span>
+                                {% else %}
                                 <span class="item-size clickable-spec"
                                     onclick="changeSize('{{ item.id }}', '{{ item.size }}')">
                                     <i class="bi bi-rulers"></i>
                                     Size: {{ item.size }}
                                     <i class="bi bi-pencil-square edit-icon"></i>
                                 </span>
+                                {% endif %}
                                 {% endif %}
                             </div>
                             {% endif %}

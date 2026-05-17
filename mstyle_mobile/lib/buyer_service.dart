@@ -753,69 +753,97 @@ class BuyerService {
   static Future<List<Map<String, dynamic>>> getPromotionalProducts({int limit = 4}) async {
     try {
       final today = DateTime.now().toUtc().toIso8601String().split('T')[0];
-      // 1. Fetch active promotions
-      final promoUri = Uri.parse('$supabaseUrl/rest/v1/promotions').replace(queryParameters: {
-        'select': 'id,type,discount_value,code,product_scope,seller_email',
-        'is_active': 'eq.true',
-        'start_date': 'lte.$today',
-        'end_date':   'gte.$today',
-        'limit':      '$limit',
-      });
-      final promoResp = await http.get(promoUri, headers: {
+
+      // Try to get products with active promotions first
+      final promoUrl = '$supabaseUrl/rest/v1/promotions'
+          '?select=id,type,discount_value,code,product_scope,seller_email'
+          '&is_active=eq.true'
+          '&start_date=lte.$today'
+          '&end_date=gte.$today'
+          '&limit=$limit';
+      final promoResp = await http.get(Uri.parse(promoUrl), headers: {
         'apikey':        supabaseServiceRole,
         'Authorization': 'Bearer $supabaseServiceRole',
       });
-      if (promoResp.statusCode != 200) return [];
-      final promos = List<Map<String, dynamic>>.from(jsonDecode(promoResp.body) as List);
-      if (promos.isEmpty) return [];
 
-      // 2. Collect seller emails from promos with scope=all
-      final sellerEmails = promos
-          .where((p) => (p['product_scope'] as String? ?? 'all') == 'all')
-          .map((p) => p['seller_email'] as String?)
-          .whereType<String>()
-          .toSet()
-          .toList();
-      if (sellerEmails.isEmpty) return [];
-
-      // 3. Fetch one product per seller that has stock
-      final prodUri = Uri.parse('$supabaseUrl/rest/v1/products').replace(queryParameters: {
-        'select': 'id,name,price,image,category,seller_email,quantity,sold',
-        'seller_email': 'in.(${sellerEmails.join(',')})',
-        'quantity':     'gt.0',
-        'is_active':    'eq.true',
-        'order':        'id.desc',
-        'limit':        '$limit',
-      });
-      final prodResp = await http.get(prodUri, headers: {
-        'apikey':        supabaseServiceRole,
-        'Authorization': 'Bearer $supabaseServiceRole',
-      });
-      if (prodResp.statusCode != 200) return [];
-      final products = List<Map<String, dynamic>>.from(jsonDecode(prodResp.body) as List);
-
-      // 4. Attach promo data to each product
-      final promoBySellerEmail = <String, Map<String, dynamic>>{
-        for (final p in promos) (p['seller_email'] as String? ?? ''): p,
-      };
-      for (final p in products) {
-        final se    = p['seller_email'] as String? ?? '';
-        final promo = promoBySellerEmail[se];
-        if (promo == null) continue;
-        final promoType     = promo['type'] as String? ?? '';
-        final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
-        final basePrice     = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
-        double? salePrice;
-        if (promoType == 'percentage' && promoDiscount > 0) {
-          salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
-        } else if (promoType == 'fixed' && promoDiscount > 0) {
-          salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
-        }
-        p['promotion_type']     = promoType;
-        p['promotion_discount'] = promoDiscount;
-        p['promotion_code']     = promo['code'] as String? ?? '';
-        if (salePrice != null) p['sale_price'] = salePrice;
+      List<Map<String, dynamic>> promos = [];
+      if (promoResp.statusCode == 200) {
+        promos = List<Map<String, dynamic>>.from(jsonDecode(promoResp.body) as List);
       }
+
+      List<Map<String, dynamic>> products = [];
+
+      if (promos.isNotEmpty) {
+        // Get seller emails from all-scope promos
+        final sellerEmails = promos
+            .where((p) => (p['product_scope'] as String? ?? 'all') == 'all')
+            .map((p) => p['seller_email'] as String?)
+            .whereType<String>()
+            .toSet()
+            .toList();
+
+        if (sellerEmails.isNotEmpty) {
+          final prodUrl = '$supabaseUrl/rest/v1/products'
+              '?select=id,name,price,image,category,seller_email,quantity,sold'
+              '&seller_email=in.(${sellerEmails.join(',')})'
+              '&quantity=gt.0'
+              '&is_active=eq.true'
+              '&order=id.desc'
+              '&limit=$limit';
+          final prodResp = await http.get(Uri.parse(prodUrl), headers: {
+            'apikey':        supabaseServiceRole,
+            'Authorization': 'Bearer $supabaseServiceRole',
+          });
+          if (prodResp.statusCode == 200) {
+            products = List<Map<String, dynamic>>.from(jsonDecode(prodResp.body) as List);
+          }
+        }
+      }
+
+      // Fallback: if no promo products found, just fetch latest active products
+      if (products.isEmpty) {
+        debugPrint('getPromotionalProducts: no promo products, falling back to latest products');
+        final fallbackUrl = '$supabaseUrl/rest/v1/products'
+            '?select=id,name,price,image,category,seller_email,quantity,sold'
+            '&quantity=gt.0'
+            '&is_active=eq.true'
+            '&order=id.desc'
+            '&limit=$limit';
+        final fallbackResp = await http.get(Uri.parse(fallbackUrl), headers: {
+          'apikey':        supabaseServiceRole,
+          'Authorization': 'Bearer $supabaseServiceRole',
+        });
+        if (fallbackResp.statusCode == 200) {
+          products = List<Map<String, dynamic>>.from(jsonDecode(fallbackResp.body) as List);
+        }
+      }
+
+      // Attach promo data where applicable
+      if (promos.isNotEmpty) {
+        final promoBySellerEmail = <String, Map<String, dynamic>>{
+          for (final p in promos) (p['seller_email'] as String? ?? ''): p,
+        };
+        for (final p in products) {
+          final se    = p['seller_email'] as String? ?? '';
+          final promo = promoBySellerEmail[se];
+          if (promo == null) continue;
+          final promoType     = promo['type'] as String? ?? '';
+          final promoDiscount = double.tryParse(promo['discount_value']?.toString() ?? '0') ?? 0;
+          final basePrice     = double.tryParse(p['price']?.toString() ?? '0') ?? 0;
+          double? salePrice;
+          if (promoType == 'percentage' && promoDiscount > 0) {
+            salePrice = (basePrice * (1 - promoDiscount / 100)).clamp(0.01, double.infinity);
+          } else if (promoType == 'fixed' && promoDiscount > 0) {
+            salePrice = (basePrice - promoDiscount).clamp(0.01, double.infinity);
+          }
+          p['promotion_type']     = promoType;
+          p['promotion_discount'] = promoDiscount;
+          p['promotion_code']     = promo['code'] as String? ?? '';
+          if (salePrice != null) p['sale_price'] = salePrice;
+        }
+      }
+
+      debugPrint('getPromotionalProducts: returning ${products.length} products');
       return products;
     } catch (e) {
       debugPrint('BuyerService.getPromotionalProducts error: $e');

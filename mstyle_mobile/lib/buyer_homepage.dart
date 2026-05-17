@@ -855,21 +855,20 @@ class _BuyerPromoCarouselState extends State<_BuyerPromoCarousel> {
           final p = widget.products[i];
           final imageStr  = p['image'] as String? ?? '';
           final firstImg  = imageStr.split(',').first.trim();
+          final imageUrl  = buildImageUrl(firstImg.isNotEmpty ? firstImg : null);
           final price     = (p['price'] as num?)?.toDouble() ?? 0;
           final salePrice = (p['sale_price'] as num?)?.toDouble();
           final hasPromo  = (p['promotion_type'] as String? ?? '').isNotEmpty;
 
           return Stack(fit: StackFit.expand, children: [
-            firstImg.isNotEmpty
-              ? (firstImg.startsWith('http')
-                  ? Image.network(firstImg, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE9ECEF),
-                        child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA))))
-                  : Image.network(
-                      'https://vydcnhmgqovketjqvpoe.supabase.co/storage/v1/object/public/product-images/products/$firstImg',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE9ECEF),
-                        child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA)))))
+            imageUrl != null
+              ? Image.network(imageUrl, fit: BoxFit.cover,
+                  loadingBuilder: (_, child, progress) => progress == null
+                    ? child
+                    : Container(color: const Color(0xFFE9ECEF),
+                        child: const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2))),
+                  errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE9ECEF),
+                    child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA))))
               : Container(color: const Color(0xFFE9ECEF),
                   child: const Icon(Icons.storefront, size: 64, color: Color(0xFFCED4DA))),
 

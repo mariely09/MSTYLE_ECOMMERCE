@@ -96,22 +96,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Future<void> _loadFeaturedProducts() async {
     if (mounted) setState(() { _productsLoading = true; _productsError = null; _productsPage = 1; _hasMoreProducts = true; });
     try {
-<<<<<<< HEAD
       final results = await Future.wait([
-        BuyerService.getProducts(limit: 6),
+        BuyerService.getProducts(limit: _perPage, offset: 0),
         BuyerService.getPromotionalProducts(limit: 4),
       ]);
       if (mounted) setState(() {
         _featuredProducts = results[0];
         _promoProducts    = results[1];
         _productsLoading  = false;
-=======
-      final data = await BuyerService.getProducts(limit: _perPage, offset: 0);
-      if (mounted) setState(() {
-        _featuredProducts = data;
-        _productsLoading = false;
-        _hasMoreProducts = data.length >= _perPage;
->>>>>>> e7796aba9748d1271bc0da40a76ca1670a7ffb94
+        _hasMoreProducts  = results[0].length >= _perPage;
       });
     } catch (e) {
       debugPrint('_loadFeaturedProducts error: $e');

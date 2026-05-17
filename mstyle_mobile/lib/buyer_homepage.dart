@@ -78,6 +78,10 @@ class _BuyerHomePageState extends State<BuyerHomePage> with TickerProviderStateM
   List<Map<String, dynamic>> _products = [];
   bool _productsLoading = true;
   String? _productsError;
+  int _productsPage = 1;
+  static const int _perPage = 12;
+  bool _hasMoreProducts = true;
+  bool _loadingMore = false;
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
@@ -111,13 +115,34 @@ class _BuyerHomePageState extends State<BuyerHomePage> with TickerProviderStateM
   }
 
   Future<void> _loadProducts() async {
-    if (mounted) setState(() { _productsLoading = true; _productsError = null; });
+    if (mounted) setState(() { _productsLoading = true; _productsError = null; _productsPage = 1; _hasMoreProducts = true; });
     try {
-      final data = await BuyerService.getProducts(limit: 8);
-      if (mounted) setState(() { _products = data; _productsLoading = false; });
+      final data = await BuyerService.getProducts(limit: _perPage, offset: 0);
+      if (mounted) setState(() {
+        _products = data;
+        _productsLoading = false;
+        _hasMoreProducts = data.length >= _perPage;
+      });
     } catch (e) {
       debugPrint('_loadProducts error: $e');
       if (mounted) setState(() { _productsLoading = false; _productsError = e.toString(); });
+    }
+  }
+
+  Future<void> _loadMoreProducts() async {
+    if (_loadingMore || !_hasMoreProducts) return;
+    setState(() => _loadingMore = true);
+    try {
+      final nextPage = _productsPage + 1;
+      final data = await BuyerService.getProducts(limit: _perPage, offset: (nextPage - 1) * _perPage);
+      if (mounted) setState(() {
+        _products.addAll(data);
+        _productsPage = nextPage;
+        _hasMoreProducts = data.length >= _perPage;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -646,6 +671,29 @@ class _BuyerHomePageState extends State<BuyerHomePage> with TickerProviderStateM
           itemBuilder: (_, i) => ProductCard(
             product: _products[i],
             userEmail: widget.userEmail,
+          ),
+        ),
+      if (_hasMoreProducts)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 0),
+          child: GestureDetector(
+            onTap: _loadMoreProducts,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                gradient: _premiumGrad,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: _primary.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 3))],
+              ),
+              child: _loadingMore
+                  ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: _gold, strokeWidth: 2)))
+                  : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Text('Load More Products', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+                      SizedBox(width: 8),
+                      Icon(Icons.expand_more, color: _gold, size: 18),
+                    ]),
+            ),
           ),
         ),
     ]),

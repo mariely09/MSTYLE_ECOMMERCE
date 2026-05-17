@@ -25,176 +25,156 @@
 <body>
     {% include 'header_non-login_users.html' %}
 
-    <!-- Hero Section -->
-    <section class="hero-section">
-        <!-- Geometric Background Elements -->
-        <div class="hero-geometric-bg">
-            <div class="geometric-shape shape-1"></div>
-            <div class="geometric-shape shape-2"></div>
-            <div class="geometric-shape shape-3"></div>
-            <div class="geometric-shape shape-4"></div>
-            <div class="geometric-shape shape-5"></div>
-        </div>
-
-        <!-- Animated Background Elements -->
-        <div class="hero-background-overlay"></div>
-        <div class="floating-elements">
-            <div class="floating-shape shape-1"></div>
-            <div class="floating-shape shape-2"></div>
-            <div class="floating-shape shape-3"></div>
-            <div class="floating-shape shape-4"></div>
-        </div>
-
-        <!-- Particle System -->
-        <div class="particles-container">
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-            <div class="particle"></div>
-        </div>
-
-        <!-- Hero Content Wrapper -->
-        <div class="hero-wrapper">
-            <!-- Left Content Section -->
-            <div class="hero-content-section">
-                <div class="hero-content">
-                    <h1 class="hero-title">
-                        <span class="title-line">Craft Your</span>
-                        <span class="title-line highlight">
-                            <span class="highlight-text" id="dynamic-text">Signature Style</span>
-                            <div class="title-underline"></div>
-                        </span>
-                    </h1>
-
-                    <p class="hero-description">
-                        Discover our curated collection of premium menswear, from executive suits to casual essentials.
-                        Each piece is designed to elevate your confidence and make a lasting impression.
-                    </p>
-
-                    <!-- Enhanced Buttons -->
-                    <div class="hero-buttons">
-                        <a href="#featured-products" class="hero-btn primary">
-                            <span class="btn-text">Shop Now</span>
-                            <span class="btn-icon"><i class="fas fa-arrow-right"></i></span>
-                            <div class="btn-ripple"></div>
-                        </a>
-                        <a href="#featured-categories" class="hero-btn secondary">
-                            <span class="btn-text">Explore Collections</span>
-                            <span class="btn-icon"><i class="fas fa-compass"></i></span>
-                            <div class="btn-ripple"></div>
-                        </a>
-                    </div>
-                </div>
+    <!-- Hero Section — matches mobile home_page.dart _heroSection() -->
+    <section class="cat-hero home-hero">
+        <!-- Left dark panel -->
+        <div class="cat-hero-left">
+            <div class="cat-hero-badge">
+                <i class="fas fa-star"></i>
+                <span>NEW COLLECTION</span>
             </div>
+            <p class="cat-hero-title-top">Craft Your</p>
+            <h1 class="cat-hero-highlight" id="home-highlight">Signature Style</h1>
+            <div class="cat-hero-bar"></div>
+            <p class="cat-hero-sub">Premium menswear for the modern man. From executive suits to casual essentials.</p>
+            <div class="home-hero-btns">
+                <a href="#featured-products" class="cat-hero-btn">
+                    Shop Now <i class="fas fa-arrow-right"></i>
+                </a>
+                <a href="#featured-categories" class="home-hero-btn-secondary">
+                    Explore <i class="fas fa-compass"></i>
+                </a>
+            </div>
+        </div>
 
-            <!-- Right Image Section - Promotional Products -->
-            <div class="hero-image-section">
-                <div class="hero-image-container">
-                    <div class="hero-carousel">
-                        {% if promotional_products %}
-                        {% for product in promotional_products[:4] %}
-                        <div class="hero-image-slide {% if loop.first %}active{% endif %}">
-                            <div class="promotional-product-card">
-                                {% set images = product.image.split(',') if product.image else [] %}
-                                {% if images and images[0].strip() %}
-                                <img src="{{ images[0].strip()|product_img }}"
-                                    alt="{{ product.name }}" class="promotional-product-image">
-                                {% else %}
-                                <div class="promotional-product-placeholder">
-                                    <i class="fas fa-image"></i>
-                                    <span>{{ product.name }}</span>
-                                </div>
-                                {% endif %}
-
-                                <!-- Promotion Badge - Always Visible -->
-                                <div class="promotion-badge">
-                                    {% if product.promotion_type == 'percentage' %}
-                                    {{ (product.promotion_discount|float)|int }}% OFF
-                                    {% elif product.promotion_type == 'fixed' %}
-                                    ₱{{ (product.promotion_discount|float)|int }} OFF
-                                    {% elif product.promotion_type == 'buy_one_get_one' %}
-                                    BUY ONE GET ONE
-                                    {% elif product.promotion_type == 'free_shipping' %}
-                                    FREE SHIPPING
-                                    {% else %}
-                                    SPECIAL
-                                    {% endif %}
-                                </div>
-
-                                <div class="promotional-overlay">
-                                    <div class="promotional-content">
-                                        <h3>{{ product.name }}</h3>
-                                        <div class="price-section">
-                                            {% set original_price = product.price|float if product.price else 0.0 %}
-                                            {% set discount_value = product.promotion_discount|float if
-                                            product.promotion_discount else 0.0 %}
-                                            {% if product.promotion_type == 'percentage' and discount_value > 0 %}
-                                            <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                                            {% set sale_price = original_price * (1 - discount_value/100) %}
-                                            {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                                            <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                                            {% elif product.promotion_type == 'fixed' and discount_value > 0 %}
-                                            <span class="original-price">₱{{ "%.2f"|format(original_price) }}</span>
-                                            {% set sale_price = original_price - discount_value %}
-                                            {% set sale_price = sale_price if sale_price > 0 else 0.0 %}
-                                            <span class="sale-price">₱{{ "%.2f"|format(sale_price) }}</span>
-                                            {% else %}
-                                            <span class="sale-price">₱{{ "%.2f"|format(original_price) }}</span>
-                                            {% endif %}
-                                        </div>
-
-                                        <div class="promotional-actions">
-                                            <a href="{{ url_for('view_product', product_id=product.id) }}"
-                                                class="btn-view-product">
-                                                <i class="fas fa-eye"></i> View Product
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
+        <!-- Right image panel -->
+        <div class="cat-hero-right">
+            {% if promotional_products %}
+            <div class="cat-hero-carousel">
+                {% for product in promotional_products[:4] %}
+                <div class="cat-hero-slide {% if loop.first %}active{% endif %}">
+                    {% set images = product.image.split(',') if product.image else [] %}
+                    {% if images and images[0].strip() %}
+                    <img src="{{ images[0].strip()|product_img }}"
+                         alt="{{ product.name }}" class="cat-hero-img">
+                    {% else %}
+                    <div class="cat-hero-img-placeholder"><i class="fas fa-store"></i></div>
+                    {% endif %}
+                    <div class="cat-hero-price-badge">
+                        <span class="cat-hero-price-label">{{ product.name[:22] }}{% if product.name|length > 22 %}…{% endif %}</span>
+                        {% if product.promotion_type == 'percentage' and product.promotion_discount %}
+                        <span class="cat-hero-price-value">₱{{ "%.0f"|format(product.price|float * (1 - product.promotion_discount|float/100)) }}</span>
                         {% else %}
-                        <!-- Fallback slides if no promotional products -->
-                        <div class="hero-image-slide active">
-                            <div class="hero-image-bg slide-1"></div>
-                            <div class="hero-image-overlay"></div>
-                            <div class="no-promotions-content">
-                                <h3>Premium Men's Fashion</h3>
-                                <p>Discover our exclusive collection</p>
-                            </div>
-                        </div>
-                        <div class="hero-image-slide">
-                            <div class="hero-image-bg slide-2"></div>
-                            <div class="hero-image-overlay"></div>
-                            <div class="no-promotions-content">
-                                <h3>Quality & Style</h3>
-                                <p>Crafted for the modern gentleman</p>
-                            </div>
-                        </div>
+                        <span class="cat-hero-price-value">₱{{ "%.0f"|format(product.price|float) }}</span>
                         {% endif %}
                     </div>
-
-                    <!-- Carousel Indicators -->
-                    <div class="carousel-indicators">
-                        {% if promotional_products %}
-                        {% for product in promotional_products[:4] %}
-                        <span class="indicator {% if loop.first %}active{% endif %}"
-                            onclick="currentImageSlide({{ loop.index }})"></span>
-                        {% endfor %}
-                        {% else %}
-                        <span class="indicator active" onclick="currentImageSlide(1)"></span>
-                        <span class="indicator" onclick="currentImageSlide(2)"></span>
-                        {% endif %}
+                    <div class="cat-hero-promo-tag">
+                        {% if product.promotion_type == 'percentage' %}{{ product.promotion_discount|int }}% OFF
+                        {% elif product.promotion_type == 'fixed' %}₱{{ product.promotion_discount|int }} OFF
+                        {% elif product.promotion_type == 'buy_one_get_one' %}BOGO
+                        {% elif product.promotion_type == 'free_shipping' %}FREE SHIP
+                        {% else %}SPECIAL{% endif %}
                     </div>
+                    <a href="{{ url_for('view_product', product_id=product.id) }}" class="cat-hero-view-btn">
+                        <i class="fas fa-eye"></i> View
+                    </a>
                 </div>
+                {% endfor %}
             </div>
+            {% if promotional_products|length > 1 %}
+            <div class="cat-hero-dots">
+                {% for product in promotional_products[:4] %}
+                <span class="cat-hero-dot {% if loop.first %}active{% endif %}"
+                      onclick="catHeroSlide({{ loop.index0 }})"></span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="cat-hero-fallback">
+                <div class="cat-hero-glow"></div>
+                <i class="fas fa-store cat-hero-fallback-icon"></i>
+                <div class="cat-hero-price-badge">
+                    <span class="cat-hero-price-label">Premium Men's Fashion</span>
+                    <span class="cat-hero-price-value">Shop Now</span>
+                </div>
+                <div class="cat-hero-promo-tag">NEW</div>
+            </div>
+            {% endif %}
         </div>
     </section>
+
+    <style>
+    /* ── Homepage hero extras ─────────────────────────────────────────────── */
+    .home-hero .cat-hero-highlight {
+        font-size: 32px;
+    }
+    .home-hero-btns {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+    }
+    .home-hero-btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1.5px solid rgba(212,175,55,0.5);
+        color: rgba(255,255,255,0.85);
+        font-size: 12px;
+        font-weight: 700;
+        padding: 10px 18px;
+        border-radius: 30px;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+    .home-hero-btn-secondary:hover {
+        border-color: #d4af37;
+        color: #d4af37;
+        text-decoration: none;
+    }
+    .cat-hero-view-btn {
+        position: absolute;
+        bottom: 52px;
+        right: 12px;
+        background: rgba(26,26,26,0.8);
+        color: #d4af37;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 5px 10px;
+        border-radius: 8px;
+        text-decoration: none;
+        border: 1px solid rgba(212,175,55,0.3);
+        z-index: 5;
+        transition: background 0.2s;
+    }
+    .cat-hero-view-btn:hover { background: rgba(212,175,55,0.2); text-decoration: none; color: #d4af37; }
+    @media (max-width: 768px) {
+        .home-hero .cat-hero-highlight { font-size: 22px; }
+        .home-hero-btns { gap: 8px; }
+        .home-hero-btn-secondary { font-size: 11px; padding: 8px 14px; }
+    }
+    </style>
+    <script>
+    (function() {
+        var _hSlide = 0;
+        function _go(n) {
+            var slides = document.querySelectorAll('.home-hero .cat-hero-slide');
+            var dots   = document.querySelectorAll('.home-hero .cat-hero-dot');
+            slides.forEach(function(s){ s.classList.remove('active'); });
+            dots.forEach(function(d){ d.classList.remove('active'); });
+            _hSlide = n;
+            if (slides[n]) slides[n].classList.add('active');
+            if (dots[n])   dots[n].classList.add('active');
+        }
+        window.catHeroSlide = function(n){ _go(n); };
+        document.addEventListener('DOMContentLoaded', function() {
+            var slides = document.querySelectorAll('.home-hero .cat-hero-slide');
+            if (slides.length > 1) {
+                setInterval(function(){ _go((_hSlide + 1) % slides.length); }, 4000);
+            }
+        });
+    })();
+    </script>
 
     <!-- Featured Categories — matches mobile app design -->
     <section id="featured-categories" class="featured-categories">

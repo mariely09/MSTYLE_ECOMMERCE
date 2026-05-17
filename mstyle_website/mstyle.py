@@ -7949,15 +7949,40 @@ def get_approved_user_documents(user_id):
 
         BUCKET = 'user-documents'
         SUPABASE_STORAGE_BASE = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}"
+        APP_BASE_URL = os.environ.get('APP_URL', 'https://mstyleecommerce-production.up.railway.app')
 
-        def signed_url(storage_path):
-            """Generate a signed URL for a Supabase Storage path.
-            Falls back to public URL if signing fails."""
-            if not storage_path:
+        def signed_url(raw_path):
+            """Resolve any stored path format to a web-accessible URL.
+
+            Formats seen in the DB:
+              1. UUID/filename          → Supabase Storage key  → signed URL
+              2. static/images/...     → local relative path   → /static/images/...
+              3. /app/static/images/.. → absolute server path  → /static/images/...
+              4. https://...           → already a full URL    → return as-is
+            """
+            if not raw_path:
                 return None
+
+            p = str(raw_path).strip().replace('\\', '/')
+
+            # Already a full URL
+            if p.startswith('http://') or p.startswith('https://'):
+                return p
+
+            # Absolute server path like /app/static/images/...
+            # Strip the /app prefix so it becomes a web-relative path
+            if p.startswith('/app/'):
+                p = p[4:]  # → /static/images/...
+
+            # Web-relative path like /static/... or static/...
+            if p.startswith('/static/') or p.startswith('static/'):
+                clean = p.lstrip('/')
+                return f"{APP_BASE_URL}/{clean}"
+
+            # Supabase Storage key (UUID prefix or plain filename)
+            # Try signed URL first, fall back to public URL
             try:
-                result = sb_admin.storage.from_(BUCKET).create_signed_url(storage_path, 3600)
-                # supabase-py v1 returns a dict; v2 returns an object with .signed_url
+                result = sb_admin.storage.from_(BUCKET).create_signed_url(p, 3600)
                 if isinstance(result, dict):
                     url = result.get('signedURL') or result.get('signedUrl') or result.get('signed_url')
                 else:
@@ -7965,9 +7990,10 @@ def get_approved_user_documents(user_id):
                 if url:
                     return url
             except Exception as e:
-                print(f'signed_url error for {storage_path}: {e}')
-            # Fallback: try public URL (works if bucket is public)
-            return f"{SUPABASE_STORAGE_BASE}/{storage_path}"
+                print(f'signed_url error for {p}: {e}')
+
+            # Fallback: public URL
+            return f"{SUPABASE_STORAGE_BASE}/{p}"
 
         # Also check rider_vehicles table for OR/CR and NBI paths
         or_cr_path = u.get('or_cr_path')

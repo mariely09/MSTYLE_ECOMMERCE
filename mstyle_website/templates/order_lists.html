@@ -232,7 +232,16 @@
                                 <td>
                                     {% set prod_price = order.original_price|float %}
                                     {% set total = order.total_price|float %}
-                                    <span class="no-discount">₱{{ "%.2f"|format(prod_price) }}</span>
+                                    {% if order.promotion_type in ('percentage', 'fixed') and order.discount_amount|float > 0 %}
+                                        {% set qty_val = order.quantity|int if order.quantity else 1 %}
+                                        {% set effective_price = (total / qty_val) if qty_val > 0 else total %}
+                                        <div style="display:flex;flex-direction:column;gap:2px;">
+                                            <span style="color:#e74c3c;font-weight:700;">₱{{ "%.2f"|format(effective_price) }}</span>
+                                            <span style="text-decoration:line-through;color:#95a5a6;font-size:11px;">₱{{ "%.2f"|format(prod_price) }}</span>
+                                        </div>
+                                    {% else %}
+                                        <span class="no-discount">₱{{ "%.2f"|format(prod_price) }}</span>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     {% if order.promotion_type %}
@@ -272,9 +281,19 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% set total = order.total_price|float %}
+                                    {% set subtotal = order.total_price|float %}
+                                    {% set ship = order.shipping_fee|float if order.shipping_fee is defined else 50.0 %}
+                                    {% set grand_total = subtotal + ship %}
                                     <div class="total-price-info">
-                                        <span class="total-amount">₱{{ "%.2f"|format(total) }}</span>
+                                        <span class="total-amount">₱{{ "%.2f"|format(grand_total) }}</span>
+                                        <div style="font-size:10px;color:#6c757d;margin-top:2px;">
+                                            ₱{{ "%.2f"|format(subtotal) }} +
+                                            {% if ship == 0 %}
+                                            <span style="color:#27ae60;font-weight:600;">Free Ship</span>
+                                            {% else %}
+                                            ₱{{ "%.2f"|format(ship) }} ship
+                                            {% endif %}
+                                        </div>
                                     </div>
                                 </td>
                                 <td>

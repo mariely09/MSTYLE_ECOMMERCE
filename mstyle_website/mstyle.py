@@ -6009,6 +6009,11 @@ def orders_list():
                             continue
                         promo = promo_detail_map.get(pid_promo, {})
                         disc_applied = float(pu.get('discount_applied') or 0)
+                        # Normalise key to int so it matches o['id'] regardless of type
+                        try:
+                            oid = int(oid)
+                        except (TypeError, ValueError):
+                            pass
                         promo_usage_map[oid] = {
                             'promotion_type':  promo.get('type', ''),
                             'promotion_name':  promo.get('name', ''),
@@ -6045,7 +6050,11 @@ def orders_list():
             print(f"  order {o.get('id')}: pid={pid}, unit_price={unit_price}, orig={o['original_price']}, total={o['total_price']}")
 
             # Promotion — pull from promotion_usage batch fetch
-            pu = promo_usage_map.get(o.get('id'), {})
+            try:
+                order_id_key = int(o.get('id'))
+            except (TypeError, ValueError):
+                order_id_key = o.get('id')
+            pu = promo_usage_map.get(order_id_key, {})
             promo_type   = pu.get('promotion_type', '')
             promo_name   = pu.get('promotion_name', '')
             disc_amount  = float(pu.get('discount_amount', 0))
